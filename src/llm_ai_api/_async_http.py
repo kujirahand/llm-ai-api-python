@@ -37,6 +37,7 @@ from ._http import (
     _check_retry_after_max,
     _is_retryable_transport_error,
     _mask_url,
+    _merge_headers,
     _is_terminal_event,
     _retry_after_delay,
     _transport_reason,
@@ -58,6 +59,15 @@ from .errors import (
 from .lang import t
 from .log import LOG_NOT_SET, resolve_log
 from .types import ChatChunk, ChatResult, SSEEvent
+
+
+async def _aiter_sse_lines(resp: httpx.Response, lang: Optional[str]) -> AsyncIterator[str]:
+    lines = _http._SSELines(lang, resp.encoding or "utf-8")
+    async for chunk in resp.aiter_bytes():
+        for line in lines.feed(chunk):
+            yield line
+    for line in lines.flush():
+        yield line
 
 
 async def aiter_sse(
@@ -180,63 +190,49 @@ class _AsyncBaseClient:
         """Client settings that can change a response for the same body (see BaseClient)."""
         return {
             "base_url": self.base_url,
-            "headers": dict(self._extra_headers),
+            "headers": _merge_headers(self._extra_headers),
         }
 
-    def _cache_lookup(self, body: Dict[str, Any]) -> Optional[ChatResult]:
+    async def _acache_lookup(self, body: Dict[str, Any]) -> Optional[ChatResult]:
         if self.cache is None:
             return None
-        try:
+        def lookup() -> Optional[ChatResult]:
             key = cache_key(self.provider, body, self._cache_context(), self._api_key)
             if isinstance(self.cache, SQLiteCache):
                 return self.cache.get(key, secret=self._api_key)
             return self.cache.get(key)
-        except Exception:
-            # The cache is best-effort at runtime: treat any failure as a miss.
+        try:
+            return await asyncio.to_thread(lookup)
+        except Exception as exc:
+            _http.report_io_error(self, self.cache, "cache", "lookup", exc)
             return None
 
-    def _cache_store(self, body: Dict[str, Any], result: ChatResult) -> None:
+    async def _acache_store(self, body: Dict[str, Any], result: ChatResult) -> None:
         if self.cache is None:
             return
-        try:
+        def store() -> None:
             key = cache_key(self.provider, body, self._cache_context(), self._api_key)
             if isinstance(self.cache, SQLiteCache):
                 self.cache.put(key, self.provider, result, secret=self._api_key)
             else:
                 self.cache.put(key, self.provider, result)
-        except Exception:
-            # A cache failure must not lose an API response the caller already paid for.
-            pass
-
-    def _log_call(
-        self, body: Dict[str, Any], response: Any, *, stream: bool = False, cached: bool = False
-    ) -> None:
-        if self.log is None:
-            return
         try:
-            self.log.write(
-                self.provider, body.get("model"), body, response, stream=stream, cached=cached
-            )
-        except Exception:
-            # A log failure must not lose an API response the caller already paid for.
-            pass
-
-    async def _acache_lookup(self, body: Dict[str, Any]) -> Optional[ChatResult]:
-        if self.cache is None:
-            return None
-        return await asyncio.to_thread(self._cache_lookup, body)
-
-    async def _acache_store(self, body: Dict[str, Any], result: ChatResult) -> None:
-        if self.cache is None:
-            return
-        await asyncio.to_thread(self._cache_store, body, result)
+            await asyncio.to_thread(store)
+        except Exception as exc:
+            _http.report_io_error(self, self.cache, "cache", "store", exc)
 
     async def _alog_call(
         self, body: Dict[str, Any], response: Any, *, stream: bool = False, cached: bool = False
     ) -> None:
         if self.log is None:
             return
-        await asyncio.to_thread(self._log_call, body, response, stream=stream, cached=cached)
+        try:
+            await asyncio.to_thread(
+                self.log.write, self.provider, body.get("model"), body, response,
+                stream=stream, cached=cached
+            )
+        except Exception as exc:
+            _http.report_io_error(self, self.log, "log", "write", exc)
 
     def _alog_chunks(
         self, chunks: Any, body: Dict[str, Any], cached: bool
@@ -351,10 +347,7 @@ class _AsyncBaseClient:
             "Accept": "text/event-stream" if stream else "application/json",
             "User-Agent": _user_agent(),
         }
-        h.update(self._auth_headers())
-        h.update(self._extra_headers)
-        h.update(extra or {})
-        return h
+        return _merge_headers(h, self._auth_headers(), self._extra_headers, extra or {})
 
     def _t(self, msg_id: str, **params: Any) -> str:
         return t(msg_id, self.lang, **params)
@@ -503,22 +496,19 @@ class _AsyncBaseClient:
                 # Always send with stream=True so Content-Length can be checked before
                 # a non-stream body is read.
                 resp = await self._client.send(req, stream=True)
-                if resp.status_code >= 400:
-                    # The error body has not been read yet, and reading
-                    # it can fail too, so it has to be inside this try (conversion + retry).
-                    await resp.aread()
-                elif not stream:
-                    if _http._declared_too_large(resp):
+                if resp.status_code >= 400 or not stream:
+                    try:
+                        if _http._declared_too_large(resp):
+                            raise _http._too_large(_http._MAX_RESPONSE_BYTES, self.lang)
+                        buffer = _http._ResponseBuffer(self.lang)
+                        async for chunk in resp.aiter_bytes():
+                            buffer.add(chunk)
+                        resp._content = buffer.content()
+                    except LLMError:
                         meta = self._call_meta(method, path, stream, started, attempt, resp)
                         await resp.aclose()
                         self._emit_request_error(meta, "response_too_large")
-                        raise _http._too_large(_http._MAX_RESPONSE_BYTES, self.lang)
-                    await resp.aread()
-                    if len(resp.content) > _http._MAX_RESPONSE_BYTES:
-                        meta = self._call_meta(method, path, stream, started, attempt, resp)
-                        await resp.aclose()
-                        self._emit_request_error(meta, "response_too_large")
-                        raise _http._too_large(_http._MAX_RESPONSE_BYTES, self.lang)
+                        raise
             except httpx.RequestError as e:
                 if resp is not None:
                     await resp.aclose()
@@ -675,7 +665,7 @@ class _AsyncEventStream:
     def __init__(self, client: _AsyncBaseClient, resp: httpx.Response, meta: _CallMeta) -> None:
         self._client = client
         self._resp = resp
-        self._lines = resp.aiter_lines()
+        self._lines = _aiter_sse_lines(resp, client.lang)
         self._events = aiter_sse(self._lines, client.lang)
         self._meta = meta
         self.request_id = meta.request_id
@@ -851,6 +841,8 @@ class _AsyncRecordedEvents:
         self.method = getattr(events, "method", None)
         self.path = getattr(events, "path", None)
         self.status_code = getattr(events, "status_code", None)
+        self._size = 0
+        self._recording = True
 
     def __aiter__(self) -> "_AsyncRecordedEvents":
         return self
@@ -873,8 +865,15 @@ class _AsyncRecordedEvents:
         except BaseException:
             await _close_quietly(self._events)
             raise
-        self._recorded.append({"event": ev.event, "data": ev.data})
-        if _is_terminal_event(ev):
+        if self._recording:
+            item = {"event": ev.event, "data": ev.data}
+            self._size += _http._stream_item_size(item)
+            if self._size > _http._STREAM_BUFFER_LIMIT:
+                self._recorded.clear()
+                self._recording = False
+            else:
+                self._recorded.append(item)
+        if self._recording and _is_terminal_event(ev):
             await self._store()
         return ev
 
@@ -909,7 +908,13 @@ class _AsyncChunks:
                 ev = await self._events.__anext__()
             except StopAsyncIteration:
                 self._done = True
-                raise
+                error = APIStreamError(
+                    self._client._t("stream_incomplete", provider=self._client.provider),
+                    code="stream_incomplete",
+                )
+                note_stream_error(self._client, error, self._events)
+                await _close_quietly(self._events)
+                raise error
             except BaseException:
                 # Transport errors and size limits are already reported by the event stream.
                 self._done = True
@@ -962,6 +967,8 @@ class _AsyncLoggedChunks:
         self._done = False
         self.request_id = getattr(chunks, "request_id", None)
         self.retries = getattr(chunks, "retries", 0) or 0
+        self._size = 0
+        self._recording = True
 
     def __aiter__(self) -> "_AsyncLoggedChunks":
         return self
@@ -973,20 +980,28 @@ class _AsyncLoggedChunks:
             chunk = await self._chunks.__anext__()
         except StopAsyncIteration:
             self._done = True
+            response = (
+                {"text": "".join(self._texts), "chunks": self._raws}
+                if self._recording else
+                {"text": None, "chunks": None, "truncated": True}
+            )
             await self._client._alog_call(
-                self._body,
-                {"text": "".join(self._texts), "chunks": self._raws},
-                stream=True,
-                cached=self._cached,
+                self._body, response, stream=True, cached=self._cached,
             )
             raise
         except BaseException:
             self._done = True
             await _close_quietly(self._chunks)
             raise
-        if self._client.log is not None:
-            self._texts.append(chunk.text or "")
-            self._raws.append(chunk.raw)
+        if self._client.log is not None and self._recording:
+            self._size += _http._stream_item_size([chunk.text or "", chunk.raw])
+            if self._size > _http._STREAM_BUFFER_LIMIT:
+                self._texts.clear()
+                self._raws.clear()
+                self._recording = False
+            else:
+                self._texts.append(chunk.text or "")
+                self._raws.append(chunk.raw)
         return chunk
 
     async def aclose(self) -> None:

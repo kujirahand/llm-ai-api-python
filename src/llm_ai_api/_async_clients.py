@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from ._singleflight import async_singleflight
 from ._async_http import _AsyncBaseClient, _AsyncChunks, _AsyncLoggedChunks
 from .anthropic import AnthropicClient
 from .anthropic import _chunk_from_event as _anthropic_chunk
@@ -55,15 +56,16 @@ class _AsyncOpenAICompatClient(_AsyncBaseClient):
     ) -> ChatResult:
         """Call the chat once. Parameters that are not given are not sent."""
         body = self._build_body(model, messages, max_tokens, temperature, extra, False)
-        cached = await self._alookup_chat_cache(body)
-        if cached is not None:
-            await self._alog_call(body, cached.raw, cached=True)
-            return cached
-        raw, meta = await self._read_json("/chat/completions", body, timeout=timeout)
-        result = apply_result_meta(_openai_parse(raw), meta)
-        await self._acache_store(body, result)
-        await self._alog_call(body, raw)
-        return result
+        async with async_singleflight(self, body):
+            cached = await self._alookup_chat_cache(body)
+            if cached is not None:
+                await self._alog_call(body, cached.raw, cached=True)
+                return cached
+            raw, meta = await self._read_json("/chat/completions", body, timeout=timeout)
+            result = apply_result_meta(_openai_parse(raw), meta)
+            await self._acache_store(body, result)
+            await self._alog_call(body, raw)
+            return result
 
     async def stream_chat(
         self,
@@ -108,9 +110,11 @@ class _AsyncOpenRouterClient(_AsyncOpenAICompatClient):
         """`app_url` is sent as HTTP-Referer and `app_name` as X-Title."""
         super().__init__(*args, **kwargs)
         if app_url:
-            self._extra_headers.setdefault("HTTP-Referer", app_url)
+            if not any(k.lower() == "http-referer" for k in self._extra_headers):
+                self._extra_headers["HTTP-Referer"] = app_url
         if app_name:
-            self._extra_headers.setdefault("X-Title", app_name)
+            if not any(k.lower() == "x-title" for k in self._extra_headers):
+                self._extra_headers["X-Title"] = app_name
 
 
 class _AsyncGoogleClient(_AsyncOpenAICompatClient):
@@ -138,7 +142,7 @@ class _AsyncAnthropicClient(_AsyncBaseClient):
     def _cache_context(self) -> Dict[str, Any]:
         """Add the API version to the cache key context (it is sent as a header)."""
         context = super()._cache_context()
-        context["anthropic_version"] = self.anthropic_version
+        context["anthropic_version"] = self._headers(False, None).get("anthropic-version")
         return context
 
     def _auth_headers(self) -> Dict[str, str]:
@@ -172,15 +176,16 @@ class _AsyncAnthropicClient(_AsyncBaseClient):
     ) -> ChatResult:
         """Call the chat once. Unspecified parameters other than `max_tokens` are not sent."""
         body = self._build_body(model, messages, max_tokens, temperature, extra, False)
-        cached = await self._alookup_chat_cache(body)
-        if cached is not None:
-            await self._alog_call(body, cached.raw, cached=True)
-            return cached
-        raw, meta = await self._read_json("/v1/messages", body, timeout=timeout)
-        result = apply_result_meta(_anthropic_parse(raw), meta)
-        await self._acache_store(body, result)
-        await self._alog_call(body, raw)
-        return result
+        async with async_singleflight(self, body):
+            cached = await self._alookup_chat_cache(body)
+            if cached is not None:
+                await self._alog_call(body, cached.raw, cached=True)
+                return cached
+            raw, meta = await self._read_json("/v1/messages", body, timeout=timeout)
+            result = apply_result_meta(_anthropic_parse(raw), meta)
+            await self._acache_store(body, result)
+            await self._alog_call(body, raw)
+            return result
 
     async def stream_chat(
         self,

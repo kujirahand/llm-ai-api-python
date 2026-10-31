@@ -28,6 +28,7 @@ MESSAGES = {
     "response_too_large": "レスポンスがサイズの上限（{limit} バイト）を超えました",
     # API エラー
     "api_error": "{provider} API がエラーを返しました (HTTP {status})",
+    "stream_incomplete": "{provider} のストリームが終端イベントなしで終了しました",
     "stream_error": "{provider} のストリームでエラーが発生しました",
     "hint_400": (
         "ヒント: このライブラリが拒否を知っているパラメータは、送信前に省かれます。"

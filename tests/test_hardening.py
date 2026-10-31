@@ -1,6 +1,7 @@
 """Tests for cache/log hardening (#33): file mode, WAL, size limits, bulk XOR."""
 
 import asyncio
+import gzip
 import os
 import sqlite3
 import stat
@@ -176,6 +177,47 @@ class SizeLimitTest(unittest.TestCase):
                 c.request("/x", {})
         self.assertEqual(cm.exception.code, "response_too_large")
         self.assertEqual(stream.reads, 1)
+
+    def test_decoded_body_limits_sync_and_async(self):
+        for compressed in (False, True):
+            for status, streaming in ((200, False), (400, False), (400, True)):
+                for asynchronous in (False, True):
+                    with self.subTest(compressed=compressed, status=status,
+                                      streaming=streaming, asynchronous=asynchronous):
+                        data = b"x" * 100
+                        headers = {}
+                        if compressed:
+                            data = gzip.compress(data)
+                            headers["content-encoding"] = "gzip"
+                        stream = (_RecordingAsyncStream(data) if asynchronous
+                                  else _RecordingStream(data))
+                        transport = httpx.MockTransport(
+                            lambda request: httpx.Response(status, headers=headers, stream=stream)
+                        )
+                        async def run_async():
+                            client = _AsyncOpenAIClient(api_key="k", transport=transport)
+                            try:
+                                if streaming:
+                                    await client.request_stream("/x", {})
+                                else:
+                                    await client.request("/x", {})
+                            finally:
+                                await client.aclose()
+                        with mock.patch.object(http_mod, "_MAX_RESPONSE_BYTES", 50):
+                            with self.assertRaises(LLMError) as cm:
+                                if asynchronous:
+                                    asyncio.run(run_async())
+                                else:
+                                    client = OpenAIClient(api_key="k", transport=transport)
+                                    try:
+                                        if streaming:
+                                            client.request_stream("/x", {})
+                                        else:
+                                            client.request("/x", {})
+                                    finally:
+                                        client.close()
+                        self.assertEqual(cm.exception.code, "response_too_large")
+                        self.assertTrue(stream.closed)
 
     def test_sse_line_cap_counts_bytes_not_characters(self):
         line = "data: " + "あ" * 10  # 16 characters, 36 bytes

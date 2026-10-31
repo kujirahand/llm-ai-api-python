@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.6.0
+
+Production hardening (#49):
+
+- Limit decoded response bodies while reading (`iter_bytes()` / `aiter_bytes()`), including HTTP error responses, in sync and async calls. The `Content-Length` pre-check is kept. Oversized bodies raise `response_too_large` and emit `request_error`.
+- Raise `APIStreamError` with code `stream_incomplete` and emit `stream_error` when a chat stream ends without its terminal event. Such a stream is not cached. `APIStreamError` accepts a `code` argument (default `stream_error`).
+- Secure existing log file permissions (0600) on POSIX before writing, and support an optional `redact=` hook on `JSONLLog`.
+- Limit stream cache and log buffers to 16 MiB each; oversized streams remain readable, skip caching, and log a truncated response marker.
+- Bound SSE lines while reading (no unbounded line without a newline) and limit retained event data to 16 MiB; oversized streams raise `response_too_large` and emit `request_error`.
+- Serialize writes and trims across log instances targeting the same normalized path, and use unique temporary files for trims.
+- Coalesce concurrent cache misses for the same non-streaming chat within one process (threads and asyncio).
+- Report runtime cache and log failures with a `logging` warning (logger `llm_ai_api`), new `cache_error` / `log_error` events, and a `failure_count` on `SQLiteCache` / `JSONLLog`.
+- Merge header names case-insensitively (later values win; sent names are lower-cased) and align Anthropic parameter filtering and cache keys with the effective headers. Cache entries created with extra headers under different name casing are not reused.
+- Support HTTP-date `Retry-After` values; ignore negative, NaN, or infinite values (normal backoff is used) and cap received values with `retry_after_max`.
+
 ## 0.5.0
 
 - Call metadata on success: `ChatResult.request_id`, `latency` (seconds), and `retries`. The same fields are on `APIConnectionError`, `APITimeoutError`, `APIStatusError`, and `APIStreamError`. Streaming exposes `request_id` on each `ChatChunk` and on the iterators from `stream()` / `stream_chat()` / `request_stream()` (#30).

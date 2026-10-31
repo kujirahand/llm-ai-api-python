@@ -1,11 +1,13 @@
+import asyncio
 import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from llm_ai_api import LLMConfigError, get_log, llm, set_cache, set_log
+from llm_ai_api import JSONLLog, LLMConfigError, get_log, llm, set_cache, set_log
 
-from .helpers import Recorder, json_response, sse_response
+from .helpers import FreshRecorder, Recorder, json_response, sse_response
 
 OPENAI_REPLY = {
     "choices": [{"message": {"content": "ポチ"}, "finish_reason": "stop"}],
@@ -156,3 +158,126 @@ class LogTest(unittest.TestCase):
         self.addCleanup(setattr, log_module, "_env_log", None)
         self.make(Recorder(json_response(OPENAI_REPLY))).ask("q")
         self.assertTrue(os.path.exists(os.path.join(d, "llm.jsonl")))
+
+
+class LogSecurityTest(unittest.TestCase):
+    def test_redact_sync_and_async_without_changing_results(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "log")
+
+            def redact(record):
+                record["request"].pop("messages")
+                record["response"].clear()
+                return record
+
+            log = JSONLLog(path, redact=redact)
+            m = llm("openai:gpt-x", api_key="k",
+                    transport=FreshRecorder(lambda: json_response(OPENAI_REPLY)).transport, log=log)
+            self.assertEqual(m.ask("secret"), "ポチ")
+            async def run_async():
+                try:
+                    return await m.aask("secret")
+                finally:
+                    await m.aclose()
+            self.assertEqual(asyncio.run(run_async()), "ポチ")
+            with open(path, encoding="utf-8") as f:
+                records = [json.loads(line) for line in f]
+            self.assertEqual(len(records), 2)
+            for record in records:
+                self.assertNotIn("messages", record["request"])
+                self.assertEqual(record["response"], {})
+
+    def test_redact_skip_and_failure_do_not_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "log")
+            log = JSONLLog(path, redact=lambda record: None)
+            log.write("openai", "m", {}, {})
+            def fail(record):
+                raise ValueError("failed")
+            log.redact = fail
+            m = llm("openai:gpt-x", api_key="k",
+                    transport=Recorder(json_response(OPENAI_REPLY)).transport, log=log)
+            self.assertEqual(m.ask("secret"), "ポチ")
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(f.read(), "")
+
+    @unittest.skipUnless(os.name == "posix", "POSIX permissions")
+    def test_existing_permissions_and_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "log")
+            with open(path, "w") as f:
+                f.write("old\n")
+            os.chmod(path, 0o644)
+            log = JSONLLog(path)
+            self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+            os.chmod(path, 0o644)
+            with patch("llm_ai_api.log.os.fchmod", side_effect=OSError("denied")):
+                with self.assertRaises(OSError):
+                    log.write("openai", "m", {}, {})
+            with open(path) as f:
+                self.assertEqual(f.read(), "old\n")
+            log.write("openai", "m", {}, {})
+            self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+
+class ConcurrentLogTest(unittest.TestCase):
+    def test_shared_path_serializes_append_and_trim(self):
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "log")
+            first = JSONLLog(path, max_size=1)
+            second = JSONLLog(os.path.join(directory, ".", "log"), max_size=1)
+            entered = threading.Event()
+            release = threading.Event()
+            original = first._trim
+            started = threading.Event()
+            finished = threading.Event()
+
+            def second_write():
+                started.set()
+                second.write("p", "m", {}, {"id": 2})
+                finished.set()
+
+            def paused_trim():
+                entered.set()
+                self.assertTrue(release.wait(5))
+                original()
+
+            first._trim = paused_trim
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                a = pool.submit(first.write, "p", "m", {}, {"id": 1})
+                self.assertTrue(entered.wait(5))
+                b = pool.submit(second_write)
+                self.assertTrue(started.wait(5))
+                try:
+                    self.assertFalse(finished.wait(0.1))
+                    with open(path, encoding="utf-8") as f:
+                        self.assertEqual(len(f.readlines()), 1)
+                finally:
+                    release.set()
+                a.result(timeout=5)
+                b.result(timeout=5)
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(json.loads(f.readlines()[-1])["response"]["id"], 2)
+            self.assertEqual(os.listdir(directory), ["log"])
+
+    def test_async_clients_share_path_lock(self):
+        async def run(path):
+            clients = [llm("openai:gpt-x", api_key="k", log=path,
+                           transport=FreshRecorder(lambda: json_response(OPENAI_REPLY)).transport,
+                           cache=False)
+                       for _ in range(12)]
+            try:
+                await asyncio.gather(*(client.aask(str(i)) for i, client in enumerate(clients)))
+            finally:
+                await asyncio.gather(*(client.aclose() for client in clients))
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "log")
+            asyncio.run(run(path))
+            with open(path, encoding="utf-8") as f:
+                records = [json.loads(line) for line in f]
+            self.assertEqual(len(records), 12)
+            self.assertEqual({r["request"]["messages"][0]["content"] for r in records},
+                             {str(i) for i in range(12)})
