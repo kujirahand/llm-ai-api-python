@@ -47,6 +47,7 @@ print(luna.ask(question))  # ポチ
 - 共通インターフェイス `llm()` によるテキストの一問一答・ストリーミング
 - テキストチャット（非ストリーミング / ストリーミング）
 - 任意パス・任意ボディを送る生リクエスト（上記以外のエンドポイントも呼べる）
+- 任意の API 応答キャッシュ（SQLite。既定はオフ。5.7 を参照）
 
 ### v1 では対応しない（必要になったら別途検討）
 
@@ -72,6 +73,7 @@ llm-ai-api-python/
 │       ├── _http.py         # httpx による送受信、SSE パーサー、リトライ
 │       ├── errors.py        # 例外クラス
 │       ├── types.py         # ChatResult などの dataclass
+│       ├── cache.py         # SQLite による応答キャッシュ（既定はオフ）
 │       ├── openai.py        # OpenAIClient
 │       ├── openrouter.py    # OpenRouterClient（OpenAI 互換部分を共有）
 │       ├── google.py        # GoogleClient（OpenAI 互換部分を共有）
@@ -93,6 +95,7 @@ llm-ai-api-python/
 │   ├── test_llm.py
 │   ├── test_models.py
 │   ├── test_lang.py
+│   ├── test_cache.py
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
 ├── docs/
 │   └── publish.md       # PyPI への公開手順
@@ -251,6 +254,17 @@ class ChatChunk:
   - Anthropic: `content` のうち `type == "text"` のブロックの `text` を連結。`thinking` などその他のブロックは `text` に含めず `raw` から参照してもらう。
 - `stop_reason` は正規化しない（生の値を返す）。Claude の `"refusal"` なども例外にせず、そのまま返す。
 - `usage` の対応: OpenAI 系は `prompt_tokens` → `input_tokens`、`completion_tokens` → `output_tokens`。
+
+### 5.7 キャッシュ（Issue #5）
+
+- **既定はオフ**。有効にすると、同じリクエストへの 2 回目以降は API を呼ばず、保存済みの結果を返す。
+- グローバル設定: `set_cache(cache)` / `get_cache()`（`llm_ai_api` から import できる）。`set_cache(None)` でオフに戻す。
+- インスタンスごとの設定: `llm(..., cache=...)` と各クライアントの `cache=...`。値は `True`（既定ファイル `llm_ai_api_cache.db`）、パス（`str` / `os.PathLike`）、`SQLiteCache`（`get` / `put` を持つ同等のオブジェクトも可）、`False` / `None`（このインスタンスだけオフ）。引数を渡さなければグローバル設定に従う（内部のセンチネル `CACHE_NOT_SET`）。
+- キー: プロバイダー名とリクエストボディ（model・messages・パラメータ、つまり「モデル + 入力」）の正規化 JSON（`sort_keys=True`）の sha256。
+- 保存するもの: `ChatResult`（text / model / stop_reason / usage / raw）を JSON にして、SQLite のテーブル `llm_cache` に入れる。接続は操作ごとに開閉し、書き込みはロックで保護する。`SQLiteCache.clear()` で全削除。
+- 対象は `chat()` / `ask()` のみ。ストリーミング（`stream_chat()` / `stream()`）はキャッシュしない。生レイヤー（`request()`）も対象外。
+- 実行時のキャッシュの失敗はベストエフォート（読み取りはミス扱い、書き込みは無視）にして、料金を払って得た応答を失わない。設定の誤り（不正な値、使えないパス）は生成時に `LLMConfigError`（`code="invalid_cache"`）を送出する。
+- `close()` は渡されたキャッシュを閉じない（グローバルと共有されうるため）。
 
 ## 6. HTTP 層の仕様（`_http.py`）
 

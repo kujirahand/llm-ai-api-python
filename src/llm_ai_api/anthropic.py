@@ -86,6 +86,9 @@ class AnthropicClient(BaseClient):
     ) -> ChatResult:
         """チャットを 1 回呼び出す。`max_tokens` 以外の未指定パラメータは送らない。"""
         body = self._build_body(model, messages, max_tokens, temperature, extra, False)
+        cached = self._cache_lookup(body)
+        if cached is not None:
+            return cached
         raw = self.request("/v1/messages", body)
         text = "".join(
             b.get("text", "")
@@ -96,13 +99,15 @@ class AnthropicClient(BaseClient):
         usage = (
             Usage(u.get("input_tokens"), u.get("output_tokens")) if isinstance(u, dict) else None
         )
-        return ChatResult(
+        result = ChatResult(
             text=text,
             model=raw.get("model"),
             stop_reason=raw.get("stop_reason"),
             usage=usage,
             raw=raw,
         )
+        self._cache_store(body, result)
+        return result
 
     def stream_chat(
         self,

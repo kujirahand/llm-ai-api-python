@@ -4,6 +4,7 @@ __version__ = "0.0.1"
 
 from . import models
 from .anthropic import AnthropicClient
+from .cache import SQLiteCache, get_cache, set_cache
 from .errors import (
     APIConnectionError,
     APIStatusError,
@@ -29,6 +30,9 @@ __all__ = [
     "__version__",
     "llm",
     "models",
+    "SQLiteCache",
+    "set_cache",
+    "get_cache",
     "set_language",
     "get_language",
     "LLM",

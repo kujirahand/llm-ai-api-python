@@ -63,6 +63,9 @@ class OpenAICompatClient(BaseClient):
     ) -> ChatResult:
         """チャットを 1 回呼び出す。指定していないパラメータは送らない。"""
         body = self._build_body(model, messages, max_tokens, temperature, extra, False)
+        cached = self._cache_lookup(body)
+        if cached is not None:
+            return cached
         raw = self.request("/chat/completions", body)
         choices = raw.get("choices") or [{}]
         choice = choices[0] or {}
@@ -72,13 +75,15 @@ class OpenAICompatClient(BaseClient):
             if isinstance(u, dict)
             else None
         )
-        return ChatResult(
+        result = ChatResult(
             text=_text_of((choice.get("message") or {}).get("content")),
             model=raw.get("model"),
             stop_reason=choice.get("finish_reason"),
             usage=usage,
             raw=raw,
         )
+        self._cache_store(body, result)
+        return result
 
     def stream_chat(
         self,

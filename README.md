@@ -44,6 +44,21 @@ m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 
 The constants are examples. Any other model works as a plain string, e.g. `llm("openai:some-new-model")`.
 
+## Response caching
+
+Off by default. When on, a repeat call with the same provider, model and request (messages and parameters) returns the stored result without calling the API.
+
+```python
+from llm_ai_api import llm, set_cache
+
+set_cache("cache.db")                    # process-wide: on (an SQLite file path)
+m = llm("openai:gpt-6-luna")              # uses the global setting
+m2 = llm("openai:gpt-6-luna", cache="other.db")  # per instance
+m3 = llm("openai:gpt-6-luna", cache=False)       # off for this instance only
+```
+
+`cache=True` uses the default file `llm_ai_api_cache.db`. A `SQLiteCache` object can also be passed, and `SQLiteCache.clear()` empties it. Streaming (`stream()` / `stream_chat()`) is not cached.
+
 ## Examples
 
 See [`examples/`](examples/). Each script takes a `provider:model` argument (or the `LLM_MODEL` env var).
@@ -56,6 +71,7 @@ See [`examples/`](examples/). Each script takes a `provider:model` argument (or 
 | `ocr_test.py` | Read the text in an image |
 | `image_desc.py` | Describe an image |
 | `models_test.py` | Two models (GPT-6 Luna and Claude Haiku) discuss the breakfast menu, using the `models` constants (needs both API keys) |
+| `cache_demo.py` | Ask the same question twice and see the second answer come from the cache |
 
 Image content is not converted between providers; the examples build the right format for each one (see `examples/_common.py`).
 

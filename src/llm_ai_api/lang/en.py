@@ -9,6 +9,7 @@ MESSAGES = {
     "invalid_model_spec": (
         'Specify the model as "provider:model" (e.g. "openai:gpt-6-luna"): {spec!r}'
     ),
+    "invalid_cache": "Invalid cache setting: {detail}",
     "unknown_provider": "Unknown provider: {provider!r} (supported: {supported})",
     # 通信
     "timeout": "The request timed out. Try a larger timeout=, or check your network.",

@@ -44,6 +44,21 @@ m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 
 定数は例です。載っていないモデルも `llm("openai:新しいモデル名")` のように文字列でそのまま使えます。
 
+## API応答のキャッシュ
+
+デフォルトではオフです。オンにすると、同じプロバイダー・モデル・リクエスト（メッセージとパラメータ）で再び呼び出したとき、API を呼ばずに保存済みの結果を返します。
+
+```python
+from llm_ai_api import llm, set_cache
+
+set_cache("cache.db")                    # プロセス全体でオン（SQLite ファイルのパス）
+m = llm("openai:gpt-6-luna")              # グローバル設定を使う
+m2 = llm("openai:gpt-6-luna", cache="other.db")  # インスタンスごとの指定
+m3 = llm("openai:gpt-6-luna", cache=False)       # このインスタンスだけオフ
+```
+
+`cache=True` は既定のファイル `llm_ai_api_cache.db` を使います。`SQLiteCache` オブジェクトを渡すこともでき、`SQLiteCache.clear()` で中身を空にできます。ストリーミング（`stream()` / `stream_chat()`）はキャッシュされません。
+
 ## サンプル
 
 [`examples/`](examples/) を参照してください。どのスクリプトも、引数 `プロバイダー:モデル`（または環境変数 `LLM_MODEL`）でモデルを指定します。
@@ -56,6 +71,7 @@ m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 | `ocr_test.py` | 画像に書かれた文字を読み取る |
 | `image_desc.py` | 画像の内容を説明してもらう |
 | `models_test.py` | `models` の定数を使い、2 つのモデル（GPT-6 Luna と Claude Haiku）に朝食のメニューについて意見交換してもらう（両方の API キーが必要） |
+| `cache_demo.py` | 同じ質問を 2 回して、2 回目がキャッシュから返ることを確かめる |
 
 画像のコンテンツはプロバイダー間で変換されません。サンプルでは、プロバイダーごとの形式を組み立てています（`examples/_common.py` を参照）。
 

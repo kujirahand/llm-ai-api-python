@@ -13,6 +13,7 @@ from typing import Any, Dict, Iterable, Iterator, Optional, Tuple
 
 import httpx
 
+from .cache import CACHE_NOT_SET, cache_key, resolve_cache
 from .errors import (
     APIConnectionError,
     APITimeoutError,
@@ -22,7 +23,7 @@ from .errors import (
     status_error_class,
 )
 from .lang import t
-from .types import SSEEvent
+from .types import ChatResult, SSEEvent
 
 _RETRY_STATUS = {408, 409, 429}
 _MAX_RETRY_AFTER = 60.0
@@ -95,13 +96,18 @@ class BaseClient:
         headers: Optional[Dict[str, str]] = None,
         *,
         lang: Optional[str] = None,
+        cache: Any = CACHE_NOT_SET,
         transport: Optional[httpx.BaseTransport] = None,
     ) -> None:
         """`lang` はエラーメッセージの言語（`"ja"` / `"en"`）。None なら環境から判定する。
 
+        `cache` は chat() の応答キャッシュ（True / パス / SQLiteCache / False / None。
+        未指定なら `set_cache()` のグローバル設定に従う）。
+
         `transport` はテスト用（`httpx.MockTransport` を渡す）。
         """
         self.lang = lang
+        self.cache = resolve_cache(cache, lang=lang)
         key = api_key
         for name in (self.api_key_env,) + self.api_key_env_fallbacks:
             key = key or os.environ.get(name)
@@ -127,6 +133,26 @@ class BaseClient:
     def close(self) -> None:
         """内部の HTTP クライアントを閉じる。"""
         self._client.close()
+
+    def _cache_lookup(self, body: Dict[str, Any]) -> Optional[ChatResult]:
+        """Return the cached result for this request body, or None (miss or cache failure)."""
+        if self.cache is None:
+            return None
+        try:
+            return self.cache.get(cache_key(self.provider, body))
+        except Exception:
+            # The cache is best-effort at runtime: treat any failure as a miss.
+            return None
+
+    def _cache_store(self, body: Dict[str, Any], result: ChatResult) -> None:
+        """Store a result in the cache, ignoring cache failures."""
+        if self.cache is None:
+            return
+        try:
+            self.cache.put(cache_key(self.provider, body), self.provider, result)
+        except Exception:
+            # A cache failure must not lose an API response the caller already paid for.
+            pass
 
     def __enter__(self) -> "BaseClient":
         return self
