@@ -30,6 +30,20 @@ from .types import ChatChunk, ChatResult, SSEEvent
 
 _RETRY_STATUS = {408, 409, 429}
 _MAX_RETRY_AFTER = 60.0
+_MAX_RESPONSE_BYTES = 64 * 1024 * 1024  # largest non-stream response body that is accepted
+_MAX_SSE_LINE_BYTES = 16 * 1024 * 1024  # longest single SSE line that is accepted
+
+
+def _declared_too_large(resp: httpx.Response) -> bool:
+    """True if the Content-Length header parses to an int over the response cap."""
+    try:
+        return int(resp.headers.get("content-length", "")) > _MAX_RESPONSE_BYTES
+    except ValueError:
+        return False
+
+
+def _too_large(limit: int, lang: Optional[str]) -> LLMError:
+    return LLMError(t("response_too_large", lang, limit=limit), code="response_too_large")
 
 
 class _SSEDecoder:
@@ -38,12 +52,15 @@ class _SSEDecoder:
     Lines starting with `:` (comments) are ignored; an empty line completes an event.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, lang: Optional[str] = None) -> None:
+        self._lang = lang
         self._event: Optional[str] = None
         self._data: list = []
 
     def feed(self, line: str) -> Optional[SSEEvent]:
         """Consume one line; return the event it completes, if any."""
+        if len(line.encode("utf-8")) > _MAX_SSE_LINE_BYTES:
+            raise _too_large(_MAX_SSE_LINE_BYTES, self._lang)
         if line == "":
             return self.flush()
         if line.startswith(":"):
@@ -66,12 +83,12 @@ class _SSEDecoder:
         return ev
 
 
-def iter_sse(lines: Iterable[str]) -> Iterator[SSEEvent]:
+def iter_sse(lines: Iterable[str], lang: Optional[str] = None) -> Iterator[SSEEvent]:
     """行のイテレータから SSE イベントを取り出す。
 
     `:` で始まる行（コメント）は無視し、空行でイベントを確定する。
     """
-    decoder = _SSEDecoder()
+    decoder = _SSEDecoder(lang)
     for line in lines:
         ev = decoder.feed(line)
         if ev is not None:
@@ -350,6 +367,8 @@ class BaseClient:
         """JSON を送り、レスポンス JSON（dict）をそのまま返す。"""
         resp = self._open(method, path, body, headers, timeout, stream=False)
         try:
+            if len(resp.content) > _MAX_RESPONSE_BYTES:
+                raise _too_large(_MAX_RESPONSE_BYTES, self.lang)
             try:
                 value = resp.json()
             except ValueError as e:
@@ -451,10 +470,17 @@ class BaseClient:
                 ) from e
             resp = None
             try:
-                resp = self._client.send(req, stream=stream)
+                # Always send with stream=True so Content-Length can be checked before
+                # a non-stream body is read.
+                resp = self._client.send(req, stream=True)
                 if resp.status_code >= 400:
-                    # With stream=True the error body has not been read yet, and reading
+                    # The error body has not been read yet, and reading
                     # it can fail too, so it has to be inside this try (conversion + retry).
+                    resp.read()
+                elif not stream:
+                    if _declared_too_large(resp):
+                        resp.close()
+                        raise _too_large(_MAX_RESPONSE_BYTES, self.lang)
                     resp.read()
             except httpx.TimeoutException as e:
                 if resp is not None:
@@ -522,7 +548,7 @@ class _EventStream:
     def __init__(self, client: BaseClient, resp: httpx.Response) -> None:
         self._client = client
         self._resp = resp
-        self._events = iter_sse(resp.iter_lines())
+        self._events = iter_sse(resp.iter_lines(), client.lang)
         self._closed = False
 
     def __iter__(self) -> "_EventStream":

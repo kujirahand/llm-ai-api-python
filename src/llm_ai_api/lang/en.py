@@ -22,6 +22,7 @@ MESSAGES = {
     "stream_connection_error": "Reading the stream failed: {detail}",
     "unclosed_stream": "A stream was garbage-collected without being closed; call aclose() when you stop early.",
     "invalid_json_response": "The response was not valid JSON: {preview!r}",
+    "response_too_large": "The response is larger than the size limit ({limit} bytes)",
     # API エラー
     "api_error": "{provider} API error (HTTP {status})",
     "stream_error": "{provider} stream error",

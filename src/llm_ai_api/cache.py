@@ -42,6 +42,14 @@ def _keystream(key: bytes, nonce: bytes, length: int) -> bytes:
     return bytes(out[:length])
 
 
+def _xor(data: bytes, stream: bytes) -> bytes:
+    """XOR `data` with an equally long `stream` in bulk (integer arithmetic, not per byte)."""
+    n = len(data)
+    if n == 0:
+        return b""
+    return (int.from_bytes(data, "big") ^ int.from_bytes(stream, "big")).to_bytes(n, "big")
+
+
 def _mac(mac_key: bytes, aad: bytes, nonce: bytes, ct: bytes) -> bytes:
     # `aad` (the cache key) is authenticated too, so a ciphertext cannot be moved to
     # another row. Its length is included to keep the field boundaries unambiguous.
@@ -55,7 +63,7 @@ def encrypt(enc_key: bytes, mac_key: bytes, plain: bytes, aad: bytes = b"") -> b
     `aad` is authenticated but not stored; pass the same value to `decrypt()`.
     """
     nonce = os.urandom(_NONCE)
-    ct = bytes(a ^ b for a, b in zip(plain, _keystream(enc_key, nonce, len(plain))))
+    ct = _xor(plain, _keystream(enc_key, nonce, len(plain)))
     return nonce + ct + _mac(mac_key, aad, nonce, ct)
 
 
@@ -66,7 +74,7 @@ def decrypt(enc_key: bytes, mac_key: bytes, blob: bytes, aad: bytes = b"") -> Op
     nonce, ct, mac = blob[:_NONCE], blob[_NONCE:-_MAC], blob[-_MAC:]
     if not hmac.compare_digest(mac, _mac(mac_key, aad, nonce, ct)):
         return None
-    return bytes(a ^ b for a, b in zip(ct, _keystream(enc_key, nonce, len(ct))))
+    return _xor(ct, _keystream(enc_key, nonce, len(ct)))
 
 
 class _Unset:
@@ -125,7 +133,17 @@ class SQLiteCache:
             parent = os.path.dirname(self.path)
             if parent:
                 os.makedirs(parent, mode=0o700, exist_ok=True)
-            existed = os.path.exists(self.path)
+            if not os.path.exists(self.path):
+                # Create the file owner-only from the start, so it is never readable by
+                # others (even briefly) as it would be if SQLite created it with the umask.
+                # Existing files keep their permissions. SQLite gives side files
+                # (-wal/-shm) the main file's permissions.
+                try:
+                    fd = os.open(self.path, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
+                except FileExistsError:
+                    pass  # created concurrently by another process
+                else:
+                    os.close(fd)
             with self._connect() as conn:
                 conn.execute(
                     "CREATE TABLE IF NOT EXISTS llm_cache ("
@@ -133,12 +151,6 @@ class SQLiteCache:
                     "response BLOB NOT NULL, created_at REAL NOT NULL)"
                 )
                 conn.execute("CREATE TABLE IF NOT EXISTS llm_cache_meta (name TEXT PRIMARY KEY, value BLOB)")
-            if not existed:
-                # Keep a new cache file owner-only.
-                try:
-                    os.chmod(self.path, 0o600)
-                except OSError:
-                    pass  # best effort (e.g. filesystems without POSIX permissions)
         except (sqlite3.Error, OSError) as e:
             raise LLMConfigError(
                 t("invalid_cache", lang, detail="%s: %s" % (self.path, e)),
@@ -153,6 +165,11 @@ class SQLiteCache:
         """Open a fresh connection for one operation, commit, and always close it."""
         conn = sqlite3.connect(self.path, timeout=30.0)
         try:
+            try:
+                # WAL lets several processes share one file without writers blocking readers.
+                conn.execute("PRAGMA journal_mode=WAL")
+            except sqlite3.Error:
+                pass  # best effort (read-only or network file systems): keep the default
             with conn:
                 yield conn
         finally:
