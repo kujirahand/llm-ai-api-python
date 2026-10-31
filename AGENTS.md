@@ -175,6 +175,7 @@ client = AnthropicClient(
     timeout=600.0,         # 秒
     max_retries=2,
     headers=None,          # 追加ヘッダー（dict）
+    cache=CACHE_NOT_SET,   # 応答キャッシュ（未指定ならグローバル設定。5.7 を参照）
     anthropic_version="2026-10-21",  # AnthropicClient のみ
 )
 ```
@@ -259,9 +260,10 @@ class ChatChunk:
 
 - **既定はオフ**。有効にすると、同じリクエストへの 2 回目以降は API を呼ばず、保存済みの結果を返す。
 - グローバル設定: `set_cache(cache)` / `get_cache()`（`llm_ai_api` から import できる）。`set_cache(None)` でオフに戻す。
-- インスタンスごとの設定: `llm(..., cache=...)` と各クライアントの `cache=...`。値は `True`（既定ファイル `llm_ai_api_cache.db`）、パス（`str` / `os.PathLike`）、`SQLiteCache`（`get` / `put` を持つ同等のオブジェクトも可）、`False` / `None`（このインスタンスだけオフ）。引数を渡さなければグローバル設定に従う（内部のセンチネル `CACHE_NOT_SET`）。
-- キー: プロバイダー名とリクエストボディ（model・messages・パラメータ、つまり「モデル + 入力」）の正規化 JSON（`sort_keys=True`）の sha256。
-- 保存するもの: `ChatResult`（text / model / stop_reason / usage / raw）を JSON にして、SQLite のテーブル `llm_cache` に入れる。接続は操作ごとに開閉し、書き込みはロックで保護する。`SQLiteCache.clear()` で全削除。
+- インスタンスごとの設定: `llm(..., cache=...)` と各クライアントの `cache=...`。値は `True`（既定ファイル `llm_ai_api_cache.db`）、パス（`str` / `os.PathLike`）、`SQLiteCache`（同等のオブジェクトも可。インターフェイスは `get(key) -> ChatResult | None` と `put(key, provider, result)`）、`False` / `None`（このインスタンスだけオフ）。引数を渡さなければグローバル設定に従う（内部のセンチネル `CACHE_NOT_SET`）。
+- キー: プロバイダー名、リクエストボディ（model・messages・パラメータ、つまり「モデル + 入力」）、応答に影響するクライアント設定（`base_url`、追加ヘッダー、Anthropic の `anthropic_version`）の正規化 JSON（`sort_keys=True`）の sha256。
+- 保存するもの: `ChatResult`（text / model / stop_reason / usage / raw）を JSON にして、SQLite のテーブル `llm_cache` に入れる。接続は操作ごとに開閉し、書き込みはロックで保護する。`SQLiteCache.clear()` で全削除。壊れた行はミスとして扱い、読み取り時に削除する。
+- 有効にしている間、同じリクエストには常に同じ保存済み応答が返る（モデルの非決定性は抑えられる）。新しい応答が欲しい場合はキャッシュを空にするかオフにする。
 - 対象は `chat()` / `ask()` のみ。ストリーミング（`stream_chat()` / `stream()`）はキャッシュしない。生レイヤー（`request()`）も対象外。
 - 実行時のキャッシュの失敗はベストエフォート（読み取りはミス扱い、書き込みは無視）にして、料金を払って得た応答を失わない。設定の誤り（不正な値、使えないパス）は生成時に `LLMConfigError`（`code="invalid_cache"`）を送出する。
 - `close()` は渡されたキャッシュを閉じない（グローバルと共有されうるため）。

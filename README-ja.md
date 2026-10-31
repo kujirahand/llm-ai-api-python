@@ -59,6 +59,8 @@ m3 = llm("openai:gpt-6-luna", cache=False)       # このインスタンスだ�
 
 `cache=True` は既定のファイル `llm_ai_api_cache.db` を使います。`SQLiteCache` オブジェクトを渡すこともでき、`SQLiteCache.clear()` で中身を空にできます。ストリーミング（`stream()` / `stream_chat()`）はキャッシュされません。
 
+なお、キャッシュが有効な間は、同じリクエストには常に同じ保存済みの応答が返ります。新しい応答が欲しい場合は、キャッシュを空にするかオフにしてください。
+
 ## サンプル
 
 [`examples/`](examples/) を参照してください。どのスクリプトも、引数 `プロバイダー:モデル`（または環境変数 `LLM_MODEL`）でモデルを指定します。

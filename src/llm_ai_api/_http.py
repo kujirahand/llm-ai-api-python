@@ -134,12 +134,20 @@ class BaseClient:
         """内部の HTTP クライアントを閉じる。"""
         self._client.close()
 
+    def _cache_context(self) -> Dict[str, Any]:
+        """Return the client settings that can change a response for the same body.
+
+        Part of the cache key, so cached entries are not shared across different
+        endpoints or header configurations. Providers add their own settings.
+        """
+        return {"base_url": self.base_url, "headers": dict(self._extra_headers)}
+
     def _cache_lookup(self, body: Dict[str, Any]) -> Optional[ChatResult]:
         """Return the cached result for this request body, or None (miss or cache failure)."""
         if self.cache is None:
             return None
         try:
-            return self.cache.get(cache_key(self.provider, body))
+            return self.cache.get(cache_key(self.provider, body, self._cache_context()))
         except Exception:
             # The cache is best-effort at runtime: treat any failure as a miss.
             return None
@@ -149,7 +157,8 @@ class BaseClient:
         if self.cache is None:
             return
         try:
-            self.cache.put(cache_key(self.provider, body), self.provider, result)
+            key = cache_key(self.provider, body, self._cache_context())
+            self.cache.put(key, self.provider, result)
         except Exception:
             # A cache failure must not lose an API response the caller already paid for.
             pass

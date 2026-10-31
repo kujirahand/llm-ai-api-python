@@ -47,6 +47,12 @@ class AnthropicClient(BaseClient):
         super().__init__(*args, **kwargs)
         self.anthropic_version = anthropic_version
 
+    def _cache_context(self) -> Dict[str, Any]:
+        """Add the API version to the cache key context (it is sent as a header)."""
+        context = super()._cache_context()
+        context["anthropic_version"] = self.anthropic_version
+        return context
+
     def _auth_headers(self) -> Dict[str, str]:
         return {"x-api-key": self._api_key, "anthropic-version": self.anthropic_version}
 

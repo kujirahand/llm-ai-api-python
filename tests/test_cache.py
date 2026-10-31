@@ -48,6 +48,16 @@ class CacheKeyTest(unittest.TestCase):
         )
         self.assertNotEqual(key, cache_key("openai", dict(base, temperature=0.1)))
 
+    def test_differs_by_context(self):
+        base = {"model": "m", "messages": [{"role": "user", "content": "q"}]}
+        key = cache_key("openai", base, {"base_url": "https://a.example/v1"})
+        self.assertNotEqual(key, cache_key("openai", base))
+        self.assertNotEqual(key, cache_key("openai", base, {"base_url": "https://b.example/v1"}))
+        self.assertNotEqual(
+            key, cache_key("openai", base, {"base_url": "https://a.example/v1", "headers": {"x": "y"}})
+        )
+        self.assertEqual(key, cache_key("openai", base, {"base_url": "https://a.example/v1"}))
+
 
 class SQLiteCacheTest(CacheTestBase):
     def make_result(self):
@@ -86,6 +96,25 @@ class SQLiteCacheTest(CacheTestBase):
         with SQLiteCache(path) as c:
             c.put("k", "openai", self.make_result())
         self.assertTrue(os.path.exists(path))
+
+    def test_corrupted_row_is_a_miss_and_deleted(self):
+        import sqlite3
+
+        c = SQLiteCache(self.db)
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "INSERT INTO llm_cache (key, provider, model, response, created_at)"
+            " VALUES ('bad', 'openai', NULL, 'not json', 0)"
+        )
+        conn.execute(
+            "INSERT INTO llm_cache (key, provider, model, response, created_at)"
+            " VALUES ('bad2', 'openai', NULL, '[1, 2]', 0)"
+        )
+        conn.commit()
+        conn.close()
+        self.assertIsNone(c.get("bad"))
+        self.assertIsNone(c.get("bad2"))
+        self.assertEqual(len(c), 0)
 
     def test_unusable_path(self):
         blocker = os.path.join(self.dir, "file")
@@ -171,6 +200,35 @@ class ChatCacheTest(CacheTestBase):
         m.ask("q")
         self.assertEqual(len(rec.requests), 1)
         self.assertTrue(os.path.exists(default))
+
+    def test_base_url_separates_entries(self):
+        rec_a = Recorder(json_response(OPENAI_REPLY))
+        a = llm("openai:m", api_key="k", base_url="https://a.example/v1",
+                transport=rec_a.transport, cache=self.db)
+        rec_b = Recorder(json_response(OPENAI_REPLY))
+        b = llm("openai:m", api_key="k", base_url="https://b.example/v1",
+                transport=rec_b.transport, cache=self.db)
+        a.ask("q")
+        b.ask("q")  # same provider/model/prompt, different endpoint: no cache hit
+        self.assertEqual((len(rec_a.requests), len(rec_b.requests)), (1, 1))
+        a.ask("q")
+        self.assertEqual(len(rec_a.requests), 1)
+
+    def test_extra_changes_the_key(self):
+        rec = Recorder(json_response(OPENAI_REPLY))
+        m = self.make(rec, cache=self.db)
+        m.ask("q")
+        m.ask("q", extra={"seed_hint": 1})
+        self.assertEqual(len(rec.requests), 2)
+        m.ask("q", extra={"seed_hint": 1})
+        self.assertEqual(len(rec.requests), 2)
+
+    def test_openrouter(self):
+        rec = Recorder(json_response(OPENAI_REPLY))
+        m = llm("openrouter:openai/gpt-x", api_key="k", transport=rec.transport, cache=self.db)
+        m.ask("q")
+        m.ask("q")
+        self.assertEqual(len(rec.requests), 1)
 
     def test_anthropic(self):
         rec = Recorder(json_response(CLAUDE_REPLY))

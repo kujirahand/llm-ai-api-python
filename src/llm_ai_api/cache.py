@@ -38,10 +38,17 @@ class _Unset:
 CACHE_NOT_SET: Any = _Unset()
 
 
-def cache_key(provider: str, body: Dict[str, Any]) -> str:
-    """Return the cache key: sha256 of the canonical JSON of the provider and request body."""
+def cache_key(
+    provider: str, body: Dict[str, Any], context: Optional[Dict[str, Any]] = None
+) -> str:
+    """Return the cache key: sha256 of the canonical JSON of provider, body and context.
+
+    `context` carries client settings that can change the response for the same body
+    (base URL, extra headers, the Anthropic API version), so entries are not shared
+    across different endpoints or configurations.
+    """
     canonical = json.dumps(
-        {"provider": provider, "body": body},
+        {"provider": provider, "body": body, "context": context or {}},
         sort_keys=True,
         ensure_ascii=False,
         separators=(",", ":"),
@@ -86,21 +93,39 @@ class SQLiteCache:
             conn.close()
 
     def get(self, key: str) -> Optional[ChatResult]:
-        """Return the stored result for `key`, or None on a miss."""
+        """Return the stored result for `key`, or None on a miss.
+
+        A corrupted row (invalid JSON, or not the shape `put` writes) is deleted
+        and treated as a miss instead of raising.
+        """
         with self._connect() as conn:
             row = conn.execute("SELECT response FROM llm_cache WHERE key = ?", (key,)).fetchone()
         if row is None:
             return None
-        data = json.loads(row[0])
-        u = data.get("usage")
-        usage = Usage(u.get("input_tokens"), u.get("output_tokens")) if isinstance(u, dict) else None
-        return ChatResult(
-            text=data.get("text", ""),
-            model=data.get("model"),
-            stop_reason=data.get("stop_reason"),
-            usage=usage,
-            raw=data.get("raw") or {},
-        )
+        try:
+            data = json.loads(row[0])
+            if not isinstance(data, dict) or not isinstance(data.get("text"), str):
+                raise ValueError("cached response has an unexpected shape")
+            if not isinstance(data.get("raw"), dict):
+                raise ValueError("cached response has an unexpected shape")
+            u = data.get("usage")
+            if u is None:
+                usage = None
+            elif isinstance(u, dict):
+                usage = Usage(u.get("input_tokens"), u.get("output_tokens"))
+            else:
+                raise ValueError("cached response has an unexpected shape")
+            return ChatResult(
+                text=data["text"],
+                model=data.get("model"),
+                stop_reason=data.get("stop_reason"),
+                usage=usage,
+                raw=data["raw"],
+            )
+        except (ValueError, TypeError, KeyError):
+            with self._lock, self._connect() as conn:
+                conn.execute("DELETE FROM llm_cache WHERE key = ?", (key,))
+            return None
 
     def put(self, key: str, provider: str, result: ChatResult) -> None:
         """Store `result` under `key`, replacing any existing entry."""

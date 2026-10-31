@@ -59,6 +59,8 @@ m3 = llm("openai:gpt-6-luna", cache=False)       # off for this instance only
 
 `cache=True` uses the default file `llm_ai_api_cache.db`. A `SQLiteCache` object can also be passed, and `SQLiteCache.clear()` empties it. Streaming (`stream()` / `stream_chat()`) is not cached.
 
+Note that while the cache is on, the same request always returns the same stored answer. Clear the cache or turn it off when you want a fresh generation.
+
 ## Examples
 
 See [`examples/`](examples/). Each script takes a `provider:model` argument (or the `LLM_MODEL` env var).
