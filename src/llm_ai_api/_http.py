@@ -13,6 +13,7 @@ from typing import Any, Dict, Iterable, Iterator, Optional, Tuple
 
 import httpx
 
+from .cache import ResponseCache
 from .errors import (
     APIConnectionError,
     APITimeoutError,
@@ -95,13 +96,17 @@ class BaseClient:
         headers: Optional[Dict[str, str]] = None,
         *,
         lang: Optional[str] = None,
+        cache_dir: Optional[str] = None,
         transport: Optional[httpx.BaseTransport] = None,
     ) -> None:
         """`lang` はエラーメッセージの言語（`"ja"` / `"en"`）。None なら環境から判定する。
 
+        `cache_dir` enables the response cache (default: env `LLM_AI_API_CACHE_DIR`).
+
         `transport` はテスト用（`httpx.MockTransport` を渡す）。
         """
         self.lang = lang
+        self.cache_dir = cache_dir or os.environ.get("LLM_AI_API_CACHE_DIR") or None
         key = api_key
         for name in (self.api_key_env,) + self.api_key_env_fallbacks:
             key = key or os.environ.get(name)
@@ -111,6 +116,9 @@ class BaseClient:
                 code="missing_api_key",
             )
         self._api_key = key
+        self._cache = (
+            ResponseCache(self.cache_dir, self.provider, key) if self.cache_dir else None
+        )
         self.base_url = (
             base_url or os.environ.get(self.base_url_env) or self.default_base_url
         ).rstrip("/")
@@ -151,9 +159,16 @@ class BaseClient:
         timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
         """JSON を送り、レスポンス JSON（dict）をそのまま返す。"""
+        cache_key = self._cache.key(method, path, body, False) if self._cache else None
+        cached = self._cache.load(cache_key) if self._cache else None
+        if cached is not None:
+            return cached
         resp = self._open(method, path, body, headers, timeout, stream=False)
         try:
-            return resp.json()
+            data = resp.json()
+            if self._cache:
+                self._cache.store(cache_key, data)
+            return data
         except ValueError as e:
             raise LLMError(
                 self._t("invalid_json_response", preview=resp.text[:200]),
@@ -171,10 +186,32 @@ class BaseClient:
         timeout: Optional[float] = None,
     ) -> Iterator[SSEEvent]:
         """JSON を送り、SSE イベントを順に返す。HTTP エラーはこの呼び出しで送出される。"""
+        cache_key = self._cache.key("POST", path, body, True) if self._cache else None
+        cached = self._cache.load(cache_key) if self._cache else None
+        if cached is not None:
+            return iter([SSEEvent(e.get("event"), e.get("data", "")) for e in cached["events"]])
         resp = self._open("POST", path, body, headers, timeout, stream=True)
-        return self._iter_events(resp)
+        if cache_key is None:
+            return self._iter_events(resp)
+        return self._iter_events_cached(resp, cache_key)
 
     # --- 内部 -----------------------------------------------------------------
+
+    def _iter_events_cached(self, resp: httpx.Response, cache_key: str) -> Iterator[SSEEvent]:
+        # Store only a complete stream. Parsers stop at the terminal event and close this
+        # generator early, so a terminal event counts as complete too.
+        events: list = []
+        complete = False
+        try:
+            for ev in self._iter_events(resp):
+                events.append({"event": ev.event, "data": ev.data})
+                if ev.data == "[DONE]" or ev.event == "message_stop":
+                    complete = True
+                yield ev
+            complete = True
+        finally:
+            if complete:
+                self._cache.store(cache_key, {"events": events})
 
     def _iter_events(self, resp: httpx.Response) -> Iterator[SSEEvent]:
         try:

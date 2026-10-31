@@ -3,6 +3,7 @@
 __version__ = "0.2.0"
 
 from . import models
+from .cache import clear_cache
 from .anthropic import AnthropicClient
 from .errors import (
     APIConnectionError,
@@ -29,6 +30,7 @@ __all__ = [
     "__version__",
     "llm",
     "models",
+    "clear_cache",
     "set_language",
     "get_language",
     "LLM",

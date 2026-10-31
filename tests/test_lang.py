@@ -99,7 +99,7 @@ class FallbackTest(unittest.TestCase):
     def test_every_en_id_is_used_in_code(self):
         src = ""
         base = os.path.dirname(llm_ai_api.__file__)
-        for name in ("_http.py", "llm.py", "anthropic.py"):
+        for name in ("_http.py", "llm.py", "anthropic.py", "cache.py"):
             with open(os.path.join(base, name), encoding="utf-8") as f:
                 src += f.read()
         for msg_id in loc_en.MESSAGES:

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Encrypted local response cache in SQLite (`LLM_AI_API_CACHE_DIR` or `cache_dir=`) and `clear_cache(days)`, see `docs/io_cache.md`.
+- Docs on provider prompt caching (`docs/cache.md`).
+
 ## 0.2.0
 
 First functional release (0.0.1 only reserved the package name).

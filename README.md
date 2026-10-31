@@ -78,6 +78,16 @@ m = llm("openai:gpt-6-luna", lang="en")  # or per model
 Every exception has a language-independent `code` (e.g. `"missing_api_key"`) you can check instead of the message.
 Messages returned by the API itself are never translated.
 
+## Input/output cache
+
+Set the environment variable `LLM_AI_API_CACHE_DIR` (or pass `cache_dir=`) and a request that was already made is answered from disk instead of calling the API. It is meant for tests and debugging. Once a response is cached, the same request does not call the API again.
+
+See [docs/io_cache.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/io_cache.md) for details.
+
+## Prompt caching
+
+See [docs/cache.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/cache.md).
+
 ## License
 
 MIT
