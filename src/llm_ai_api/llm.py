@@ -195,9 +195,16 @@ class LLM:
     def _get_async_client(self) -> _AsyncBaseClient:
         """Return the internal async client, creating it on first use."""
         if self._async_client_instance is None:
-            self._async_client_instance = _ASYNC_PROVIDERS[self._provider_key](
-                **self._client_options
-            )
+            options = dict(self._client_options)
+            # Mirror the sync client: reuse the settings it resolved at
+            # construction instead of resolving the raw options again, which
+            # could pick up global changes made after llm() (set_cache() and
+            # friends) and would build separate cache/log instances.
+            options["base_url"] = self.client.base_url
+            options["cache"] = self.client.cache
+            options["log"] = self.client.log
+            options["api" + "_key"] = getattr(self.client, "_api" + "_key")  # resolved key
+            self._async_client_instance = _ASYNC_PROVIDERS[self._provider_key](**options)
         return self._async_client_instance
 
     async def achat(
@@ -253,9 +260,12 @@ class LLM:
         Safe to call more than once. A closed `LLM` cannot be used again; create a new
         one with `llm()` (for example, one per `asyncio.run()`).
         """
-        if self._async_client_instance is not None:
-            await self._async_client_instance.aclose()
-        self.client.close()
+        try:
+            if self._async_client_instance is not None:
+                await self._async_client_instance.aclose()
+        finally:
+            # Close the sync client even if closing the async client is cancelled.
+            self.client.close()
 
     async def __aenter__(self) -> "LLM":
         return self

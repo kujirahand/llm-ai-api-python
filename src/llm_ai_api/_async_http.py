@@ -23,6 +23,7 @@ from ._http import (
     _MAX_RETRY_AFTER,
     _RETRY_STATUS,
     _mask_url,
+    _is_terminal_event,
     _SSEDecoder,
     _user_agent,
     error_message,
@@ -413,9 +414,15 @@ class _AsyncEventStream:
         if self._closed:
             return
         self._closed = True
-        await _close_quietly(self._events)
-        await _close_quietly(self._lines)
-        await _close_quietly(self._resp)
+        # Attempt every close even if an earlier one is cancelled, so the
+        # response is not left open.
+        try:
+            await _close_quietly(self._events)
+        finally:
+            try:
+                await _close_quietly(self._lines)
+            finally:
+                await _close_quietly(self._resp)
 
 
 class _ReplayEvents:
@@ -473,7 +480,7 @@ class _AsyncRecordedEvents:
             await _close_quietly(self._events)
             raise
         self._recorded.append({"event": ev.event, "data": ev.data})
-        if ev.data == "[DONE]" or ev.event == "message_stop":
+        if _is_terminal_event(ev):
             await self._store()
         return ev
 
