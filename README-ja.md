@@ -29,6 +29,7 @@ print(luna.ask("可愛い犬の名前を考えて"))
 API キーは環境変数（`OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`（または `GOOGLE_API_KEY`））で渡します。
 モデルは `"<プロバイダー>:<モデル名>"` で指定します（`openai` / `openrouter` / `anthropic`（別名 `claude`） / `google`）。
 Google Gemini は、Google の OpenAI 互換エンドポイント経由で呼び出します。
+API キーの設定方法など、最初から順に試す手順は[チュートリアル](docs/tutorial-ja.md)を参照してください。
 
 ### ストリーミングとチャット
 
@@ -117,7 +118,7 @@ asyncio.run(main())
 
 キャッシュとログは非同期でも同期版と同じように働きます。非同期に対応しているのは共通インターフェイス（`llm()`）だけで、プロバイダークライアントや生レイヤー（`request()`）の非同期版はありません。
 
-最初から順に試したい方は、[チュートリアル](docs/tutorial-ja.md) を参照してください。接続の使い回しと終了処理については、[チュートリアルの「使い回しと後片付け」](docs/tutorial-ja.md#9-使い回しと後片付け) を参照してください。
+接続の使い回しと終了処理については、[チュートリアルの「使い回しと後片付け」](docs/tutorial-ja.md#9-使い回しと後片付け) を参照してください。
 
 ## API応答のキャッシュ
 
