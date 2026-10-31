@@ -23,6 +23,7 @@ from ._http import (
     _MAX_RETRY_AFTER,
     _RETRY_STATUS,
     _mask_url,
+    _is_terminal_event,
     _SSEDecoder,
     _user_agent,
     error_message,
@@ -473,7 +474,7 @@ class _AsyncRecordedEvents:
             await _close_quietly(self._events)
             raise
         self._recorded.append({"event": ev.event, "data": ev.data})
-        if ev.data == "[DONE]" or ev.event == "message_stop":
+        if _is_terminal_event(ev):
             await self._store()
         return ev
 

@@ -80,6 +80,27 @@ def iter_sse(lines: Iterable[str]) -> Iterator[SSEEvent]:
         yield ev
 
 
+def _is_terminal_event(ev: SSEEvent) -> bool:
+    """Whether `ev` successfully ends a stream, as the provider parsers see it.
+
+    `[DONE]` (OpenAI style) is unambiguous. For `message_stop` (Anthropic) the
+    parser decides by the payload: an event whose payload is invalid JSON or an
+    error is a failure, not a successful end, so it must not mark a recorded
+    stream as complete (a failed stream is never stored in the cache).
+    """
+    if ev.data == "[DONE]":
+        return True
+    if ev.event != "message_stop":
+        return False
+    if not ev.data:
+        return True
+    try:
+        raw = ev.json()
+    except LLMError:
+        return False
+    return (raw.get("type") or ev.event) == "message_stop"
+
+
 def _mask_url(url: str) -> str:
     """Return `url` safe for display: userinfo becomes `***`, query and fragment are dropped.
 
@@ -273,7 +294,7 @@ class BaseClient:
         try:
             for ev in events:
                 recorded.append({"event": ev.event, "data": ev.data})
-                if ev.data == "[DONE]" or ev.event == "message_stop":
+                if _is_terminal_event(ev):
                     complete = True
                 yield ev
             complete = True

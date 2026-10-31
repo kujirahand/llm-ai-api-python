@@ -253,9 +253,12 @@ class LLM:
         Safe to call more than once. A closed `LLM` cannot be used again; create a new
         one with `llm()` (for example, one per `asyncio.run()`).
         """
-        if self._async_client_instance is not None:
-            await self._async_client_instance.aclose()
-        self.client.close()
+        try:
+            if self._async_client_instance is not None:
+                await self._async_client_instance.aclose()
+        finally:
+            # Close the sync client even if closing the async client is cancelled.
+            self.client.close()
 
     async def __aenter__(self) -> "LLM":
         return self
