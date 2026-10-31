@@ -503,22 +503,19 @@ class _AsyncBaseClient:
                 # Always send with stream=True so Content-Length can be checked before
                 # a non-stream body is read.
                 resp = await self._client.send(req, stream=True)
-                if resp.status_code >= 400:
-                    # The error body has not been read yet, and reading
-                    # it can fail too, so it has to be inside this try (conversion + retry).
-                    await resp.aread()
-                elif not stream:
-                    if _http._declared_too_large(resp):
+                if resp.status_code >= 400 or not stream:
+                    try:
+                        if _http._declared_too_large(resp):
+                            raise _http._too_large(_http._MAX_RESPONSE_BYTES, self.lang)
+                        buffer = _http._ResponseBuffer(self.lang)
+                        async for chunk in resp.aiter_bytes():
+                            buffer.add(chunk)
+                        resp._content = buffer.content()
+                    except LLMError:
                         meta = self._call_meta(method, path, stream, started, attempt, resp)
                         await resp.aclose()
                         self._emit_request_error(meta, "response_too_large")
-                        raise _http._too_large(_http._MAX_RESPONSE_BYTES, self.lang)
-                    await resp.aread()
-                    if len(resp.content) > _http._MAX_RESPONSE_BYTES:
-                        meta = self._call_meta(method, path, stream, started, attempt, resp)
-                        await resp.aclose()
-                        self._emit_request_error(meta, "response_too_large")
-                        raise _http._too_large(_http._MAX_RESPONSE_BYTES, self.lang)
+                        raise
             except httpx.RequestError as e:
                 if resp is not None:
                     await resp.aclose()

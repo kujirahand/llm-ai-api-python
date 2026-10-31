@@ -111,6 +111,22 @@ def _too_large(limit: int, lang: Optional[str]) -> LLMError:
     return LLMError(t("response_too_large", lang, limit=limit), code="response_too_large")
 
 
+class _ResponseBuffer:
+    """Collect decoded response bytes up to the shared response limit."""
+
+    def __init__(self, lang: Optional[str]) -> None:
+        self.lang = lang
+        self.buffer = bytearray()
+
+    def add(self, chunk: bytes) -> None:
+        if len(self.buffer) + len(chunk) > _MAX_RESPONSE_BYTES:
+            raise _too_large(_MAX_RESPONSE_BYTES, self.lang)
+        self.buffer.extend(chunk)
+
+    def content(self) -> bytes:
+        return bytes(self.buffer)
+
+
 class _SSEDecoder:
     """Line-by-line SSE state machine, shared by the sync and async readers.
 
@@ -795,22 +811,19 @@ class BaseClient:
                 # Always send with stream=True so Content-Length can be checked before
                 # a non-stream body is read.
                 resp = self._client.send(req, stream=True)
-                if resp.status_code >= 400:
-                    # The error body has not been read yet, and reading
-                    # it can fail too, so it has to be inside this try (conversion + retry).
-                    resp.read()
-                elif not stream:
-                    if _declared_too_large(resp):
+                if resp.status_code >= 400 or not stream:
+                    try:
+                        if _declared_too_large(resp):
+                            raise _too_large(_MAX_RESPONSE_BYTES, self.lang)
+                        buffer = _ResponseBuffer(self.lang)
+                        for chunk in resp.iter_bytes():
+                            buffer.add(chunk)
+                        resp._content = buffer.content()
+                    except LLMError:
                         meta = self._call_meta(method, path, stream, started, attempt, resp)
                         resp.close()
                         self._emit_request_error(meta, "response_too_large")
-                        raise _too_large(_MAX_RESPONSE_BYTES, self.lang)
-                    resp.read()
-                    if len(resp.content) > _MAX_RESPONSE_BYTES:
-                        meta = self._call_meta(method, path, stream, started, attempt, resp)
-                        resp.close()
-                        self._emit_request_error(meta, "response_too_large")
-                        raise _too_large(_MAX_RESPONSE_BYTES, self.lang)
+                        raise
             except httpx.RequestError as e:
                 if resp is not None:
                     resp.close()

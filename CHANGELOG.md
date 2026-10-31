@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Limit decoded response bodies while reading, including HTTP error responses, in sync and async calls (#49).
+
 ## 0.5.0
 
 - Call metadata on success: `ChatResult.request_id`, `latency` (seconds), and `retries`. The same fields are on `APIConnectionError`, `APITimeoutError`, `APIStatusError`, and `APIStreamError`. Streaming exposes `request_id` on each `ChatChunk` and on the iterators from `stream()` / `stream_chat()` / `request_stream()` (#30).
