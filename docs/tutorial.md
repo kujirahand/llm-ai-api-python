@@ -196,17 +196,13 @@ Failed requests are retried automatically, up to `max_retries` times (2 by defau
 
 Connection failures (`APIConnectionError` / `APITimeoutError`) and mid-stream errors (`APIStreamError`) also have `provider` and `request_id`. `request_id` is `None` when the failure happened before response headers. They also have `retries` and `latency` (seconds). HTTP errors (`APIStatusError`) have `retries` and `latency` too.
 
-Retries and failures are not written to the I/O log. Receive them with `add_event_listener`. A listener that raises does not fail the request.
+Retries and failures are not written to the I/O log. Receive them with `add_event_listener`. A listener that raises does not fail the request. Pass `None` to receive every event.
 
 ```python
-def on_event(event, payload):
-    print(event, payload.get("request_id"), payload.get("retries"))
-
-m.add_event_listener("retry", on_event)
-m.add_event_listener("connection_error", on_event)
+m.add_event_listener("retry", lambda event, payload: print(event, payload.get("request_id")))
 ```
 
-Event names are `retry`, `connection_error`, `response`, `http_error`, `request_error`, `stream_error`, `stream_end`, and `cache_hit`. Pass `None` to receive every event. `remove_event_listener` takes the same event name and function you registered.
+Event names, payload keys, and where `request_id` appears are in [Events](events.md).
 
 ## 9. Reuse and cleanup
 
@@ -258,6 +254,7 @@ For production deployments where you need to change the number of concurrent con
 
 ## 10. Next steps
 
+- [Events](events.md): `add_event_listener`, the event list, and where to read `request_id`.
 - [Configuration reference](config.md): `llm()` settings and the retry policy.
 - [Local response cache](io_cache.md): repeat requests return the stored result without calling the API (off by default).
 - [Input/output log](io_logs.md): record inputs and outputs as JSON Lines (off by default).

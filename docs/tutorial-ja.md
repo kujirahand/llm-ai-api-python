@@ -196,17 +196,13 @@ except LLMError as e:
 
 接続失敗（`APIConnectionError` / `APITimeoutError`）とストリーム途中のエラー（`APIStreamError`）にも、`provider` と `request_id` があります。ヘッダーが届く前の接続失敗では `request_id` は `None` です。`retries` と `latency`（秒）も付きます。HTTP エラー（`APIStatusError`）にも `retries` と `latency` が付きます。
 
-リトライや失敗は入出力ログには残りません。`add_event_listener` で受け取ります。リスナーが例外を出しても、そのリクエストは続行します。
+リトライや失敗は入出力ログには残りません。`add_event_listener` で受け取ります。リスナーが例外を出しても、そのリクエストは続行します。`None` を渡すとすべてのイベントを受け取ります。
 
 ```python
-def on_event(event, payload):
-    print(event, payload.get("request_id"), payload.get("retries"))
-
-m.add_event_listener("retry", on_event)
-m.add_event_listener("connection_error", on_event)
+m.add_event_listener("retry", lambda event, payload: print(event, payload.get("request_id")))
 ```
 
-イベント名は `retry`、`connection_error`、`response`、`http_error`、`request_error`、`stream_error`、`stream_end`、`cache_hit` です。`None` を渡すとすべてを受け取ります。外すときは `remove_event_listener` に、登録したときと同じイベント名と関数を渡します。
+イベント名、payload のキー、`request_id` の参照先は、[イベント](events-ja.md) を参照してください。
 
 ## 9. 使い回しと後片付け
 
@@ -258,6 +254,7 @@ asyncio.run(main())
 
 ## 10. 次のステップ
 
+- [イベント](events-ja.md): `add_event_listener`、イベントの一覧、`request_id` の参照先です。
 - [設定リファレンス](config-ja.md): `llm()` の設定とリトライの方針です。
 - [応答のローカルキャッシュ](io_cache-ja.md): 同じリクエストでは API を呼ばず、保存済みの結果を返します（既定はオフ）。
 - [入出力ログ](io_logs-ja.md): 入力と出力を JSON Lines で記録します（既定はオフ）。

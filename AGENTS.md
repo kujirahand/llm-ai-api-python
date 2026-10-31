@@ -120,6 +120,8 @@ llm-ai-api-python/
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
 ├── docs/
 │   ├── publish.md       # PyPI への公開手順
+│   ├── events.md        # イベントリスナーと request_id の参照先（英語）
+│   ├── events-ja.md     # 同（日本語）
 │   ├── config.md        # 設定リファレンスとリトライの方針（英語）
 │   ├── config-ja.md     # 同（日本語）
 │   ├── cache.md         # プロンプトキャッシュの使い方（英語）
@@ -372,7 +374,7 @@ class ChatChunk:
 
 ### 5.9 イベント（`_events.py`）
 
-インスタンスにリスナーを登録し、リトライ・接続失敗・成功時の `request_id` など、リクエストの区切りを受け取る。入出力ログは成功したチャットだけを残す（5.8）。失敗の観測はこちらを使う。
+インスタンスにリスナーを登録し、リトライ・接続失敗・成功時の `request_id` など、リクエストの区切りを受け取る。入出力ログは成功したチャットだけを残す（5.8）。失敗の観測はこちらを使う。利用者向けの説明は [docs/events.md](docs/events.md)（英語）と [docs/events-ja.md](docs/events-ja.md)（日本語）。
 
 ```python
 def on_event(event, payload):
