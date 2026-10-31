@@ -49,7 +49,8 @@ class LogTest(unittest.TestCase):
         self.assertFalse(r["cached"])
         self.assertEqual(r["request"]["messages"][0]["content"], "可愛い犬の名前を考えて")
         self.assertEqual(r["response"], OPENAI_REPLY)
-        self.assertNotIn("sk-secret", open(self.path, encoding="utf-8").read())
+        with open(self.path, encoding="utf-8") as f:
+            self.assertNotIn("sk-secret", f.read())
 
     def test_stream_logged_after_complete_read(self):
         m = self.make(Recorder(sse_response(OPENAI_STREAM)), log=self.path)
