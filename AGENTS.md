@@ -99,6 +99,7 @@ llm-ai-api-python/
 │   ├── test_llm.py
 │   ├── test_async_clients.py # 内部の非同期クライアント
 │   ├── test_async_llm.py     # LLM の aask / achat / astream
+│   ├── test_per_call_timeout.py # 呼び出しごとの timeout（httpx に届くこと）
 │   ├── test_models.py
 │   ├── test_lang.py
 │   ├── test_cache.py
@@ -159,6 +160,7 @@ m.client    # 下位の OpenAIClient など（生レイヤーにアクセスで�
 - モデル指定文字列は **最初の `:` で分割** する。OpenRouter のモデル名は `/` や `:` を含むため（例: `"openrouter:meta-llama/llama-4:free"` → provider `openrouter`、model `meta-llama/llama-4:free`）。
 - プロバイダー名は小文字に正規化する。`claude` は `anthropic` の別名。未知のプロバイダーや `:` がない文字列は `LLMConfigError`。
 - `ask()` / `stream()` / `chat()` は、キーワード引数（`system`, `max_tokens`, `temperature`, `extra`）で `llm()` の既定値を呼び出しごとに上書きできる。引数を渡さなければ既定値を使い、**`None` を明示すると、その呼び出しだけ既定値を無効にして送らない**（`llm(..., temperature=0.4).ask("q", temperature=None)` は `temperature` を送らない）。両者を区別するため、これらの引数の既定値は内部のセンチネル `UNSET` で、`None` ではない。`extra` は dict を渡すと既定値と浅くマージし、`None` で既定の `extra` を無効にする。ただし Claude の `max_tokens` は API の必須項目なので、`None` を指定してもライブラリ既定の 16000 が使われる。`llm()` 自体の引数では `None` は「既定値なし」の意味。
+- `ask()` / `stream()` / `chat()`（と `aask()` / `achat()` / `astream()`）は、キーワード専用の `timeout: Optional[float] = None`（秒）も受け取る。`None`（既定）はクライアントの設定を使い、数値はその呼び出しだけ生レイヤーの `timeout` と同じ意味（`httpx.Timeout(timeout, connect=10.0)`）で上書きする。他の引数と違い `UNSET` は使わない（`llm()` に「既定のタイムアウト」はなく、クライアントの `timeout=` がそれにあたる）。プロバイダーの `chat()` / `stream_chat()` を通って `request()` / `request_stream()` の `timeout=` に渡される。リクエストボディにもキャッシュキーにも含めず、キャッシュヒット時は無視する。**操作ごとのタイムアウトで、合計の期限ではない**（ストリームでは次のデータまでの時間。リトライで延びる）。この引数だけでは、同期コードで合計の期限は保証できない（データが届くたびに待ち時間がリセットされるため、`max_retries=0` でも、特にストリームや少しずつ返る応答では上限がない）。非同期で厳密な期限が必要なときは、`astream()` の呼び出しではなく、ストリームを読み切る処理全体のコルーチンを `asyncio.wait_for()` で包んでもらう（通信は最初の反復で始まるため）。
 - `ask()` / `stream()` は **状態を持たない**（会話履歴を保持しない）。会話を続けたい場合は `chat()` に messages を渡してもらう。
 - `ask()` は `ChatResult.text` をそのまま返す。`stop_reason` が `"refusal"` や `"max_tokens"` でも例外にしない（必要なら `chat()` を使って確認してもらう）。
 - `LLM` は `close()` とコンテキストマネージャ（`with llm(...) as m:`）に対応する。
@@ -247,6 +249,7 @@ result = client.chat(
     max_tokens=None,       # 指定時のみ送信（Anthropic のみ未指定時 16000 を補う）
     temperature=None,      # 指定時のみ送信
     extra=None,            # dict。ボディにそのままマージ（最後に適用し、上書き可）
+    timeout=None,          # 秒。None ならクライアントの設定。この呼び出しだけ上書き（ボディには入れない）
 )
 for chunk in client.stream_chat(model=..., messages=..., ...):
     print(chunk.text, end="")  # テキスト差分

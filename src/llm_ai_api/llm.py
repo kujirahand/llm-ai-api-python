@@ -155,10 +155,15 @@ class LLM:
         max_tokens: Union[Optional[int], _Unset] = UNSET,
         temperature: Union[Optional[float], _Unset] = UNSET,
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        timeout: Optional[float] = None,
     ) -> ChatResult:
-        """messages を渡して `ChatResult`（stop_reason や raw を含む）を受け取る。"""
+        """messages を渡して `ChatResult`（stop_reason や raw を含む）を受け取る。
+
+        `timeout`（秒）は、この呼び出しだけクライアントのタイムアウトを上書きする（`None` なら
+        クライアントの設定）。操作ごとのタイムアウトで、合計の期限ではない（リトライで延びる）。
+        """
         kw = self._prepare(messages, system, max_tokens, temperature, extra)
-        return self.client.chat(**kw)  # type: ignore[attr-defined]
+        return self.client.chat(timeout=timeout, **kw)  # type: ignore[attr-defined]
 
     def ask(
         self,
@@ -168,11 +173,17 @@ class LLM:
         max_tokens: Union[Optional[int], _Unset] = UNSET,
         temperature: Union[Optional[float], _Unset] = UNSET,
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        timeout: Optional[float] = None,
     ) -> str:
-        """1 つの質問を送り、回答のテキストだけを返す。"""
+        """1 つの質問を送り、回答のテキストだけを返す。`timeout` は `chat()` と同じ。"""
         msgs = [{"role": "user", "content": prompt}]
         return self.chat(
-            msgs, system=system, max_tokens=max_tokens, temperature=temperature, extra=extra
+            msgs,
+            system=system,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            extra=extra,
+            timeout=timeout,
         ).text
 
     def stream(
@@ -183,14 +194,16 @@ class LLM:
         max_tokens: Union[Optional[int], _Unset] = UNSET,
         temperature: Union[Optional[float], _Unset] = UNSET,
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        timeout: Optional[float] = None,
     ) -> Iterator[str]:
-        """1 つの質問を送り、回答のテキスト差分を順に返す。
+        """1 つの質問を送り、回答のテキスト差分を順に返す。`timeout` は `chat()` と同じ
+        （ストリームでは「次のデータが届くまでの時間」）。
 
         最後まで読むか捨てると接続を閉じる。途中でやめるときは `close()` を呼ぶ。
         """
         msgs = [{"role": "user", "content": prompt}]
         kw = self._prepare(msgs, system, max_tokens, temperature, extra)
-        chunks = self.client.stream_chat(**kw)  # type: ignore[attr-defined]
+        chunks = self.client.stream_chat(timeout=timeout, **kw)  # type: ignore[attr-defined]
         return (c.text for c in chunks if c.text)
 
     # --- async ---------------------------------------------------------------
@@ -218,10 +231,16 @@ class LLM:
         max_tokens: Union[Optional[int], _Unset] = UNSET,
         temperature: Union[Optional[float], _Unset] = UNSET,
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        timeout: Optional[float] = None,
     ) -> ChatResult:
-        """Async `chat()`: send messages and return a `ChatResult`."""
+        """Async `chat()`: send messages and return a `ChatResult`.
+
+        `timeout` (seconds) overrides the client timeout for this call only (`None` keeps
+        the client's setting). It is a per-operation timeout, not a total deadline: retries
+        extend it. Use `asyncio.wait_for()` for a hard deadline.
+        """
         kw = self._prepare(messages, system, max_tokens, temperature, extra)
-        return await self._get_async_client().achat(**kw)  # type: ignore[attr-defined]
+        return await self._get_async_client().achat(timeout=timeout, **kw)  # type: ignore[attr-defined]
 
     async def aask(
         self,
@@ -231,11 +250,20 @@ class LLM:
         max_tokens: Union[Optional[int], _Unset] = UNSET,
         temperature: Union[Optional[float], _Unset] = UNSET,
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        timeout: Optional[float] = None,
     ) -> str:
-        """Async `ask()`: send one question and return only the answer text."""
+        """Async `ask()`: send one question and return only the answer text.
+
+        `timeout` is the same as in `achat()`.
+        """
         msgs = [{"role": "user", "content": prompt}]
         result = await self.achat(
-            msgs, system=system, max_tokens=max_tokens, temperature=temperature, extra=extra
+            msgs,
+            system=system,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            extra=extra,
+            timeout=timeout,
         )
         return result.text
 
@@ -247,15 +275,17 @@ class LLM:
         max_tokens: Union[Optional[int], _Unset] = UNSET,
         temperature: Union[Optional[float], _Unset] = UNSET,
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        timeout: Optional[float] = None,
     ) -> AsyncIterator[str]:
         """Async `stream()`: return an async iterator of answer text deltas.
 
         Use it directly with `async for` (no `await`). The request starts at the first
         iteration, so connection and HTTP errors are raised there. Call `aclose()` on
-        the returned iterator to stop a stream early.
+        the returned iterator to stop a stream early. `timeout` is the same as in `achat()`
+        (for a stream it is the time to wait for the next data).
         """
         msgs = [{"role": "user", "content": prompt}]
-        return _AsyncTextStream(self, msgs, system, max_tokens, temperature, extra)
+        return _AsyncTextStream(self, msgs, system, max_tokens, temperature, extra, timeout)
 
     async def aclose(self) -> None:
         """Close the async client (if it was created) and the sync client.
@@ -291,9 +321,11 @@ class _AsyncTextStream:
         max_tokens: Union[Optional[int], _Unset],
         temperature: Union[Optional[float], _Unset],
         extra: Union[Optional[Dict[str, Any]], _Unset],
+        timeout: Optional[float] = None,
     ) -> None:
         self._owner = owner
         self._args = (messages, system, max_tokens, temperature, extra)
+        self._timeout = timeout
         self._chunks: Any = None
         self._done = False
 
@@ -307,7 +339,7 @@ class _AsyncTextStream:
             if self._chunks is None:
                 kw = self._owner._prepare(*self._args)
                 client = self._owner._get_async_client()
-                self._chunks = await client.stream_chat(**kw)  # type: ignore[attr-defined]
+                self._chunks = await client.stream_chat(timeout=self._timeout, **kw)  # type: ignore[attr-defined]
             while True:
                 chunk = await self._chunks.__anext__()
                 if chunk.text:
