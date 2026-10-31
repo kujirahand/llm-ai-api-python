@@ -2,11 +2,19 @@
 
 ## Unreleased
 
+## 0.3.1
+
 - Optional encrypted SQLite response cache for chat and streaming (`set_cache()`, `cache=`, `LLM_AI_API_CACHE_DIR`) and `clear_cache(days)`, see `docs/io_cache.md`.
 - Docs on provider prompt caching (`docs/cache.md`).
 - Optional JSON Lines log of inputs and outputs (`set_log()`, `log=`, `LLM_AI_API_LOG_DIR`), see `docs/io_logs.md` (#7).
 - Async support in the common interface: `LLM.aask()` / `achat()` / `astream()`, `aclose()` and `async with` (#12).
   No new public names; the cache and the log work as in the sync API. Async provider clients and an async raw layer are not public.
+- Step-by-step tutorial (`docs/tutorial.md`).
+- Fixes from post-merge reviews: a failed Anthropic stream (broken or error terminal event) is no longer
+  stored in the cache, the async client reuses the settings the sync client resolved at construction,
+  and stream/`LLM` close operations are safe to cancel.
+- httpx exceptions no longer leak: `httpx.RequestError` subclasses such as `DecodingError` are converted
+  to `APIConnectionError`, and an invalid URL raises `LLMConfigError` (`code="invalid_url"`) (#17).
 
 ## 0.2.0
 
