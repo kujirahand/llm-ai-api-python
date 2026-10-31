@@ -72,3 +72,5 @@ The change also applies to the async methods (`aask()` and so on).
 - A long `retry-after` means waiting that long. Lower `retry_after_max` to match how long you can wait.
 
 Non-streaming response bodies and HTTP error bodies (including errors starting a stream) are limited to 64 MiB after decompression. Oversized bodies raise `LLMError` with code `response_too_large`. A declared `Content-Length` over the limit is rejected before reading. Individual decoded chunks and JSON parsing can require additional memory; streaming responses have no total size limit.
+
+Each SSE line is limited to 16 MiB in decompressed bytes and UTF-8 encoding, including while it is being read. Each event is limited to 16 MiB for its event name and joined data in UTF-8 (including newlines between data lines). Exceeding either limit closes the response, raises `LLMError` with code `response_too_large`, and emits `request_error`. These limits also apply to raw streams.

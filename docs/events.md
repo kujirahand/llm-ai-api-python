@@ -130,7 +130,7 @@ The keys of `http_error`, plus `code`:
 
 | `code` | When |
 |---|---|
-| `response_too_large` | The body, or one SSE line, is over the size limit. Emitted instead of `response` when the body is rejected before it is accepted |
+| `response_too_large` | The body, an SSE line, or an SSE event is over the size limit. Emitted instead of `response` when the body is rejected before it is accepted |
 | `invalid_json_response` | The body or an SSE `data` line is not a JSON object. A non-stream HTTP success emits `response` first, then this event |
 
 On a stream, `method`, `path`, and `status_code` are `None` when the events are replayed from the cache.

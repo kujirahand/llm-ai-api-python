@@ -417,7 +417,7 @@ m.remove_event_listener("retry", on_event)       # 同じ event と同一の関�
 - 共通ヘッダー: `Content-Type: application/json`, `Accept: application/json`（ストリーム時 `text/event-stream`）, `User-Agent: llm-ai-api-python/<version>`。
 - JSON は `json.dumps(body, ensure_ascii=False).encode("utf-8")` で自前でシリアライズして `content=` に渡す（httpx の `json=` の挙動差に依存しない）。
 - タイムアウト既定値は 600 秒（長い生成に対応するため）。接続タイムアウトは `connection` の `connect_timeout`（既定 10 秒）で、クライアント生成時と呼び出しごとの timeout 指定の両方に使う。
-- ストリーミングは `client.stream("POST", ...)` と `response.iter_lines()` を使い、SSE パースは自前で行う。
+- ストリーミングは `client.stream("POST", ...)` を使い、解凍済みバイトを逐次読んで、SSE パースは自前で行う。
 - `request_stream()` は `httpx.Response` を所有する `_EventStream`（`close()` を持つイテレータ）を返す。最後まで読んだとき・エラー時・`close()` でレスポンスを閉じ、一度も読まずに捨てられた場合も `__del__` で閉じる（素の generator では `finally` が動かず、接続プールが枯渇するため。#25）。
 - 例外の変換: `httpx.TimeoutException` → `APITimeoutError`、その他の `httpx.RequestError`（`TransportError` や `DecodingError` など）→ `APIConnectionError`（リトライするかどうかは下の「リトライ」の分類による）。リクエスト組み立て時の `httpx.InvalidURL` → `LLMConfigError`（`code="invalid_url"`、URL は `_mask_url()` でマスクして表示）。httpx の例外をそのまま外に出さない。
 - リトライ（自前で実装する。#26）:
@@ -431,7 +431,7 @@ m.remove_event_listener("retry", on_event)       # 同じ event と同一の関�
   - `retry_after_max` は 0 以上の有限の数に限る。負の値・NaN・無限大（数でない値も）は、同期・非同期クライアントの生成時と `LLM.set_config()` で `LLMConfigError`（`code="invalid_option"`）にする（判定は `_http._check_retry_after_max()`）。`set_config()` は検証してから適用するので、不正な値では何も変えない。そのまま `sleep()` に渡ると `ValueError` が漏れるため。
   - `max_retries` は検証しない。ループは `attempt < max_retries` で判定するので、負の値は `0`（リトライしない）と同じに動く。
   - ストリーミングは、レスポンスを読み始めた後はリトライしない。
-- サイズの安全弁: 非ストリーム応答と HTTP エラー応答（ストリーム開始時も含む）は、同期・非同期とも解凍後のボディを逐次読み、`_MAX_RESPONSE_BYTES`（64 MiB）を超えるとレスポンスを閉じて `LLMError`（`code="response_too_large"`）を送出する。`Content-Length` が上限を超える場合は読み取り前に拒否する。SSE の 1 行は UTF-8 で `_MAX_SSE_LINE_BYTES`（16 MiB）を超えると同じエラーにする。ストリーム全体の長さには上限を設けない。
+- サイズの安全弁: 非ストリーム応答と HTTP エラー応答（ストリーム開始時も含む）は、同期・非同期とも解凍後のボディを逐次読み、`_MAX_RESPONSE_BYTES`（64 MiB）を超えるとレスポンスを閉じて `LLMError`（`code="response_too_large"`）を送出する。`Content-Length` が上限を超える場合は読み取り前に拒否する。SSE の 1 行は改行なしの解凍済みバイトと UTF-8 換算の両方を `_MAX_SSE_LINE_BYTES`（16 MiB）に制限し、行の組み立て中にも検査する。1 イベントの保持する event 名と data（data 行間の改行を含む）の UTF-8 合計も `_MAX_SSE_EVENT_BYTES`（16 MiB）に制限する。超過時はレスポンスを閉じ、同じエラーと `request_error` を出す。ストリーム全体の長さには上限を設けない。
   - 残る限界: httpx が返す個々の解凍済みチャンクや解凍処理、本文のコピー、JSON の解析には追加メモリが必要なため、ピークメモリの厳密な上限ではない。
 - ストリーミング開始時の HTTP エラー応答の読み取りもヘッダー受信と同じ例外変換・リトライ判定の対象にし、httpx の例外を外に漏らさない。
 - パッケージ内の `llm` は関数（`llm_ai_api.llm`）で、同名のモジュール `llm.py` を隠す。モジュールを直接参照するときは `sys.modules["llm_ai_api.llm"]` を使う。
@@ -490,7 +490,7 @@ LLMError                      # 基底
   | `invalid_event` | `LLMConfigError`（未知のイベント名） |
   | `invalid_listener` | `LLMConfigError`（リスナーが呼び出し可能でない） |
   | `invalid_json_response` | `LLMError` |
-  | `response_too_large` | `LLMError`（レスポンス本体または SSE の 1 行がサイズ上限を超えた） |
+  | `response_too_large` | `LLMError`（レスポンス本体、SSE の 1 行または 1 イベントがサイズ上限を超えた） |
 
 ## 7.1 多言語化（`lang/`）
 

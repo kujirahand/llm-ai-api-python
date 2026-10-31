@@ -130,7 +130,7 @@ payload に API キー、認証ヘッダー、リクエスト本文、レスポ�
 
 | `code` | とき |
 |---|---|
-| `response_too_large` | ボディ、または SSE の 1 行がサイズ上限を超えた。受け入れる前に拒否したときは `response` の代わりに出る |
+| `response_too_large` | ボディ、SSE の 1 行、または 1 イベントがサイズ上限を超えた。受け入れる前に拒否したときは `response` の代わりに出る |
 | `invalid_json_response` | ボディまたは SSE の `data` が JSON オブジェクトでない。非ストリームで HTTP が成功したときは、先に `response`、続いてこのイベント |
 
 ストリームをキャッシュから再生しているとき、`method`、`path`、`status_code` は `None` になることがあります。

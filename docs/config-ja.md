@@ -72,3 +72,5 @@ m.set_config(retry_read_timeout=True, retry_after_max=10)
 - `retry-after` が長すぎると、その間ずっと待つことになります。待てる時間に合わせて `retry_after_max` を小さくしてください。
 
 非ストリーミング応答と HTTP エラー応答（ストリーム開始時を含む）は、解凍後の本文を 64 MiB に制限します。超過時は `LLMError`（コード `response_too_large`）を送出します。`Content-Length` が上限を超える場合は読み取り前に拒否します。個々の解凍済みチャンクや JSON の解析には追加メモリが必要で、ストリーム全体のサイズには上限がありません。
+
+SSE の各行は解凍後のバイト数と UTF-8 換算の両方で 16 MiB に制限し、読み取り中にも検査します。各イベントは event 名と連結した data の UTF-8 合計（data 行間の改行を含む）を 16 MiB に制限します。超過時はレスポンスを閉じ、`LLMError`（コード `response_too_large`）を送出し、`request_error` を通知します。生ストリームにも適用します。

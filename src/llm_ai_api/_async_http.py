@@ -60,6 +60,15 @@ from .log import LOG_NOT_SET, resolve_log
 from .types import ChatChunk, ChatResult, SSEEvent
 
 
+async def _aiter_sse_lines(resp: httpx.Response, lang: Optional[str]) -> AsyncIterator[str]:
+    lines = _http._SSELines(lang, resp.encoding or "utf-8")
+    async for chunk in resp.aiter_bytes():
+        for line in lines.feed(chunk):
+            yield line
+    for line in lines.flush():
+        yield line
+
+
 async def aiter_sse(
     lines: AsyncIterable[str], lang: Optional[str] = None
 ) -> AsyncIterator[SSEEvent]:
@@ -672,7 +681,7 @@ class _AsyncEventStream:
     def __init__(self, client: _AsyncBaseClient, resp: httpx.Response, meta: _CallMeta) -> None:
         self._client = client
         self._resp = resp
-        self._lines = resp.aiter_lines()
+        self._lines = _aiter_sse_lines(resp, client.lang)
         self._events = aiter_sse(self._lines, client.lang)
         self._meta = meta
         self.request_id = meta.request_id

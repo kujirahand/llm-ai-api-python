@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Bound SSE lines during reading and limit retained event data to 16 MiB; oversized streams raise `response_too_large` and emit `request_error`.
+
 - Raise `APIStreamError` with code `stream_incomplete` and emit `stream_error` when a chat stream ends without its terminal event (#49).
 - Limit stream cache and log buffers to 16 MiB each; oversized streams remain readable, skip caching, and log a truncated response marker (#49).
 - Secure existing log file permissions on POSIX and support an optional record redaction hook (#49).

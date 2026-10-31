@@ -53,6 +53,7 @@ def _stream_item_size(value: Any) -> int:
 
 _MAX_RESPONSE_BYTES = 64 * 1024 * 1024  # largest non-stream response body that is accepted
 _MAX_SSE_LINE_BYTES = 16 * 1024 * 1024  # longest single SSE line that is accepted
+_MAX_SSE_EVENT_BYTES = 16 * 1024 * 1024  # retained event name and data
 
 # Transport errors raised before the request reached the server: always safe to retry.
 _CONNECT_STAGE_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
@@ -138,6 +139,53 @@ class _ResponseBuffer:
         return bytes(self.buffer)
 
 
+class _SSELines:
+    """Split response bytes without buffering an unbounded line."""
+
+    def __init__(self, lang: Optional[str], encoding: str = "utf-8") -> None:
+        self._lang = lang
+        self._encoding = encoding
+        self._line = bytearray()
+        self._after_cr = False
+
+    def feed(self, chunk: bytes) -> Iterator[str]:
+        start = 0
+        if self._after_cr and chunk:
+            if chunk.startswith(b"\n"):
+                start = 1
+            self._after_cr = False
+        while start < len(chunk):
+            cr = chunk.find(b"\r", start)
+            lf = chunk.find(b"\n", start)
+            ends = [i for i in (cr, lf) if i >= 0]
+            end = min(ends) if ends else len(chunk)
+            if len(self._line) + end - start > _MAX_SSE_LINE_BYTES:
+                raise _too_large(_MAX_SSE_LINE_BYTES, self._lang)
+            self._line.extend(chunk[start:end])
+            if end == len(chunk):
+                break
+            yield self._line.decode(self._encoding, errors="replace")
+            self._line.clear()
+            start = end + 1
+            if chunk[end] == 13:
+                if start == len(chunk):
+                    self._after_cr = True
+                elif chunk[start] == 10:
+                    start += 1
+
+    def flush(self) -> Iterator[str]:
+        if self._line:
+            yield self._line.decode(self._encoding, errors="replace")
+            self._line.clear()
+
+
+def _iter_sse_lines(resp: httpx.Response, lang: Optional[str]) -> Iterator[str]:
+    lines = _SSELines(lang, resp.encoding or "utf-8")
+    for chunk in resp.iter_bytes():
+        yield from lines.feed(chunk)
+    yield from lines.flush()
+
+
 class _SSEDecoder:
     """Line-by-line SSE state machine, shared by the sync and async readers.
 
@@ -148,6 +196,8 @@ class _SSEDecoder:
         self._lang = lang
         self._event: Optional[str] = None
         self._data: list = []
+        self._data_bytes = 0
+        self._event_bytes = 0
 
     def feed(self, line: str) -> Optional[SSEEvent]:
         """Consume one line; return the event it completes, if any."""
@@ -161,8 +211,15 @@ class _SSEDecoder:
         if value.startswith(" "):
             value = value[1:]
         if name == "event":
-            self._event = value
+            size = len(value.encode("utf-8"))
+            if self._data_bytes + size > _MAX_SSE_EVENT_BYTES:
+                raise _too_large(_MAX_SSE_EVENT_BYTES, self._lang)
+            self._event, self._event_bytes = value, size
         elif name == "data":
+            size = len(value.encode("utf-8")) + (1 if self._data else 0)
+            if self._data_bytes + self._event_bytes + size > _MAX_SSE_EVENT_BYTES:
+                raise _too_large(_MAX_SSE_EVENT_BYTES, self._lang)
+            self._data_bytes += size
             self._data.append(value)
         return None
 
@@ -172,6 +229,7 @@ class _SSEDecoder:
         if self._data or self._event is not None:
             ev = SSEEvent(self._event, "\n".join(self._data))
         self._event, self._data = None, []
+        self._data_bytes = self._event_bytes = 0
         return ev
 
 
@@ -987,7 +1045,7 @@ class _EventStream:
     def __init__(self, client: BaseClient, resp: httpx.Response, meta: _CallMeta) -> None:
         self._client = client
         self._resp = resp
-        self._sse = iter_sse(resp.iter_lines(), client.lang)
+        self._sse = iter_sse(_iter_sse_lines(resp, client.lang), client.lang)
         self._meta = meta
         self.request_id = meta.request_id
         self.retries = meta.retries
