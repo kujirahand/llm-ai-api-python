@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Support HTTP-date Retry-After values and ignore invalid or non-finite delays in sync and async retries (#49).
+
 - Merge headers case-insensitively and align Anthropic parameter filtering and cache keys with the effective headers (#49).
 
 - Report runtime cache and log failures via warnings, events, and built-in object failure counters (#49).

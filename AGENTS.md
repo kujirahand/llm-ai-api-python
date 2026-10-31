@@ -430,7 +430,7 @@ m.remove_event_listener("retry", on_event)       # 同じ event と同一の関�
   - `retry_read_timeout=True`（クライアント／`llm()` の引数、`set_config()`）のときだけ、`httpx.ReadTimeout` もリトライする。その他の送信後の失敗は、これを有効にしてもリトライしない。
   - 判定は `_http._is_retryable_transport_error()` に集約し、同期・非同期で共用する。
   - 既定 2 回（`max_retries`）。指数バックオフ（0.5 秒起点、上限 8 秒、ジッターあり）。
-  - `retry-after` ヘッダーがあれば優先（上限は `retry_after_max`、既定 60 秒）。
+  - `retry-after` は秒数または HTTP 日時を受け付け、待機時間の上限は `retry_after_max`（既定 60 秒）。不正な値、NaN、無限大、負の秒数、過去の日時は無視して通常のバックオフを使う。同期・非同期で共通とする。
   - `retry_after_max` は 0 以上の有限の数に限る。負の値・NaN・無限大（数でない値も）は、同期・非同期クライアントの生成時と `LLM.set_config()` で `LLMConfigError`（`code="invalid_option"`）にする（判定は `_http._check_retry_after_max()`）。`set_config()` は検証してから適用するので、不正な値では何も変えない。そのまま `sleep()` に渡ると `ValueError` が漏れるため。
   - `max_retries` は検証しない。ループは `attempt < max_retries` で判定するので、負の値は `0`（リトライしない）と同じに動く。
   - ストリーミングは、レスポンスを読み始めた後はリトライしない。

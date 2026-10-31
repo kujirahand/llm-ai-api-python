@@ -11,6 +11,7 @@ import os
 import random
 import time
 import urllib.parse
+from email.utils import parsedate_to_datetime
 from typing import Any, Dict, Iterable, Iterator, Mapping, Optional, Tuple
 
 import httpx
@@ -103,13 +104,22 @@ def _check_retry_after_max(value: Any, lang: Optional[str]) -> float:
 
 
 def _retry_after_delay(retry_after: Optional[str], cap: float) -> Optional[float]:
-    """Parse a `retry-after` header (seconds) and cap it; None if absent or invalid."""
+    """Parse seconds or an HTTP date, returning None for invalid delays."""
     if not retry_after:
         return None
     try:
-        return min(max(float(retry_after), 0.0), cap)
+        delay = float(retry_after)
     except ValueError:
+        try:
+            date = parsedate_to_datetime(retry_after)
+            if date.tzinfo is None:
+                return None
+            delay = date.timestamp() - time.time()
+        except (ValueError, TypeError, OverflowError, OSError):
+            return None
+    if not math.isfinite(delay) or delay < 0:
         return None
+    return min(delay, cap)
 
 
 def _declared_too_large(resp: httpx.Response) -> bool:

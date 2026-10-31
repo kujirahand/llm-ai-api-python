@@ -1,6 +1,7 @@
 """Retry policy (#26): which transport errors are retried, Retry-After cap, set_config()."""
 
 import unittest
+from unittest.mock import patch
 
 import httpx
 
@@ -20,6 +21,14 @@ from llm_ai_api._async_clients import _AsyncOpenAIClient
 from .helpers import Recorder, json_response
 
 OK = {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
+
+RETRY_AFTER_CASES = [
+    ("Wed, 21 Oct 2015 07:28:10 GMT", 5.0),
+    ("Wed, 21 Oct 2015 07:28:03 GMT", 3.0),
+    ("Wed, 21 Oct 2015 07:27:59 GMT", 0.5),
+    ("NaN", 0.5), ("inf", 0.5), ("-inf", 0.5),
+    ("-1", 0.5), ("invalid", 0.5), ("0", 0.0),
+]
 
 
 def make(rec, **kw):
@@ -112,6 +121,18 @@ class TransportRetryTest(_Base):
 
 
 class StatusRetryTest(_Base):
+    def test_retry_after_dates_and_invalid_values(self):
+        for header, expected in RETRY_AFTER_CASES:
+            with self.subTest(header=header):
+                rec = Recorder(json_response({}, 429, {"retry-after": header}))
+                c = make(rec, retry_after_max=5, max_retries=1)
+                self.addCleanup(c.close)
+                with patch("llm_ai_api._http.time.time", return_value=1445412480), \
+                        patch("llm_ai_api._http.random.random", return_value=0.5):
+                    with self.assertRaises(RateLimitError):
+                        c.request("/x", {})
+                self.assertEqual(c.sleeps, [expected])
+
     def test_status_retries_unchanged(self):
         rec = Recorder(json_response({}, 500))
         c = make(rec, max_retries=2)
@@ -332,6 +353,18 @@ class AsyncRetryTest(unittest.IsolatedAsyncioTestCase):
         c = self.make(rec, retry_after_max=5)
         await c.request("/x", {})
         self.assertEqual(self.sleeps, [5.0])
+
+    async def test_retry_after_dates_and_invalid_values(self):
+        for header, expected in RETRY_AFTER_CASES:
+            with self.subTest(header=header):
+                self.sleeps.clear()
+                rec = Recorder(json_response({}, 429, {"retry-after": header}))
+                c = self.make(rec, retry_after_max=5, max_retries=1)
+                with patch("llm_ai_api._http.time.time", return_value=1445412480), \
+                        patch("llm_ai_api._async_http.random.random", return_value=0.5):
+                    with self.assertRaises(RateLimitError):
+                        await c.request("/x", {})
+                self.assertEqual(self.sleeps, [expected])
 
     async def test_llm_options_reach_async_client(self):
         rec = Recorder(json_response(OK))
