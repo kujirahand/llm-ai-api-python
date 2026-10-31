@@ -11,11 +11,12 @@ import os
 import random
 import time
 import urllib.parse
-from typing import Any, Dict, Iterable, Iterator, Optional, Tuple
+from typing import Any, Dict, Iterable, Iterator, Mapping, Optional, Tuple
 
 import httpx
 
 from .cache import CACHE_NOT_SET, SQLiteCache, cache_key, resolve_cache
+from ._connection import build_httpx_kwargs, resolve_connection
 from .log import LOG_NOT_SET, resolve_log
 from .errors import (
     APIConnectionError,
@@ -30,6 +31,8 @@ from .types import ChatChunk, ChatResult, SSEEvent
 
 _RETRY_STATUS = {408, 409, 429}
 _DEFAULT_RETRY_AFTER_MAX = 60.0
+_MAX_RESPONSE_BYTES = 64 * 1024 * 1024  # largest non-stream response body that is accepted
+_MAX_SSE_LINE_BYTES = 16 * 1024 * 1024  # longest single SSE line that is accepted
 
 # Transport errors raised before the request reached the server: always safe to retry.
 _CONNECT_STAGE_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
@@ -76,18 +79,33 @@ def _retry_after_delay(retry_after: Optional[str], cap: float) -> Optional[float
         return None
 
 
+def _declared_too_large(resp: httpx.Response) -> bool:
+    """True if the Content-Length header parses to an int over the response cap."""
+    try:
+        return int(resp.headers.get("content-length", "")) > _MAX_RESPONSE_BYTES
+    except ValueError:
+        return False
+
+
+def _too_large(limit: int, lang: Optional[str]) -> LLMError:
+    return LLMError(t("response_too_large", lang, limit=limit), code="response_too_large")
+
+
 class _SSEDecoder:
     """Line-by-line SSE state machine, shared by the sync and async readers.
 
     Lines starting with `:` (comments) are ignored; an empty line completes an event.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, lang: Optional[str] = None) -> None:
+        self._lang = lang
         self._event: Optional[str] = None
         self._data: list = []
 
     def feed(self, line: str) -> Optional[SSEEvent]:
         """Consume one line; return the event it completes, if any."""
+        if len(line.encode("utf-8")) > _MAX_SSE_LINE_BYTES:
+            raise _too_large(_MAX_SSE_LINE_BYTES, self._lang)
         if line == "":
             return self.flush()
         if line.startswith(":"):
@@ -110,12 +128,12 @@ class _SSEDecoder:
         return ev
 
 
-def iter_sse(lines: Iterable[str]) -> Iterator[SSEEvent]:
+def iter_sse(lines: Iterable[str], lang: Optional[str] = None) -> Iterator[SSEEvent]:
     """行のイテレータから SSE イベントを取り出す。
 
     `:` で始まる行（コメント）は無視し、空行でイベントを確定する。
     """
-    decoder = _SSEDecoder()
+    decoder = _SSEDecoder(lang)
     for line in lines:
         ev = decoder.feed(line)
         if ev is not None:
@@ -135,7 +153,7 @@ def _is_terminal_event(ev: SSEEvent) -> bool:
     not a successful end. Only a successful end may mark a recorded stream as
     complete (a failed stream is never stored in the cache).
     """
-    if ev.data == "[DONE]":
+    if ev.data.strip() == "[DONE]":  # the OpenAI-style parser strips too
         return True
     if not ev.data:
         # No payload: the parser falls back to the event name.
@@ -211,6 +229,7 @@ class BaseClient:
         cache: Any = CACHE_NOT_SET,
         log: Any = LOG_NOT_SET,
         transport: Optional[httpx.BaseTransport] = None,
+        connection: Optional[Mapping[str, Any]] = None,
     ) -> None:
         """`lang` はエラーメッセージの言語（`"ja"` / `"en"`）。None なら環境から判定する。
 
@@ -226,6 +245,9 @@ class BaseClient:
         未指定なら `set_log()` のグローバル設定に従う）。
 
         `transport` はテスト用（`httpx.MockTransport` を渡す）。
+
+        `connection` は接続設定の dict（`set_connection()` の全体設定をキー単位で上書きする。
+        `transport` 指定時は検証のみで httpx には適用しない）。
         """
         self.lang = lang
         _check_retry_after_max(retry_after_max, lang)
@@ -247,10 +269,19 @@ class BaseClient:
         self.max_retries = max_retries
         self.retry_read_timeout = retry_read_timeout
         self.retry_after_max = retry_after_max
+        self.connection = resolve_connection(connection, lang=lang)
+        self._connect_timeout = self.connection["connect_timeout"]
         self._extra_headers = dict(headers or {})
-        self._client = httpx.Client(
-            transport=transport, timeout=httpx.Timeout(timeout, connect=10.0)
-        )
+        if transport is not None:
+            self._client = httpx.Client(
+                transport=transport,
+                timeout=httpx.Timeout(timeout, connect=self._connect_timeout),
+            )
+        else:
+            self._client = httpx.Client(
+                timeout=httpx.Timeout(timeout, connect=self._connect_timeout),
+                **build_httpx_kwargs(self.connection, lang=lang),
+            )
 
     def __repr__(self) -> str:
         return "%s(base_url=%r)" % (type(self).__name__, _mask_url(self.base_url))
@@ -328,7 +359,9 @@ class BaseClient:
             yield chunk
         self._log_call(body, {"text": "".join(texts), "chunks": raws}, stream=True, cached=cached)
 
-    def _stream_events(self, path: str, body: Dict[str, Any]) -> Tuple[Iterator[SSEEvent], bool]:
+    def _stream_events(
+        self, path: str, body: Dict[str, Any], timeout: Optional[float] = None
+    ) -> Tuple[Iterator[SSEEvent], bool]:
         """`request_stream()` with the response cache: replay a hit, record a miss.
 
         A stream is stored only when it was read to the end (or up to its terminal event),
@@ -339,14 +372,15 @@ class BaseClient:
         if cached is not None and isinstance(cached.raw.get("events"), list):
             replay = [SSEEvent(e.get("event"), e.get("data", "")) for e in cached.raw["events"]]
             return iter(replay), True
-        events = self.request_stream(path, body)
+        events = self.request_stream(path, body, timeout=timeout)
         if self.cache is None:
             return events, False
         return self._record_events(events, body), False
 
     def _record_events(self, events: Iterator[SSEEvent], body: Dict[str, Any]) -> Iterator[SSEEvent]:
-        # Parsers stop at the terminal event and close this generator early, so a
-        # terminal event counts as complete too. Errors and early stops are not stored.
+        # Parsers stop at the terminal event and close this generator early, so only
+        # a terminal event marks the stream complete. EOF without one (a cut-off
+        # stream), errors and early stops are not stored.
         recorded: list = []
         complete = False
         try:
@@ -355,7 +389,6 @@ class BaseClient:
                 if _is_terminal_event(ev):
                     complete = True
                 yield ev
-            complete = True
         finally:
             # 途中で閉じられたときも、レスポンスをすぐに解放する。
             close = getattr(events, "close", None)
@@ -389,12 +422,22 @@ class BaseClient:
         """JSON を送り、レスポンス JSON（dict）をそのまま返す。"""
         resp = self._open(method, path, body, headers, timeout, stream=False)
         try:
-            return resp.json()
-        except ValueError as e:
-            raise LLMError(
-                self._t("invalid_json_response", preview=resp.text[:200]),
-                code="invalid_json_response",
-            ) from e
+            if len(resp.content) > _MAX_RESPONSE_BYTES:
+                raise _too_large(_MAX_RESPONSE_BYTES, self.lang)
+            try:
+                value = resp.json()
+            except ValueError as e:
+                raise LLMError(
+                    self._t("invalid_json_response", preview=resp.text[:200]),
+                    code="invalid_json_response",
+                ) from e
+            if not isinstance(value, dict):
+                # Valid JSON but not an object (array, scalar, null).
+                raise LLMError(
+                    self._t("invalid_json_response", preview=resp.text[:200]),
+                    code="invalid_json_response",
+                )
+            return value
         finally:
             resp.close()
 
@@ -462,7 +505,7 @@ class BaseClient:
         )
         kwargs: Dict[str, Any] = {}
         if timeout is not None:
-            kwargs["timeout"] = httpx.Timeout(timeout, connect=10.0)
+            kwargs["timeout"] = httpx.Timeout(timeout, connect=self._connect_timeout)
         attempt = 0
         while True:
             try:
@@ -475,10 +518,17 @@ class BaseClient:
                 ) from e
             resp = None
             try:
-                resp = self._client.send(req, stream=stream)
+                # Always send with stream=True so Content-Length can be checked before
+                # a non-stream body is read.
+                resp = self._client.send(req, stream=True)
                 if resp.status_code >= 400:
-                    # With stream=True the error body has not been read yet, and reading
+                    # The error body has not been read yet, and reading
                     # it can fail too, so it has to be inside this try (conversion + retry).
+                    resp.read()
+                elif not stream:
+                    if _declared_too_large(resp):
+                        resp.close()
+                        raise _too_large(_MAX_RESPONSE_BYTES, self.lang)
                     resp.read()
             except httpx.RequestError as e:
                 if resp is not None:
@@ -542,7 +592,7 @@ class _EventStream:
     def __init__(self, client: BaseClient, resp: httpx.Response) -> None:
         self._client = client
         self._resp = resp
-        self._events = iter_sse(resp.iter_lines())
+        self._events = iter_sse(resp.iter_lines(), client.lang)
         self._closed = False
 
     def __iter__(self) -> "_EventStream":

@@ -4,6 +4,7 @@ __version__ = "0.3.1"
 
 from . import models
 from .anthropic import AnthropicClient
+from ._connection import get_connection, set_connection
 from .cache import SQLiteCache, clear_cache, get_cache, set_cache
 from .errors import (
     APIConnectionError,
@@ -38,6 +39,8 @@ __all__ = [
     "JSONLLog",
     "set_log",
     "get_log",
+    "set_connection",
+    "get_connection",
     "set_language",
     "get_language",
     "LLM",

@@ -11,6 +11,7 @@ MESSAGES = {
     ),
     "invalid_log": "ログの設定が正しくありません: {detail}",
     "invalid_cache": "キャッシュの設定が正しくありません: {detail}",
+    "invalid_connection": "接続設定が不正です: {detail}",
     "invalid_url": "URL が正しくありません: {url}",
     "invalid_option": "{name} には 0 以上の有限の数を指定してください: {value!r}",
     "unknown_provider": "未知のプロバイダーです: {provider!r}（対応: {supported}）",
@@ -22,6 +23,7 @@ MESSAGES = {
     "stream_connection_error": "ストリームの読み取りに失敗しました: {detail}",
     "unclosed_stream": "閉じられていないストリームが回収されました。途中でやめるときは aclose() を呼んでください。",
     "invalid_json_response": "レスポンスが正しい JSON ではありません: {preview!r}",
+    "response_too_large": "レスポンスがサイズの上限（{limit} バイト）を超えました",
     # API エラー
     "api_error": "{provider} API がエラーを返しました (HTTP {status})",
     "stream_error": "{provider} のストリームでエラーが発生しました",

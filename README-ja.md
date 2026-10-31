@@ -39,6 +39,16 @@ result = luna.chat([{"role": "user", "content": "こんにちは"}])  # ChatResu
 指定していないパラメータは送りません（新しいモデルは `temperature` などをデフォルト値でも拒否することがあるため）。
 それ以外のパラメータは `extra={...}` で、さらに細かい操作は生レイヤー `luna.client.request(path, body)` で扱えます。
 
+#### 呼び出しごとのタイムアウト
+
+`ask()` / `chat()` / `stream()`（非同期の `aask()` / `achat()` / `astream()` も同じ）は、キーワード引数 `timeout`（秒）でその呼び出しだけタイムアウトを変えられます。省略（`None`）するとクライアントの設定（既定 600 秒）を使います。
+
+```python
+text = luna.ask("短い質問", timeout=30)
+```
+
+これは **操作ごとのタイムアウト** で、合計の期限ではありません（ストリームでは「次のデータが届くまでの時間」）。リトライ（既定 2 回）の分だけ全体の時間は延びます。この引数だけでは、同期コードで合計の期限を保証できません（データが届くたびに待ち時間がリセットされるため、`max_retries=0` にしても、特にストリームや少しずつ返る応答では全体の時間に上限がありません）。非同期コードで厳密な期限が必要なときは、`astream()` の呼び出しだけではなく、ストリームを読み切る処理全体のコルーチンを `asyncio.wait_for()` で包んでください（通信は最初の反復で始まるため）。
+
 代表的なモデルは定数でも指定できます（中身は `"プロバイダー:モデル"` の文字列です）。
 
 ```python
@@ -83,10 +93,12 @@ asyncio.run(main())
 - `astream()` は最初の反復で通信を始めるため、接続エラーや HTTP エラーも最初の反復（`async for` の開始時）に発生します（同期版の `stream()` は呼び出し時に発生します）。途中でやめるときは `await stream.aclose()` を呼んでください。
 - `async with`（または `await m.aclose()`）で閉じてください。閉じた後は再利用できません。
 - イベントループをまたいで使わないでください。`asyncio.run()` のたびに新しい `llm()` を作ります。
+- 非同期コード（FastAPI のハンドラーなど、イベントループの中）で同期版の `ask()` / `chat()` / `stream()` を呼ばないでください。リクエストが終わるまでイベントループ全体が止まります。`aask()` / `achat()` / `astream()` を使います。
+- `close()` が閉じるのは同期クライアントだけで、非同期クライアントは閉じません。非同期 API を使った場合は `await m.aclose()`（または `async with`）で、非同期・同期の両方を閉じます。
 
 キャッシュとログは非同期でも同期版と同じように働きます。非同期に対応しているのは共通インターフェイス（`llm()`）だけで、プロバイダークライアントや生レイヤー（`request()`）の非同期版はありません。
 
-最初から順に試したい方は、[チュートリアル](docs/tutorial-ja.md) を参照してください。
+最初から順に試したい方は、[チュートリアル](docs/tutorial-ja.md) を参照してください。接続の使い回しと終了処理については、[チュートリアルの「使い回しと後片付け」](docs/tutorial-ja.md#9-使い回しと後片付け) を参照してください。
 
 ## API応答のキャッシュ
 
@@ -101,9 +113,9 @@ m2 = llm("openai:gpt-6-luna", cache="other.db")  # インスタンスごとの�
 m3 = llm("openai:gpt-6-luna", cache=False)       # このインスタンスだけオフ
 ```
 
-`cache=True` は既定のファイル `llm_ai_api_cache.db` を使います。`SQLiteCache` オブジェクトを渡すこともできます。環境変数 `LLM_AI_API_CACHE_DIR` にディレクトリを指定すると、`set_cache()` を呼ばなくても `<ディレクトリ>/cache.db` でオンになります。ストリーミング（`stream()` / `stream_chat()`）もキャッシュされます（最後まで読み切ったときだけ保存）。
+`cache=True` は既定のファイル `llm_ai_api_cache.db` を使います。`SQLiteCache` オブジェクトを渡すこともできます。環境変数 `LLM_AI_API_CACHE_DIR` にディレクトリを指定すると、`set_cache()` を呼ばなくても `<ディレクトリ>/cache.db` でオンになります。ストリーミング（`stream()` / `stream_chat()`）もキャッシュされます（終端イベントまで読み切ったときだけ保存）。
 
-保存される応答は、API キーから作った鍵で暗号化されます。キーは `{プロバイダー}:{モデル}@{APIキー}>>>{入力}` のハッシュなので、API キーが違えば別のキャッシュになります。古いエントリは `clear_cache(days)` で削除できます（`clear_cache(0)` で全削除）。
+保存される応答は、API キーから作った鍵で暗号化されます。キーは `{プロバイダー}:{モデル}@{APIキー}>>>{入力}` のハッシュなので、API キーが違えば別のキャッシュになります。古いエントリは `clear_cache(days)` で削除できます（`clear_cache(0)` で全削除）。ファイルサイズが `max_size`（既定 100 MB。`set_cache(..., max_size=None)` で無制限）を超えると、古いほうから 1/3 の行が自動で削除されます。
 
 なお、キャッシュが有効な間は、同じリクエストには常に同じ保存済みの応答が返ります。新しい応答が欲しい場合は、キャッシュを空にするかオフにしてください。ファイルを新規作成するときは、所有者のみがアクセスできる権限（0600）になります。
 
@@ -121,9 +133,22 @@ m = llm("openai:gpt-6-luna", log="other.jsonl")  # インスタンスごとの�
 m2 = llm("openai:gpt-6-luna", log=False)         # このインスタンスだけオフ
 ```
 
-環境変数 `LLM_AI_API_LOG_DIR` にディレクトリを指定すると、`<ディレクトリ>/llm.jsonl` でオンになります。1 行には `time`, `provider`, `model`, `stream`, `cached`, `request`, `response` が入ります。API キーは記録されません。ログは平文で、プロンプトと回答がそのまま入るので、取り扱いに注意してください。ストリーミングは最後まで読み切ったときだけ記録されます。
+環境変数 `LLM_AI_API_LOG_DIR` にディレクトリを指定すると、`<ディレクトリ>/llm.jsonl` でオンになります。1 行には `time`, `provider`, `model`, `stream`, `cached`, `request`, `response` が入ります。API キーは記録されません。ログは平文で、プロンプトと回答がそのまま入るので、取り扱いに注意してください。ストリーミングは最後まで読み切ったときだけ記録されます。ファイルサイズが `max_size`（既定 100 MB。`set_log(..., max_size=None)` で無制限）を超えると、古いほうから 1/3 の行が自動で削除されます。
 
 詳しくは、[こちら](docs/io_logs-ja.md) を参照してください。
+
+## 接続設定
+
+同時接続数やプロキシ、TLS のような接続まわりの設定は、`set_connection()` でプロセス全体に、`connection=` でインスタンスごとに指定できます。
+
+```python
+from llm_ai_api import llm, set_connection
+
+set_connection(max_connections=50, proxy="http://proxy.example:8080")  # プロセス全体
+m = llm("openai:gpt-6-luna", connection={"max_connections": 5})        # このインスタンスだけ差分
+```
+
+指定できるのは `max_connections`（既定 100）、`max_keepalive_connections`（既定 20）、`keepalive_expiry`（秒、既定 5.0）、`connect_timeout`（秒、既定 10.0）、`verify`（bool または CA のパス、既定 True）、`cert`（証明書のパスまたは組）、`proxy`（http/https の URL）です。設定はクライアント生成時に解決され、後から `set_connection()` を呼んでも既存のインスタンスには影響しません。`set_connection()` は置き換え式で、引数なしで呼ぶと既定に戻ります。
 
 ## サンプル
 
@@ -154,6 +179,8 @@ from llm_ai_api import llm, set_language
 set_language("ja")                       # プロセス全体
 m = llm("openai:gpt-6-luna", lang="en")  # モデルごと
 ```
+
+`set_language()` はプロセス全体の設定です。他のスレッドや、すでに作成済みのインスタンスが例外を出すときのメッセージの言語も変わります（生成時に設定を解決する `set_cache()` / `set_log()` とは異なります）。インスタンスごとに言語を変えたいときは `lang=` を使ってください。
 
 すべての例外は、言語に依存しない `code`（例: `"missing_api_key"`）を持っています。メッセージの文面ではなく `code` で判定してください。
 API 自身が返したメッセージは翻訳しません。

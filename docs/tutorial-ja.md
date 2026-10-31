@@ -161,6 +161,7 @@ asyncio.run(main())
 
 - `async with`（または `await m.aclose()`）で閉じます。閉じた `LLM` は再利用できません。
 - `asyncio.run()` のたびに新しい `llm()` を作ってください。
+- 非同期コードの中で同期版の `ask()` / `chat()` / `stream()` を呼ぶと、イベントループ全体が止まります。必ず `aask()` / `achat()` / `astream()` を使ってください。
 
 ## 8. エラーを処理する
 
@@ -184,7 +185,55 @@ except LLMError as e:
 
 失敗したリクエストは、最大 `max_retries` 回（既定 2 回）自動でリトライされます。対象は、接続段階の失敗（サーバーに届いていないもの）と、HTTP 408 / 409 / 429 / 5xx だけです。読み取りタイムアウトなど、送信した後の失敗はリトライしません（生成が二重に行われ、二重に課金されるのを防ぐため）。応答の速さが大事なサービスでは、`llm(..., max_retries=0)` や短い `timeout` を検討してください。詳しくは [設定リファレンス](config-ja.md) を参照してください。
 
-## 9. 次のステップ
+## 9. 使い回しと後片付け
+
+`llm()` は接続プールを持つ HTTP クライアントを作ります。リクエストごとに作り直すと、接続や TLS ハンドシェイクが繰り返されます。プロセスやサービスの起動時に 1 つ作り、使い回してください。キャッシュや接続の再利用も有効になります。
+
+同期版では、`with` を使うか、使い終わったら `close()` を呼びます。
+
+```python
+from llm_ai_api import llm
+
+with llm("openai:gpt-6-luna") as m:
+    print(m.ask("こんにちは"))
+
+# または、アプリケーション終了時に閉じる
+m = llm("openai:gpt-6-luna")
+try:
+    print(m.ask("こんにちは"))
+finally:
+    m.close()
+```
+
+非同期版では、`async with` を使うか、`await aclose()` を呼びます。`aclose()` は非同期・同期の両方のクライアントを閉じ、複数回呼んでも安全です。`close()` が閉じるのは同期クライアントだけです。
+
+```python
+import asyncio
+from llm_ai_api import llm
+
+
+async def main():
+    async with llm("openai:gpt-6-luna") as m:
+        print(await m.aask("こんにちは"))
+
+    # または、アプリケーション終了時に閉じる
+    m = llm("openai:gpt-6-luna")
+    try:
+        print(await m.aask("こんにちは"))
+    finally:
+        await m.aclose()
+
+
+asyncio.run(main())
+```
+
+ストリームを途中で止めても問題ありません。ストリームオブジェクトが破棄または閉じられると、内部のレスポンスも閉じられます。長時間動くプログラムでは、早期終了する場合に `stream.close()` または `await stream.aclose()` を明示的に呼ぶと確実です。
+
+閉じ忘れても、プロセス終了時やガベージコレクション時にはリソースが解放されます。ただし、長時間動くプロセスでは接続やファイルディスクリプタが残るため、明示的に閉じてください。閉じた `LLM` は再利用できません。新しく作り直してください。たとえば、`asyncio.run()` を呼ぶごとに新しい `llm()` を作ります。
+
+本番環境で同時接続数やプロキシ、TLS を変えたいときは、README の「接続設定」（`set_connection()` と `connection=`）を参照してください。
+
+## 10. 次のステップ
 
 - [設定リファレンス](config-ja.md): `llm()` の設定とリトライの方針です。
 - [応答のローカルキャッシュ](io_cache-ja.md): 同じリクエストでは API を呼ばず、保存済みの結果を返します（既定はオフ）。

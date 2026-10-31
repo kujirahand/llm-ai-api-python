@@ -16,10 +16,11 @@ import json
 import os
 import random
 import warnings
-from typing import Any, AsyncIterable, AsyncIterator, Callable, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterable, AsyncIterator, Callable, Dict, List, Mapping, Optional, Tuple
 
 import httpx
 
+from . import _http
 from ._http import (
     _DEFAULT_RETRY_AFTER_MAX,
     _RETRY_STATUS,
@@ -32,6 +33,7 @@ from ._http import (
     _user_agent,
     error_message,
 )
+from ._connection import build_httpx_kwargs, resolve_connection
 from .cache import CACHE_NOT_SET, SQLiteCache, cache_key, resolve_cache
 from .errors import (
     APIConnectionError,
@@ -46,9 +48,11 @@ from .log import LOG_NOT_SET, resolve_log
 from .types import ChatChunk, ChatResult, SSEEvent
 
 
-async def aiter_sse(lines: AsyncIterable[str]) -> AsyncIterator[SSEEvent]:
+async def aiter_sse(
+    lines: AsyncIterable[str], lang: Optional[str] = None
+) -> AsyncIterator[SSEEvent]:
     """Async version of `iter_sse()`: yield SSE events from an async iterable of lines."""
-    decoder = _SSEDecoder()
+    decoder = _SSEDecoder(lang)
     async for line in lines:
         ev = decoder.feed(line)
         if ev is not None:
@@ -92,8 +96,13 @@ class _AsyncBaseClient:
         cache: Any = CACHE_NOT_SET,
         log: Any = LOG_NOT_SET,
         transport: Optional[httpx.AsyncBaseTransport] = None,
+        connection: Optional[Mapping[str, Any]] = None,
     ) -> None:
-        """Same arguments as `BaseClient`; `transport` is for tests (`httpx.MockTransport`)."""
+        """Same arguments as `BaseClient`; `transport` is for tests (`httpx.MockTransport`).
+
+        `connection` mirrors `BaseClient`: it overrides `set_connection()` settings per key
+        and is validated but not applied to httpx when `transport` is specified.
+        """
         self.lang = lang
         _check_retry_after_max(retry_after_max, lang)
         self.cache = resolve_cache(cache, lang=lang)
@@ -114,10 +123,19 @@ class _AsyncBaseClient:
         self.max_retries = max_retries
         self.retry_read_timeout = retry_read_timeout
         self.retry_after_max = retry_after_max
+        self.connection = resolve_connection(connection, lang=lang)
+        self._connect_timeout = self.connection["connect_timeout"]
         self._extra_headers = dict(headers or {})
-        self._client = httpx.AsyncClient(
-            transport=transport, timeout=httpx.Timeout(timeout, connect=10.0)
-        )
+        if transport is not None:
+            self._client = httpx.AsyncClient(
+                transport=transport,
+                timeout=httpx.Timeout(timeout, connect=self._connect_timeout),
+            )
+        else:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(timeout, connect=self._connect_timeout),
+                **build_httpx_kwargs(self.connection, lang=lang),
+            )
 
     def __repr__(self) -> str:
         return "%s(base_url=%r)" % (type(self).__name__, _mask_url(self.base_url))
@@ -202,7 +220,9 @@ class _AsyncBaseClient:
         """Pass chunks through and log the whole stream once it has been read to the end."""
         return _AsyncLoggedChunks(self, chunks, body, cached)
 
-    async def _astream_events(self, path: str, body: Dict[str, Any]) -> Tuple[Any, bool]:
+    async def _astream_events(
+        self, path: str, body: Dict[str, Any], timeout: Optional[float] = None
+    ) -> Tuple[Any, bool]:
         """`request_stream()` with the response cache: replay a hit, record a miss.
 
         Returns the events (an async iterator with `aclose()`) and whether they were
@@ -212,7 +232,7 @@ class _AsyncBaseClient:
         if cached is not None and isinstance(cached.raw.get("events"), list):
             replay = [SSEEvent(e.get("event"), e.get("data", "")) for e in cached.raw["events"]]
             return _ReplayEvents(replay), True
-        events = await self.request_stream(path, body)
+        events = await self.request_stream(path, body, timeout=timeout)
         if self.cache is None:
             return events, False
         return _AsyncRecordedEvents(self, events, body), False
@@ -236,12 +256,22 @@ class _AsyncBaseClient:
         """Send JSON and return the response JSON (dict) as is."""
         resp = await self._aopen(method, path, body, headers, timeout, stream=False)
         try:
-            return resp.json()
-        except ValueError as e:
-            raise LLMError(
-                self._t("invalid_json_response", preview=resp.text[:200]),
-                code="invalid_json_response",
-            ) from e
+            if len(resp.content) > _http._MAX_RESPONSE_BYTES:
+                raise _http._too_large(_http._MAX_RESPONSE_BYTES, self.lang)
+            try:
+                value = resp.json()
+            except ValueError as e:
+                raise LLMError(
+                    self._t("invalid_json_response", preview=resp.text[:200]),
+                    code="invalid_json_response",
+                ) from e
+            if not isinstance(value, dict):
+                # Valid JSON but not an object (array, scalar, null).
+                raise LLMError(
+                    self._t("invalid_json_response", preview=resp.text[:200]),
+                    code="invalid_json_response",
+                )
+            return value
         finally:
             await resp.aclose()
 
@@ -304,7 +334,7 @@ class _AsyncBaseClient:
         )
         kwargs: Dict[str, Any] = {}
         if timeout is not None:
-            kwargs["timeout"] = httpx.Timeout(timeout, connect=10.0)
+            kwargs["timeout"] = httpx.Timeout(timeout, connect=self._connect_timeout)
         attempt = 0
         while True:
             try:
@@ -317,10 +347,17 @@ class _AsyncBaseClient:
                 ) from e
             resp = None
             try:
-                resp = await self._client.send(req, stream=stream)
+                # Always send with stream=True so Content-Length can be checked before
+                # a non-stream body is read.
+                resp = await self._client.send(req, stream=True)
                 if resp.status_code >= 400:
-                    # With stream=True the error body has not been read yet, and reading
+                    # The error body has not been read yet, and reading
                     # it can fail too, so it has to be inside this try (conversion + retry).
+                    await resp.aread()
+                elif not stream:
+                    if _http._declared_too_large(resp):
+                        await resp.aclose()
+                        raise _http._too_large(_http._MAX_RESPONSE_BYTES, self.lang)
                     await resp.aread()
             except httpx.RequestError as e:
                 if resp is not None:
@@ -411,7 +448,7 @@ class _AsyncEventStream:
         self._client = client
         self._resp = resp
         self._lines = resp.aiter_lines()
-        self._events = aiter_sse(self._lines)
+        self._events = aiter_sse(self._lines, client.lang)
         self._closed = False
         try:
             self._loop: Optional[asyncio.AbstractEventLoop] = asyncio.get_running_loop()
@@ -499,9 +536,9 @@ class _ReplayEvents:
 class _AsyncRecordedEvents:
     """Pass events through and store the stream in the cache once it is complete.
 
-    Complete means read to the end or up to the terminal event (`[DONE]` /
-    `message_stop`): parsers stop there and close the stream early. Errors,
-    cancellation and early `aclose()` are not stored.
+    Complete means a terminal event (`[DONE]` / `message_stop`) was received:
+    parsers stop there and close the stream early. EOF without a terminal event,
+    errors, cancellation and early `aclose()` are not stored.
     """
 
     def __init__(self, client: _AsyncBaseClient, events: Any, body: Dict[str, Any]) -> None:
@@ -526,7 +563,6 @@ class _AsyncRecordedEvents:
         try:
             ev = await self._events.__anext__()
         except StopAsyncIteration:
-            await self._store()
             raise
         except BaseException:
             await _close_quietly(self._events)

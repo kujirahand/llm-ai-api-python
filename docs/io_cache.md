@@ -44,6 +44,22 @@ print(n, "entries deleted")
 
 It deletes entries stored more than `days` days ago and returns how many were deleted. The directory is looked up in the argument, then the env var, then the cache set with `set_cache()`. If none is found it raises `LLMConfigError` (`code="cache_dir_not_set"`). `SQLiteCache.clear(days=None)` behaves the same.
 
+## Maximum size
+
+```python
+from llm_ai_api import SQLiteCache, llm, set_cache
+
+set_cache("./cache.db", max_size=50 * 1024 * 1024)   # 50 MB (when created from a path or True)
+set_cache("./cache.db", max_size=None)                # unlimited
+m = llm("openai:gpt-6-luna", cache=SQLiteCache("./cache.db", max_size=10_000_000))
+```
+
+- `max_size` (bytes) defaults to **100 MB** (`llm_ai_api.cache.DEFAULT_MAX_SIZE`). A path or `True`, and the `LLM_AI_API_CACHE_DIR` environment variable, use this default.
+- When the file is larger than `max_size` after a `put()`, the oldest third of the rows (by storage time) is deleted and the file is shrunk with `VACUUM`. There is one trim per `put()`; if the file is still over the limit, the next `put()` trims again. The newest row is always kept.
+- `max_size=None` means unlimited. Zero, a negative number or a non-integer raises `LLMConfigError` (`code="invalid_cache"`).
+- The `max_size` of `set_cache()` is used only when it creates the cache from a path or `True`. When you pass a `SQLiteCache` object, its own `max_size` applies.
+- A failure while trimming never fails the call (best effort).
+
 ## Behavior
 
 - **Scope**: `chat()` / `ask()` and `stream_chat()` / `stream()` (streaming). The raw layer (`request()`) is not cached.
@@ -52,8 +68,9 @@ It deletes entries stored more than `days` days ago and returns how many were de
 - **A different API key means a separate cache.** The API key is used only to build the key hash and to derive the encryption key; it is never stored in plain text.
 - **Encryption**: built from the standard library only (a key derived from the API key with `scrypt`, HMAC-SHA256 in counter mode for encryption, and an HMAC to detect tampering. The HMAC also covers the cache key, so moving a ciphertext to another row is detected, and a read that uses an API key never accepts an unencrypted value). It keeps cached responses from sitting in plain text; it does not replace protecting your API key. The encryption key comes from the API key, so anyone holding the API key can read the cache.
 - Only successful responses are stored. HTTP errors are not.
-- A stream is stored only when it was read to the end (up to its terminal event). Streams stopped early or failed are not stored.
+- A stream is stored only when it was read up to its terminal event (`[DONE]` or `message_stop`). Streams that were cut off without a terminal event, stopped early or failed are not stored.
 - A corrupt row or a tampered value is treated as a miss (and that row is deleted) and the API is called. A cache read/write failure at run time never fails the call.
-- A newly created cache file is owner-only (0600).
+- A newly created cache file is owner-only (0600) from the moment it is created; existing files keep their permissions.
+- The cache file uses SQLite's WAL journal mode (falls back to the default where WAL is unavailable), so several processes can share one file. You may see `-wal` / `-shm` files next to it; they get the same permissions as the main file.
 - Entries do not expire by themselves. The same request keeps returning the same response; use `clear_cache()` or turn the cache off to get a fresh one.
 - Do not commit the cache file to a repository.

@@ -78,6 +78,7 @@ llm-ai-api-python/
 │       ├── types.py         # ChatResult などの dataclass
 │       ├── cache.py         # SQLite による応答キャッシュ（暗号化、既定はオフ）、set_cache() / clear_cache()
 │       ├── log.py           # JSON Lines の入出力ログ（既定はオフ）、set_log() / get_log()
+│       ├── _connection.py   # 接続設定（内部）: set_connection() / get_connection()、解決と httpx 引数の生成
 │       ├── openai.py        # OpenAIClient
 │       ├── openrouter.py    # OpenRouterClient（OpenAI 互換部分を共有）
 │       ├── google.py        # GoogleClient（OpenAI 互換部分を共有）
@@ -99,13 +100,17 @@ llm-ai-api-python/
 │   ├── test_llm.py
 │   ├── test_async_clients.py # 内部の非同期クライアント
 │   ├── test_async_llm.py     # LLM の aask / achat / astream
+│   ├── test_per_call_timeout.py # 呼び出しごとの timeout（httpx に届くこと）
 │   ├── test_models.py
 │   ├── test_lang.py
+│   ├── test_connection.py # 接続設定（set_connection / connection=）
 │   ├── test_cache.py
 │   ├── test_log.py
+│   ├── test_max_size.py      # キャッシュとログの最大サイズ（#31）
 │   ├── test_cache_crypto.py
 │   ├── test_stream_close.py  # ストリームの閉じ忘れ（#25）
 │   ├── test_retry_policy.py  # リトライの分類、retry_after_max、set_config()（#26）
+│   ├── test_hardening.py     # キャッシュのファイル権限・WAL・サイズ上限・一括 XOR（#33）
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
 ├── docs/
 │   ├── publish.md       # PyPI への公開手順
@@ -163,6 +168,7 @@ m.client    # 下位の OpenAIClient など（生レイヤーにアクセスで�
 - モデル指定文字列は **最初の `:` で分割** する。OpenRouter のモデル名は `/` や `:` を含むため（例: `"openrouter:meta-llama/llama-4:free"` → provider `openrouter`、model `meta-llama/llama-4:free`）。
 - プロバイダー名は小文字に正規化する。`claude` は `anthropic` の別名。未知のプロバイダーや `:` がない文字列は `LLMConfigError`。
 - `ask()` / `stream()` / `chat()` は、キーワード引数（`system`, `max_tokens`, `temperature`, `extra`）で `llm()` の既定値を呼び出しごとに上書きできる。引数を渡さなければ既定値を使い、**`None` を明示すると、その呼び出しだけ既定値を無効にして送らない**（`llm(..., temperature=0.4).ask("q", temperature=None)` は `temperature` を送らない）。両者を区別するため、これらの引数の既定値は内部のセンチネル `UNSET` で、`None` ではない。`extra` は dict を渡すと既定値と浅くマージし、`None` で既定の `extra` を無効にする。ただし Claude の `max_tokens` は API の必須項目なので、`None` を指定してもライブラリ既定の 16000 が使われる。`llm()` 自体の引数では `None` は「既定値なし」の意味。
+- `ask()` / `stream()` / `chat()`（と `aask()` / `achat()` / `astream()`）は、キーワード専用の `timeout: Optional[float] = None`（秒）も受け取る。`None`（既定）はクライアントの設定を使い、数値はその呼び出しだけ生レイヤーの `timeout` と同じ意味（`httpx.Timeout(timeout, connect=10.0)`）で上書きする。他の引数と違い `UNSET` は使わない（`llm()` に「既定のタイムアウト」はなく、クライアントの `timeout=` がそれにあたる）。プロバイダーの `chat()` / `stream_chat()` を通って `request()` / `request_stream()` の `timeout=` に渡される。リクエストボディにもキャッシュキーにも含めず、キャッシュヒット時は無視する。**操作ごとのタイムアウトで、合計の期限ではない**（ストリームでは次のデータまでの時間。リトライで延びる）。この引数だけでは、同期コードで合計の期限は保証できない（データが届くたびに待ち時間がリセットされるため、`max_retries=0` でも、特にストリームや少しずつ返る応答では上限がない）。非同期で厳密な期限が必要なときは、`astream()` の呼び出しではなく、ストリームを読み切る処理全体のコルーチンを `asyncio.wait_for()` で包んでもらう（通信は最初の反復で始まるため）。
 - `ask()` / `stream()` は **状態を持たない**（会話履歴を保持しない）。会話を続けたい場合は `chat()` に messages を渡してもらう。
 - `ask()` は `ChatResult.text` をそのまま返す。`stop_reason` が `"refusal"` や `"max_tokens"` でも例外にしない（必要なら `chat()` を使って確認してもらう）。
 - `LLM` は `close()` とコンテキストマネージャ（`with llm(...) as m:`）に対応する。
@@ -182,6 +188,7 @@ async with llm("openai:gpt-6-luna") as m:
 - `aask()` / `achat()` / `astream()` は同期版と同じ引数・意味（`UNSET` と `None` の区別、`extra` のマージ、キャッシュ・ログ）。新しい公開名は増やさない（`__all__` は変えない）。
 - 非同期クライアントは最初の `a*` 呼び出しで内部に作る（`llm()` の時点では作らない）。キャッシュとログのファイル操作は `asyncio.to_thread()` で行う。同期版とキャッシュを共有する（キーと形式が同じ）。このため、カスタムのキャッシュ／ログオブジェクトは非同期経路ではワーカースレッドから呼ばれる（スレッドセーフであること）。非同期クライアントは同期クライアントが生成時に解決した設定（API キー、ベース URL、キャッシュ／ログのオブジェクト）をそのまま使う（生のオプションを再解決しない）。
 - 閉じるには `async with` か `await m.aclose()`。`aclose()` は非同期・同期の両クライアントを閉じ、何度呼んでもよい。`close()` は同期クライアントだけを閉じる（従来どおり）。閉じた `LLM` は再利用しない。
+- 非同期コード（イベントループの中）で同期版の `ask()` / `chat()` / `stream()` を呼ぶとループ全体が止まる。README・チュートリアルで `a*` を使うよう案内する。
 - `astream()` は最初の反復で通信を始めるので、接続エラーや HTTP エラーも最初の反復で出る（同期版 `stream()` は呼び出し時）。途中でやめるときは `await stream.aclose()` を呼ぶ。キャンセルされたストリームはレスポンスを閉じ、キャッシュ・ログに残さない。閉じずに捨てられた `_AsyncEventStream` は、最後の手段として `__del__` から生成時のイベントループに `resp.aclose()` を予約する（ループがなければ `ResourceWarning`）。
 - イベントループをまたいで使わない。`asyncio.run()` ごとに新しい `llm()` を作る。
 - 実装は `_async_http.py` / `_async_clients.py`（内部専用）。ボディ生成とパースは同期版の関数を共用する。ストリームは async generator ではなく `__anext__` / `aclose` を持つ通常のクラスで組む（generator の `finally` で `await` しないため）。Python 3.9 互換のため `anext()` / `contextlib.aclosing` / `asyncio.TaskGroup` / `asyncio.timeout` は使わない。
@@ -217,6 +224,7 @@ client = AnthropicClient(
     retry_after_max=60.0,  # retry-after に従って待つ秒数の上限（0 以上の有限の数）
     cache=CACHE_NOT_SET,   # 応答キャッシュ（未指定ならグローバル設定。5.7 を参照）
     log=LOG_NOT_SET,       # 入出力ログ（未指定ならグローバル設定。5.8 を参照）
+    connection=None,       # 接続設定（dict。未指定ならグローバル設定。5.3.1 を参照）
     anthropic_version="2026-10-21",  # AnthropicClient のみ
 )
 ```
@@ -234,6 +242,19 @@ client = AnthropicClient(
 | `OPENROUTER_API_KEY` / `OPENROUTER_BASE_URL` | OpenRouter |
 | `GEMINI_API_KEY`（なければ `GOOGLE_API_KEY`） / `GOOGLE_BASE_URL` | Google Gemini |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_BASE_URL` | Anthropic |
+
+### 5.3.1 接続設定（`_connection.py`）
+
+本番の同時実行数やネットワーク要件に合わせるための設定。httpx の型は公開 API に出さない（数値・bool・パス・URL 文字列だけを受け付ける）。
+
+- 全体設定は `set_connection()`（公開 API）。**置き換え式**で、引数なしで呼ぶと既定に戻る（`set_cache()` と同型）。現在の実効値は `get_connection()` が返す。
+- インスタンスごとに変えたいときは `llm()` と各クライアントの `connection=` に dict を渡し、キー単位で全体設定を上書きする。値に `None` を指定したキーはライブラリ既定に戻る。
+- キーは7つ: `max_connections`（int ≥ 1、既定 100）、`max_keepalive_connections`（int ≥ 0、既定 20）、`keepalive_expiry`（秒 ≥ 0、既定 5.0）、`connect_timeout`（秒 > 0、既定 10.0）、`verify`（bool または CA ファイル/ディレクトリのパス、既定 True）、`cert`（パスまたは (証明書, 鍵) の組、既定なし）、`proxy`（http/https の URL、既定なし）。http2 と socks は追加の依存が必要なため対象外。
+- 解決は**生成時に1回だけ**（`set_cache()` / `set_log()` と同じ）。後から `set_connection()` を呼んでも既存のクライアントは変わらない。非同期クライアントは同期クライアントの解決済みの値をそのまま引き継ぐ。生成後の変更は用意しない（変えたい場合は新しい `llm()` を作る）。
+- 同期と非同期で接続プールは別々で、上限もそれぞれに効く。
+- `transport` を渡したときは検証だけを行い、httpx には適用しない（テスト用 transport がプロキシ等で迂回されるのを防ぐ）。警告も出さない。
+- 検証は生成時と `set_connection()` で行い、違反は `LLMConfigError`（`code="invalid_connection"`）。proxy の URL に認証情報が含まれていても、エラーメッセージや `repr` には出さない（userinfo はマスクする）。
+- TLS は httpx 0.28 で非推奨の `verify=<文字列>` を使わず、`ssl` で `SSLContext` を組み立てて渡す（CA パスは `create_default_context(cafile=/capath=)`、クライアント証明書は `load_cert_chain`）。
 
 ### 5.4 生レイヤー
 
@@ -254,6 +275,7 @@ result = client.chat(
     max_tokens=None,       # 指定時のみ送信（Anthropic のみ未指定時 16000 を補う）
     temperature=None,      # 指定時のみ送信
     extra=None,            # dict。ボディにそのままマージ（最後に適用し、上書き可）
+    timeout=None,          # 秒。None ならクライアントの設定。この呼び出しだけ上書き（ボディには入れない）
 )
 for chunk in client.stream_chat(model=..., messages=..., ...):
     print(chunk.text, end="")  # テキスト差分
@@ -305,11 +327,14 @@ class ChatChunk:
 - **キー**: `sha256("{provider}:{model}@{api_key}>>>{input}")`。`input` は、リクエストボディと、応答に影響するクライアント設定（`base_url`、追加ヘッダー、Anthropic の `anthropic_version`）の正規化 JSON（`sort_keys=True`）。ストリームかどうかはボディの `stream` で区別される。API キーはハッシュと暗号鍵の導出にだけ使い、平文では保存しない。API キーが違うクライアント同士はキャッシュを共有しない。
 - **値**: `ChatResult`（text / model / stop_reason / usage / raw）を JSON にして、API キーから導出した鍵で暗号化し、SQLite のテーブル `llm_cache` に入れる。ストリームは `raw["events"]` に SSE イベントの一覧を入れた `ChatResult` として保存する。
 - **暗号**: 標準ライブラリだけで組む（`scrypt` による鍵導出、HMAC-SHA256 のカウンターモード、HMAC による改ざん検出）。平文のまま置かないための保護で、API キーの管理に代わるものではない。鍵は API キーから作るので、API キーを持つ人はキャッシュを読める。MAC にはキャッシュキーも含め（別の行への暗号文の差し替えを検出する）、`secret` を渡して読むときは暗号化形式以外（平文の値）を受け付けない。`SQLiteCache.get/put` に `secret` を渡さなければ暗号化しない（クライアント経由では常に渡す）。
-- キャッシュファイルは新規作成時に権限 `0600`（親ディレクトリを作る場合は `0700`）にする（権限を設定できないファイルシステムではベストエフォート）。
+- キャッシュファイルは、自分で `os.open(..., O_CREAT | O_EXCL, 0o600)` して作ってから SQLite に開かせる（作成の瞬間から `0600`。umask が緩くても一時的に他人が読める状態を作らない。親ディレクトリを作る場合は `0700`）。既存のファイルの権限は変更しない。
+- 接続を開くたびに `PRAGMA journal_mode=WAL` を設定する（複数プロセスでの書き込みロックの待ちを減らすため）。失敗したとき（読み取り専用、NFS など）は黙って既定のモードのまま続ける。`-wal` / `-shm` ファイルの権限は SQLite が本体ファイルから引き継ぐ。
+- 暗号・復号の XOR は整数演算で一括して行う（`int.from_bytes` の XOR）。保存形式（nonce + 暗号文 + MAC）は変えない。
 - 接続は操作ごとに開閉し、書き込みはロックで保護する。壊れた行・改ざんされた行はミスとして扱い、読み取り時に削除する。
 - **削除**: `clear_cache(days, cache_dir=None)` は `days` 日より古いエントリを消して件数を返す（`days=0` で全削除）。ディレクトリは `cache_dir`、環境変数、グローバルキャッシュの順に探し、なければ `LLMConfigError`（`code="cache_dir_not_set"`）。`SQLiteCache.clear(days=None)` も同じ動き。
 - 有効にしている間、同じリクエストには常に同じ保存済み応答が返る。新しい応答が欲しい場合はキャッシュを空にするかオフにする。
-- 対象は `chat()` / `ask()` と `stream_chat()` / `stream()`。ストリームは、最後まで（または終端イベントまで）読み切ったときだけ保存し、途中で止めたもの・エラーになったものは保存しない。生レイヤー（`request()` / `request_stream()`）は対象外。
+- 対象は `chat()` / `ask()` と `stream_chat()` / `stream()`。ストリームは、終端イベント（OpenAI 系の `[DONE]`、Anthropic の `message_stop`。判定は `_is_terminal_event()`）を受け取ったときだけ保存する。終端イベントなしで EOF になったものは未完了のストリームとして保存しない（呼び出し側には届いたチャンクをそのまま返し、例外にはしない）。途中で止めたもの・エラーになったものも保存しない。生レイヤー（`request()` / `request_stream()`）は対象外。
+- **最大サイズ**: `SQLiteCache(path, max_size=DEFAULT_MAX_SIZE)`（公開属性 `max_size`、バイト）。既定は 100 MB（`cache.DEFAULT_MAX_SIZE`）。`put()` のあとにファイルサイズが `max_size` を超えていたら、ロックの下で `created_at` の古い順に 1/3 の行を削除し、`VACUUM` で縮める（最新の行は必ず残す。1 回の `put()` につき整理は 1 回）。`None` は無制限。0 以下・整数以外は `LLMConfigError`（`code="invalid_cache"`）。整理の失敗はベストエフォート（無視）。`set_cache(..., max_size=...)` はパス / `True` から作るときだけ使い、`SQLiteCache` オブジェクトを渡したときはそのオブジェクトの `max_size` が優先。自作のキャッシュオブジェクトには影響しない。
 - 実行時のキャッシュの失敗はベストエフォート（読み取りはミス扱い、書き込みは無視）にして、料金を払って得た応答を失わない。設定の誤り（不正な値、使えないパス）は生成時に `LLMConfigError`（`code="invalid_cache"`）を送出する。
 - `close()` は渡されたキャッシュを閉じない（グローバルと共有されうるため）。
 
@@ -320,15 +345,16 @@ class ChatChunk:
 - インスタンスごとの設定: `llm(..., log=...)` と各クライアントの `log=...`。値は `True`（既定ファイル `llm_ai_api_log.jsonl`）、パス、`JSONLLog`（`write(provider, model, request, response, *, stream, cached)` を持つオブジェクトも可）、`False` / `None`（このインスタンスだけオフ）。引数を渡さなければグローバル設定に従う（内部のセンチネル `LOG_NOT_SET`）。
 - **1 行の内容**: `time`（UTC, ISO 8601）, `provider`, `model`, `stream`, `cached`（キャッシュから返したか）, `request`（送ったボディ）, `response`（生の応答 dict。ストリームは `{"text": 連結したテキスト, "chunks": [生のイベント JSON, ...]}`）。API キーと認証ヘッダーは記録しない。
 - ログは平文で、プロンプトと回答がそのまま入る。ファイルは新規作成時に権限 `0600`（親ディレクトリを作る場合は `0700`）にする（ベストエフォート）。
+- **最大サイズ**: `JSONLLog(path, max_size=DEFAULT_MAX_SIZE)`（公開属性 `max_size`、バイト）。既定は 100 MB（`log.DEFAULT_MAX_SIZE`）。`write()` で追記するたびにファイルサイズを調べ、`max_size` を超えていたらロックの下で先頭 1/3 の行を捨てて、残りを一時ファイル経由で書き直す（まだ超えていれば次の `write()` でもう一度整理する。読み込み前後で `os.stat` の inode / サイズ / mtime が変わっていたら、別プロセスの追記とみなして整理を中止する。ただし置き換え直前のごく短い間の別プロセスの追記は失われうるので、複数プロセスから同一ファイルへの書き込みは整理中は完全にはサポートしない。最後に書いた 1 行は、単独で `max_size` を超えていても必ず残す）。`None` は無制限。0 以下・整数以外は `LLMConfigError`（`code="invalid_log"`）。整理の失敗はベストエフォート（無視）。`set_log(..., max_size=...)` はパス / `True` から作るときだけ使い、`JSONLLog` オブジェクトを渡したときはそのオブジェクトの `max_size` が優先。自作のログオブジェクトには影響しない。
 - ストリームは最後まで読み切ったときだけ記録する。エラーになった呼び出しは記録しない。
 - 実行時のログの失敗はベストエフォート（無視する）にして、料金を払って得た応答を失わない。設定の誤り（不正な値、書けないパス）は生成時に `LLMConfigError`（`code="invalid_log"`）を送出する。
 
 ## 6. HTTP 層の仕様（`_http.py`）
 
-- `httpx.Client` を使う。プロキシは httpx の環境変数対応（`trust_env=True`、`HTTPS_PROXY` 等）に任せる。
+- `httpx.Client` を使う。プロキシは既定では httpx の環境変数対応（`trust_env=True`、`HTTPS_PROXY` 等）に任せ、`connection` の `proxy` が指定されたときだけそちらを使う。接続数の上限や TLS などは `connection` の解決済みの値から組み立てる（5.3.1）。
 - 共通ヘッダー: `Content-Type: application/json`, `Accept: application/json`（ストリーム時 `text/event-stream`）, `User-Agent: llm-ai-api-python/<version>`。
 - JSON は `json.dumps(body, ensure_ascii=False).encode("utf-8")` で自前でシリアライズして `content=` に渡す（httpx の `json=` の挙動差に依存しない）。
-- タイムアウト既定値は 600 秒（長い生成に対応するため）。接続タイムアウトは 10 秒。
+- タイムアウト既定値は 600 秒（長い生成に対応するため）。接続タイムアウトは `connection` の `connect_timeout`（既定 10 秒）で、クライアント生成時と呼び出しごとの timeout 指定の両方に使う。
 - ストリーミングは `client.stream("POST", ...)` と `response.iter_lines()` を使い、SSE パースは自前で行う。
 - `request_stream()` は `httpx.Response` を所有する `_EventStream`（`close()` を持つイテレータ）を返す。最後まで読んだとき・エラー時・`close()` でレスポンスを閉じ、一度も読まずに捨てられた場合も `__del__` で閉じる（素の generator では `finally` が動かず、接続プールが枯渇するため。#25）。
 - 例外の変換: `httpx.TimeoutException` → `APITimeoutError`、その他の `httpx.RequestError`（`TransportError` や `DecodingError` など）→ `APIConnectionError`（リトライするかどうかは下の「リトライ」の分類による）。リクエスト組み立て時の `httpx.InvalidURL` → `LLMConfigError`（`code="invalid_url"`、URL は `_mask_url()` でマスクして表示）。httpx の例外をそのまま外に出さない。
@@ -343,6 +369,9 @@ class ChatChunk:
   - `retry_after_max` は 0 以上の有限の数に限る。負の値・NaN・無限大（数でない値も）は、同期・非同期クライアントの生成時と `LLM.set_config()` で `LLMConfigError`（`code="invalid_option"`）にする（判定は `_http._check_retry_after_max()`）。`set_config()` は検証してから適用するので、不正な値では何も変えない。そのまま `sleep()` に渡ると `ValueError` が漏れるため。
   - `max_retries` は検証しない。ループは `attempt < max_retries` で判定するので、負の値は `0`（リトライしない）と同じに動く。
   - ストリーミングは、レスポンスを読み始めた後はリトライしない。
+- サイズの安全弁: 非ストリームの `request()`（同期・非同期）は、読み取ったボディが `_MAX_RESPONSE_BYTES`（64 MiB）を超えたら `LLMError`（`code="response_too_large"`）を送出する。SSE の 1 行が `_MAX_SSE_LINE_BYTES`（16 MiB）を超えたときも同じ（`_SSEDecoder` で検査するので同期・非同期で共通）。ストリーム全体の長さには上限を設けない。
+  - 非ストリームは、`Content-Length` が上限を超えているとボディを読まずにレスポンスを閉じて同じエラーにする（読み取り後の検査も残す）。SSE の 1 行の上限は文字数ではなく UTF-8 のバイト数で数える。
+  - 残る限界: 上限は、大きすぎるレスポンス／イベントをきれいなエラーで拒否するためのもの。`Content-Length` のない（チャンク形式の）ボディでは、読み取り中のピークメモリは上限で抑えられない。
 - ストリーミングでは、HTTP エラー応答のボディ読み取り（`resp.read()`）もヘッダー受信と同じ例外変換・リトライ判定の対象にする（例外の種類で判定するので、ここでの読み取りタイムアウトも既定ではリトライしない）。ここで httpx の例外を外に漏らしてはならない。
 - パッケージ内の `llm` は関数（`llm_ai_api.llm`）で、同名のモジュール `llm.py` を隠す。モジュールを直接参照するときは `sys.modules["llm_ai_api.llm"]` を使う。
 - エラー時はレスポンスボディを読み、JSON として解釈できれば dict、できなければ文字列として例外に格納する。
@@ -353,7 +382,7 @@ class ChatChunk:
 - `:` で始まる行はコメントとして無視する（OpenRouter は `: OPENROUTER PROCESSING` を送ってくる）。
 - OpenAI 系は `data: [DONE]` で終了。ストリームの途中で `error` フィールドを持つイベント（OpenRouter など）を受け取ったら、空のチャンクとして扱わず `APIStreamError` を送出する（本文は `body` に保持する）。部分的な回答を完成したものと誤認させないため。
 - Anthropic は `ping` を無視し、`error` イベントを受け取ったら `APIStreamError` を送出する。`message_stop` で終了。
-- `data` が有効な JSON でない場合は、`json.JSONDecodeError` ではなく `LLMError`（`code="invalid_json_response"`）に変換して送出する（`SSEEvent.json()`）。
+- `data` が有効な JSON でない場合は、`json.JSONDecodeError` ではなく `LLMError`（`code="invalid_json_response"`）に変換して送出する（`SSEEvent.json()`）。JSON として有効でもオブジェクト（dict）でない場合（配列・数値・文字列・`null`）も同じ扱い。非ストリームのレスポンス本文（`request()`）も同様に、dict でなければ `invalid_json_response`。
 - テキスト差分の取り出し:
   - OpenAI 系: `choices[0].delta.content`
   - Anthropic: `content_block_delta` のうち `delta.type == "text_delta"` の `delta.text`
@@ -390,9 +419,11 @@ LLMError                      # 基底
   | `cache_dir_not_set` | `LLMConfigError`（`clear_cache()` でディレクトリ未指定） |
   | `invalid_cache` | `LLMConfigError`（キャッシュ設定の誤り） |
   | `invalid_log` | `LLMConfigError`（ログ設定の誤り） |
+  | `invalid_connection` | `LLMConfigError`（接続設定の誤り） |
   | `invalid_url` | `LLMConfigError`（ベース URL / パスが URL として不正） |
   | `invalid_option` | `LLMConfigError`（オプションの値が範囲外。現在は `retry_after_max`） |
   | `invalid_json_response` | `LLMError` |
+  | `response_too_large` | `LLMError`（レスポンス本体または SSE の 1 行がサイズ上限を超えた） |
 
 ## 7.1 多言語化（`lang/`）
 
@@ -407,6 +438,7 @@ LLMError                      # 基底
 - **ヒント**: HTTP エラーには、原因の見当がつくものだけ、メッセージの 2 行目に `ヒント: ...` を付ける（400 / 401 / 403 / 404 / 429 / 5xx）。
 - メッセージは `t(msg_id, lang, **params)` で作る。例外クラスや呼び出し側に、文章を直接書かない。
 - 公開 API: `set_language(lang)`, `get_language()`（`llm_ai_api` から import できる）。
+- `set_language()` はプロセス全体の設定で、他のスレッドや作成済みのインスタンスが例外を出すときの言語も変わる（`set_cache()` / `set_log()` は生成時に解決される点が異なる）。インスタンスごとに変えたいときは、生成時に `lang=` を渡す（呼び出しごとの `lang=` はない）。
 
 ## 8. 対応 Python バージョン・パッケージング
 
