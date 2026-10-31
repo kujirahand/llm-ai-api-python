@@ -76,6 +76,7 @@ llm-ai-api-python/
 │       ├── anthropic.py     # AnthropicClient
 │       └── llm.py           # 共通インターフェイス llm() / LLM
 ├── tests/
+│   ├── helpers.py           # MockTransport 用ヘルパー
 │   ├── test_http.py
 │   ├── test_sse.py
 │   ├── test_openai.py
@@ -234,6 +235,7 @@ class ChatChunk:
   - 既定 2 回。指数バックオフ（0.5 秒起点、上限 8 秒、ジッターあり）。
   - `retry-after` ヘッダーがあれば優先（上限 60 秒）。
   - ストリーミングは、レスポンスを読み始めた後はリトライしない。
+- パッケージ内の `llm` は関数（`llm_ai_api.llm`）で、同名のモジュール `llm.py` を隠す。モジュールを直接参照するときは `sys.modules["llm_ai_api.llm"]` を使う。
 - エラー時はレスポンスボディを読み、JSON として解釈できれば dict、できなければ文字列として例外に格納する。
 
 ### SSE パーサー
@@ -276,7 +278,8 @@ LLMError                      # 基底
 
 ## 9. テスト
 
-- テストフレームワークは標準の `unittest`。実行: `python -m unittest discover -s tests`
+- テストフレームワークは標準の `unittest`。実行: `PYTHONPATH=src python -m unittest discover -s tests -t .`（`pip install -e .` 済みなら `PYTHONPATH` は不要）
+- テスト共通のヘルパーは `tests/helpers.py`（`Recorder` が送信内容を記録して応答を返す）。
 - ユニットテストはネットワークに出ない。`httpx.MockTransport` を使って、送信内容の検証と応答の差し替えを行う。
 - 最低限テストすること:
   - 共通インターフェイス: モデル指定文字列の分割（`:` を含むモデル名）、別名、エラー、既定値と呼び出しごとの上書き
