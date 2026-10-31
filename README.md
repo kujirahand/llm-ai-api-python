@@ -54,6 +54,7 @@ See [`examples/`](examples/). Each script takes a `provider:model` argument (or 
 | `chat_history.py` | Reply based on a chat history |
 | `ocr_test.py` | Read the text in an image |
 | `image_desc.py` | Describe an image |
+| `models_test.py` | Two models (GPT-6 Luna and Claude Haiku) discuss the breakfast menu, using the `models` constants (needs both API keys) |
 
 Image content is not converted between providers; the examples build the right format for each one (see `examples/_common.py`).
 

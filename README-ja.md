@@ -54,6 +54,7 @@ m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 | `chat_history.py` | チャット履歴に基づいて返信する |
 | `ocr_test.py` | 画像に書かれた文字を読み取る |
 | `image_desc.py` | 画像の内容を説明してもらう |
+| `models_test.py` | `models` の定数を使い、2 つのモデル（GPT-6 Luna と Claude Haiku）に朝食のメニューについて意見交換してもらう（両方の API キーが必要） |
 
 画像のコンテンツはプロバイダー間で変換されません。サンプルでは、プロバイダーごとの形式を組み立てています（`examples/_common.py` を参照）。
 
