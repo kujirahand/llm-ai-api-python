@@ -2,7 +2,7 @@
 
 A thin, stable HTTP wrapper for the OpenAI, OpenRouter, Claude (Anthropic), and Google APIs. It does not use the official SDKs; the only dependency is `httpx`.
 
-[日本語版 (Japanese)](README-ja.md)
+[日本語版 (Japanese)](https://github.com/kujirahand/llm-ai-api-python/blob/main/README-ja.md)
 
 ## Installation
 
@@ -49,7 +49,7 @@ The constants are examples. Any other model works as a plain string, e.g. `llm("
 
 ## Examples
 
-See [`examples/`](examples/). Each script takes a `provider:model` argument (or the `LLM_MODEL` env var).
+See [`examples/`](https://github.com/kujirahand/llm-ai-api-python/tree/main/examples). Each script takes a `provider:model` argument (or the `LLM_MODEL` env var).
 
 | Script | What it shows |
 |---|---|
