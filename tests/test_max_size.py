@@ -154,7 +154,10 @@ class LogMaxSizeTest(TmpDirTest):
         calls = []
 
         def stat(path, *a, **k):
-            if path == self.path:
+            # _trim() stats JSONLLog._normalized_path (realpath). A raw compare
+            # misses when the temp dir is reached through a symlink, which is
+            # the usual case on macOS (/var/folders -> /private/var/folders).
+            if os.path.realpath(path) == os.path.realpath(self.path):
                 calls.append(path)
                 if len(calls) == 2:  # the guard's stat: simulate another process appending
                     with open(self.path, "a", encoding="utf-8") as f:
