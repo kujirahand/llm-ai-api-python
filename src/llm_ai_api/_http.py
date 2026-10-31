@@ -273,7 +273,9 @@ class BaseClient:
             yield chunk
         self._log_call(body, {"text": "".join(texts), "chunks": raws}, stream=True, cached=cached)
 
-    def _stream_events(self, path: str, body: Dict[str, Any]) -> Tuple[Iterator[SSEEvent], bool]:
+    def _stream_events(
+        self, path: str, body: Dict[str, Any], timeout: Optional[float] = None
+    ) -> Tuple[Iterator[SSEEvent], bool]:
         """`request_stream()` with the response cache: replay a hit, record a miss.
 
         A stream is stored only when it was read to the end (or up to its terminal event),
@@ -284,7 +286,7 @@ class BaseClient:
         if cached is not None and isinstance(cached.raw.get("events"), list):
             replay = [SSEEvent(e.get("event"), e.get("data", "")) for e in cached.raw["events"]]
             return iter(replay), True
-        events = self.request_stream(path, body)
+        events = self.request_stream(path, body, timeout=timeout)
         if self.cache is None:
             return events, False
         return self._record_events(events, body), False

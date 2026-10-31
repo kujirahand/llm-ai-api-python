@@ -194,7 +194,9 @@ class _AsyncBaseClient:
         """Pass chunks through and log the whole stream once it has been read to the end."""
         return _AsyncLoggedChunks(self, chunks, body, cached)
 
-    async def _astream_events(self, path: str, body: Dict[str, Any]) -> Tuple[Any, bool]:
+    async def _astream_events(
+        self, path: str, body: Dict[str, Any], timeout: Optional[float] = None
+    ) -> Tuple[Any, bool]:
         """`request_stream()` with the response cache: replay a hit, record a miss.
 
         Returns the events (an async iterator with `aclose()`) and whether they were
@@ -204,7 +206,7 @@ class _AsyncBaseClient:
         if cached is not None and isinstance(cached.raw.get("events"), list):
             replay = [SSEEvent(e.get("event"), e.get("data", "")) for e in cached.raw["events"]]
             return _ReplayEvents(replay), True
-        events = await self.request_stream(path, body)
+        events = await self.request_stream(path, body, timeout=timeout)
         if self.cache is None:
             return events, False
         return _AsyncRecordedEvents(self, events, body), False

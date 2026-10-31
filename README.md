@@ -39,6 +39,16 @@ A stream closes its connection by itself when it is read to the end or dropped (
 Parameters you do not pass are never sent (newer models reject even default values such as `temperature`).
 Anything else can go through `extra={...}`, or the raw layer: `luna.client.request(path, body)`.
 
+#### Per-call timeout
+
+`ask()` / `chat()` / `stream()` (and the async `aask()` / `achat()` / `astream()`) take a keyword argument `timeout` (seconds) that overrides the timeout for that call only. If omitted (`None`), the client's setting is used (default 600 seconds).
+
+```python
+text = luna.ask("A short question", timeout=30)
+```
+
+This is a **per-operation timeout**, not a total deadline (for a stream, it is the time to wait for the next data). Retries (2 by default) extend the total time. If you need a hard deadline, wrap the call with `asyncio.wait_for()` in async code, or combine a short `timeout` with `max_retries=0` (or a small value) in sync code.
+
 You can also pick from the model constants (they are just `"provider:model"` strings):
 
 ```python
