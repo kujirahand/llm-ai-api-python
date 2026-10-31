@@ -20,6 +20,7 @@ from .lang import t
 DEFAULT_LOG_PATH = "llm_ai_api_log.jsonl"
 LOG_DIR_ENV = "LLM_AI_API_LOG_DIR"
 LOG_NAME = "llm.jsonl"  # file name inside the directory given by LOG_DIR_ENV
+DEFAULT_MAX_SIZE = 100 * 1024 * 1024  # bytes; above this the oldest third of the records is dropped
 
 
 class _Unset:
@@ -43,10 +44,35 @@ LOG_NOT_SET = _Unset()
 
 
 class JSONLLog:
-    """Append-only JSON Lines log file."""
+    """Append-only JSON Lines log file.
 
-    def __init__(self, path: "str | os.PathLike[str]", *, lang: Optional[str] = None) -> None:
+    `max_size` (bytes) caps the file: when a `write()` leaves the file larger than that,
+    the oldest third of the lines is dropped and the rest is rewritten. If the file is
+    still over the limit, the next write trims again. The newest record is always kept.
+    None means unlimited.
+
+    Threads of one process are serialized by a lock. Several processes writing to the
+    same file are not fully supported while a trim runs: the trim abandons itself if the
+    file changed since it was read (the next write retries), but a record appended by
+    another process in the tiny window between that check and the final rename can
+    still be lost.
+    """
+
+    def __init__(
+        self,
+        path: "str | os.PathLike[str]",
+        *,
+        max_size: Optional[int] = DEFAULT_MAX_SIZE,
+        lang: Optional[str] = None,
+    ) -> None:
         self.path = os.fspath(path)
+        if max_size is not None and (
+            isinstance(max_size, bool) or not isinstance(max_size, int) or max_size <= 0
+        ):
+            raise LLMConfigError(
+                t("invalid_log", lang, detail="max_size=%r" % (max_size,)), code="invalid_log"
+            )
+        self.max_size = max_size
         self._lock = threading.Lock()
         try:
             parent = os.path.dirname(os.path.abspath(self.path))
@@ -84,6 +110,42 @@ class JSONLLog:
         line = json.dumps(record, ensure_ascii=False, default=str)
         with self._lock, self._open() as f:
             f.write(line + "\n")
+        with self._lock:
+            self._trim()
+
+    def _trim(self) -> None:
+        """Drop the oldest third of the records if the file exceeds `max_size`.
+
+        Called with the lock held. Best effort: a failure must not break the caller.
+        """
+        if self.max_size is None:
+            return
+        tmp = self.path + ".tmp"
+        try:
+            before = os.stat(self.path)
+            if before.st_size <= self.max_size:
+                return
+            with open(self.path, "rb") as f:
+                lines = f.read().splitlines(keepends=True)
+            if len(lines) < 2:  # keep the newest record even if it alone exceeds max_size
+                return
+            keep = lines[max(1, len(lines) // 3):]
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "wb") as f:
+                f.writelines(keep)
+            after = os.stat(self.path)
+            if (after.st_ino, after.st_size, after.st_mtime_ns) != (
+                before.st_ino, before.st_size, before.st_mtime_ns
+            ):
+                # Another process appended while we worked: give up, retry on the next write.
+                os.remove(tmp)
+                return
+            os.replace(tmp, self.path)
+        except OSError:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
 
     def close(self) -> None:
         """No-op (the file is opened per write); kept for API symmetry."""
@@ -94,26 +156,31 @@ _global_set = False  # True once set_log() was called (even with None = explicit
 _env_log: Any = None  # log opened from LLM_AI_API_LOG_DIR, created on first use
 
 
-def _resolve(value: Any, lang: Optional[str]) -> Any:
+def _resolve(value: Any, lang: Optional[str], max_size: Optional[int] = DEFAULT_MAX_SIZE) -> Any:
     if value is None or value is False:
         return None
     if value is True:
-        return JSONLLog(DEFAULT_LOG_PATH, lang=lang)
+        return JSONLLog(DEFAULT_LOG_PATH, max_size=max_size, lang=lang)
     if isinstance(value, (str, os.PathLike)):
-        return JSONLLog(value, lang=lang)
+        return JSONLLog(value, max_size=max_size, lang=lang)
     if isinstance(value, JSONLLog) or callable(getattr(value, "write", None)):
         return value
     raise LLMConfigError(t("invalid_log", lang, detail=repr(value)), code="invalid_log")
 
 
-def set_log(log: Any = None, *, lang: Optional[str] = None) -> Any:
+def set_log(
+    log: Any = None, *, max_size: Optional[int] = DEFAULT_MAX_SIZE, lang: Optional[str] = None
+) -> Any:
     """Set the process-wide log (None/False: off, True: default file, path, or log object).
+
+    `max_size` (bytes, None = unlimited) is used when the log is created here from True or
+    a path. A ready-made log object keeps its own `max_size`; this argument is ignored.
 
     Once called, it takes precedence over the LLM_AI_API_LOG_DIR environment variable.
     A log object needs `write(provider, model, request, response, *, stream, cached)`.
     """
     global _global_log, _global_set
-    _global_log = _resolve(log, lang)
+    _global_log = _resolve(log, lang, max_size)
     _global_set = True
     return _global_log
 

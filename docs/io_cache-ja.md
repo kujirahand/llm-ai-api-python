@@ -44,6 +44,22 @@ print(n, "件削除しました")
 
 `days` 日より前に保存されたエントリを消し、消した件数を返します。ディレクトリは、引数、環境変数、`set_cache()` で設定したキャッシュの順に探します。どこにもなければ `LLMConfigError`（`code="cache_dir_not_set"`）です。`SQLiteCache.clear(days=None)` も同じ動きです。
 
+## 最大サイズ
+
+```python
+from llm_ai_api import SQLiteCache, llm, set_cache
+
+set_cache("./cache.db", max_size=50 * 1024 * 1024)   # 50 MB（パスや True から作るとき）
+set_cache("./cache.db", max_size=None)                # 無制限
+m = llm("openai:gpt-6-luna", cache=SQLiteCache("./cache.db", max_size=10_000_000))
+```
+
+- `max_size`（バイト）の既定値は **100 MB** です（`llm_ai_api.cache.DEFAULT_MAX_SIZE`）。パスや `True` を渡したときと、環境変数 `LLM_AI_API_CACHE_DIR` では、この既定値になります。
+- `put()` のあとにファイルサイズが `max_size` を超えていたら、古いほうから 1/3 の行（保存時刻順）を削除し、`VACUUM` でファイルを縮めます。1 回の `put()` につき整理は 1 回だけで、まだ超えているときは次の `put()` でまた整理します。最新の行は必ず残ります。
+- `max_size=None` で無制限（制限なし）になります。0 以下や整数以外は `LLMConfigError`（`code="invalid_cache"`）です。
+- `set_cache()` の `max_size` は、パスや `True` から作るときだけ使われます。`SQLiteCache` オブジェクトを渡したときは、そのオブジェクトの `max_size` が優先されます。
+- 整理に失敗しても呼び出しは失敗しません（ベストエフォート）。
+
 ## 仕様
 
 - **対象**: `chat()` / `ask()` と、`stream_chat()` / `stream()`（ストリーミング）。生レイヤー（`request()`）は対象外です。
