@@ -4,6 +4,13 @@ A thin, stable HTTP wrapper for the OpenAI, OpenRouter, Claude (Anthropic), and 
 
 [日本語版 (Japanese)](https://github.com/kujirahand/llm-ai-api-python/blob/main/README-ja.md)
 
+## Why use this package?
+
+- **Unified code across providers**: Switch models simply by changing the model string—such as `llm("openai:gpt-6-luna")`, `llm("openrouter:anthropic/claude-sonnet-5.5")`, `llm("claude:claude-sonnet-5-5")`, or `llm("google:gemini-3.8-flash")`—while using the same `ask()`, `chat()`, and `stream()` methods.
+- **No boilerplate parameter handling**: Unspecified parameters are never sent. Furthermore, starting in v0.4.0, parameters confirmed to be rejected by official API specs (such as `temperature` and `top_p` on certain models) are automatically omitted according to a rule table, even if explicitly passed, removing the need to write custom workaround functions (such as `_is_no_temperature()`).
+- **Built-in caching and logging**: SQLite response caching (encrypted with a key derived from your API key; streams can be cached too) via `set_cache()` (or `cache=`) and JSON Lines request/response logging via `set_log()` (or `log=`) are built right in.
+- **Lightweight dependencies (`httpx` only)**: The only dependency is `httpx`; official packages like `openai` or `anthropic` are not required, keeping installs small and reducing dependency conflicts.
+
 ## Installation
 
 ```sh
