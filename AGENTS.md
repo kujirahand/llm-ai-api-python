@@ -182,7 +182,7 @@ client = AnthropicClient(
 
 - `OpenRouterClient` は追加で `app_url`（→ `HTTP-Referer`）、`app_name`（→ `X-Title`）を受け取れる。
 - API キーが見つからない場合は、リクエスト時ではなく **クライアント生成時** に `LLMConfigError` を送出する。
-- API キーを `repr()` やログ、例外メッセージに含めない。
+- API キーを `repr()` やログ、例外メッセージに含めない。`repr()` に出す `base_url` は、userinfo（`user:pass@`）を `***` に置き換え、クエリ文字列とフラグメントを除いてマスクする。
 - クライアントは内部に `httpx.Client` を 1 つ持って再利用する。`close()` とコンテキストマネージャに対応する。
 
 環境変数:
@@ -261,7 +261,8 @@ class ChatChunk:
 - **既定はオフ**。有効にすると、同じリクエストへの 2 回目以降は API を呼ばず、保存済みの結果を返す。
 - グローバル設定: `set_cache(cache)` / `get_cache()`（`llm_ai_api` から import できる）。`set_cache(None)` でオフに戻す。
 - インスタンスごとの設定: `llm(..., cache=...)` と各クライアントの `cache=...`。値は `True`（既定ファイル `llm_ai_api_cache.db`）、パス（`str` / `os.PathLike`）、`SQLiteCache`（同等のオブジェクトも可。インターフェイスは `get(key) -> ChatResult | None` と `put(key, provider, result)`）、`False` / `None`（このインスタンスだけオフ）。引数を渡さなければグローバル設定に従う（内部のセンチネル `CACHE_NOT_SET`）。
-- キー: プロバイダー名、リクエストボディ（model・messages・パラメータ、つまり「モデル + 入力」）、応答に影響するクライアント設定（`base_url`、追加ヘッダー、Anthropic の `anthropic_version`）の正規化 JSON（`sort_keys=True`）の sha256。
+- キー: プロバイダー名、リクエストボディ（model・messages・パラメータ、つまり「モデル + 入力」）、応答に影響するクライアント設定（`base_url`、追加ヘッダー、Anthropic の `anthropic_version`、API キーのフィンガープリント）の正規化 JSON（`sort_keys=True`）の sha256。API キーは SHA-256 のフィンガープリントだけを使い、キー自体は保存しない。API キーが違うクライアント同士はキャッシュを共有しない。
+- キャッシュファイルは新規作成時に権限 `0600`（親ディレクトリを作る場合は `0700`）にする（権限を設定できないファイルシステムではベストエフォート）。応答は平文で保存されるため、機密情報として扱う。
 - 保存するもの: `ChatResult`（text / model / stop_reason / usage / raw）を JSON にして、SQLite のテーブル `llm_cache` に入れる。接続は操作ごとに開閉し、書き込みはロックで保護する。`SQLiteCache.clear()` で全削除。壊れた行はミスとして扱い、読み取り時に削除する。
 - 有効にしている間、同じリクエストには常に同じ保存済み応答が返る（モデルの非決定性は抑えられる）。新しい応答が欲しい場合はキャッシュを空にするかオフにする。
 - 対象は `chat()` / `ask()` のみ。ストリーミング（`stream_chat()` / `stream()`）はキャッシュしない。生レイヤー（`request()`）も対象外。
@@ -291,6 +292,7 @@ class ChatChunk:
 - `:` で始まる行はコメントとして無視する（OpenRouter は `: OPENROUTER PROCESSING` を送ってくる）。
 - OpenAI 系は `data: [DONE]` で終了。ストリームの途中で `error` フィールドを持つイベント（OpenRouter など）を受け取ったら、空のチャンクとして扱わず `APIStreamError` を送出する（本文は `body` に保持する）。部分的な回答を完成したものと誤認させないため。
 - Anthropic は `ping` を無視し、`error` イベントを受け取ったら `APIStreamError` を送出する。`message_stop` で終了。
+- `data` が有効な JSON でない場合は、`json.JSONDecodeError` ではなく `LLMError`（`code="invalid_json_response"`）に変換して送出する（`SSEEvent.json()`）。
 - テキスト差分の取り出し:
   - OpenAI 系: `choices[0].delta.content`
   - Anthropic: `content_block_delta` のうち `delta.type == "text_delta"` の `delta.text`

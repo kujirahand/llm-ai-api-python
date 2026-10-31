@@ -6,6 +6,9 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
+from .errors import LLMError
+from .lang import t
+
 
 @dataclass
 class Usage:
@@ -43,4 +46,10 @@ class SSEEvent:
 
     def json(self) -> Dict[str, Any]:
         """`data` を JSON として解釈して返す。"""
-        return json.loads(self.data)
+        try:
+            return json.loads(self.data)
+        except ValueError as e:
+            raise LLMError(
+                t("invalid_json_response", preview=self.data[:200]),
+                code="invalid_json_response",
+            ) from e

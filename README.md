@@ -61,6 +61,8 @@ m3 = llm("openai:gpt-6-luna", cache=False)       # off for this instance only
 
 Note that while the cache is on, the same request always returns the same stored answer. Clear the cache or turn it off when you want a fresh generation.
 
+Responses are stored in plain text in the cache file, so treat the file as sensitive. When the library creates the file, it is owner-only (0600).
+
 ## Examples
 
 See [`examples/`](examples/). Each script takes a `provider:model` argument (or the `LLM_MODEL` env var).

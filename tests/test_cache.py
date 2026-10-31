@@ -116,6 +116,11 @@ class SQLiteCacheTest(CacheTestBase):
         self.assertIsNone(c.get("bad2"))
         self.assertEqual(len(c), 0)
 
+    @unittest.skipUnless(os.name == "posix", "POSIX file permissions only")
+    def test_new_file_is_owner_only(self):
+        SQLiteCache(self.db)
+        self.assertEqual(os.stat(self.db).st_mode & 0o777, 0o600)
+
     def test_unusable_path(self):
         blocker = os.path.join(self.dir, "file")
         with open(blocker, "w") as f:
@@ -213,6 +218,19 @@ class ChatCacheTest(CacheTestBase):
         self.assertEqual((len(rec_a.requests), len(rec_b.requests)), (1, 1))
         a.ask("q")
         self.assertEqual(len(rec_a.requests), 1)
+
+    def test_api_key_separates_entries(self):
+        rec_a = Recorder(json_response(OPENAI_REPLY))
+        a = llm("openai:m", api_key="key-a", transport=rec_a.transport, cache=self.db)
+        rec_b = Recorder(json_response(OPENAI_REPLY))
+        b = llm("openai:m", api_key="key-b", transport=rec_b.transport, cache=self.db)
+        a.ask("q")
+        b.ask("q")  # same prompt, different API key: no cache hit
+        self.assertEqual((len(rec_a.requests), len(rec_b.requests)), (1, 1))
+        rec_c = Recorder(json_response(OPENAI_REPLY))
+        c = llm("openai:m", api_key="key-a", transport=rec_c.transport, cache=self.db)
+        c.ask("q")  # reuses the first key: served from the cache
+        self.assertEqual(len(rec_c.requests), 0)
 
     def test_extra_changes_the_key(self):
         rec = Recorder(json_response(OPENAI_REPLY))

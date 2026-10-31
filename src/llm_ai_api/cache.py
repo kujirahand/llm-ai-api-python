@@ -66,13 +66,20 @@ class SQLiteCache:
         try:
             parent = os.path.dirname(self.path)
             if parent:
-                os.makedirs(parent, exist_ok=True)
+                os.makedirs(parent, mode=0o700, exist_ok=True)
+            existed = os.path.exists(self.path)
             with self._connect() as conn:
                 conn.execute(
                     "CREATE TABLE IF NOT EXISTS llm_cache ("
                     "key TEXT PRIMARY KEY, provider TEXT NOT NULL, model TEXT, "
                     "response TEXT NOT NULL, created_at REAL NOT NULL)"
                 )
+            if not existed:
+                # Responses are stored in plain text: make a new file owner-only.
+                try:
+                    os.chmod(self.path, 0o600)
+                except OSError:
+                    pass  # best effort (e.g. filesystems without POSIX permissions)
         except (sqlite3.Error, OSError) as e:
             raise LLMConfigError(
                 t("invalid_cache", lang, detail="%s: %s" % (self.path, e)),

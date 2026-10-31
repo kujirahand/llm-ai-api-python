@@ -5,10 +5,12 @@ httpx の例外は、ここで自前の例外に変換して外に出さない�
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import random
 import time
+import urllib.parse
 from typing import Any, Dict, Iterable, Iterator, Optional, Tuple
 
 import httpx
@@ -53,6 +55,22 @@ def iter_sse(lines: Iterable[str]) -> Iterator[SSEEvent]:
             data.append(value)
     if data or event is not None:
         yield SSEEvent(event, "\n".join(data))
+
+
+def _mask_url(url: str) -> str:
+    """Return `url` safe for display: userinfo becomes `***`, query and fragment are dropped.
+
+    The API key is never part of the URL; this protects credentials a user may have
+    embedded in a custom base URL. If the URL cannot be parsed, returns `"***"`.
+    """
+    try:
+        parts = urllib.parse.urlsplit(url)
+        netloc = parts.netloc
+        if "@" in netloc:
+            netloc = "***@" + netloc.rpartition("@")[2]
+        return urllib.parse.urlunsplit((parts.scheme, netloc, parts.path, "", ""))
+    except ValueError:
+        return "***"
 
 
 def _user_agent() -> str:
@@ -128,7 +146,7 @@ class BaseClient:
         )
 
     def __repr__(self) -> str:
-        return "%s(base_url=%r)" % (type(self).__name__, self.base_url)
+        return "%s(base_url=%r)" % (type(self).__name__, _mask_url(self.base_url))
 
     def close(self) -> None:
         """内部の HTTP クライアントを閉じる。"""
@@ -138,9 +156,15 @@ class BaseClient:
         """Return the client settings that can change a response for the same body.
 
         Part of the cache key, so cached entries are not shared across different
-        endpoints or header configurations. Providers add their own settings.
+        endpoints, API keys or header configurations. Providers add their own settings.
+        Only the SHA-256 fingerprint of the API key is used; the key itself is never
+        stored (the whole context is hashed into the row key).
         """
-        return {"base_url": self.base_url, "headers": dict(self._extra_headers)}
+        return {
+            "base_url": self.base_url,
+            "headers": dict(self._extra_headers),
+            "api_key_fingerprint": hashlib.sha256(self._api_key.encode("utf-8")).hexdigest(),
+        }
 
     def _cache_lookup(self, body: Dict[str, Any]) -> Optional[ChatResult]:
         """Return the cached result for this request body, or None (miss or cache failure)."""

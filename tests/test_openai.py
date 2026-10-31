@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from llm_ai_api import APIStreamError, OpenAIClient, OpenRouterClient, llm
+from llm_ai_api import APIStreamError, LLMError, OpenAIClient, OpenRouterClient, llm
 
 from .helpers import Recorder, json_response, sse_response
 
@@ -79,6 +79,13 @@ class OpenAITest(unittest.TestCase):
         self.assertIn("upstream failed", str(cm.exception))
         self.assertEqual(cm.exception.body, err)
         self.assertEqual(cm.exception.code, "stream_error")
+
+    def test_invalid_json_in_stream_raises_library_error(self):
+        rec = Recorder(sse_response("data: {not json}\n\n"))
+        c = OpenAIClient(api_key="k", transport=rec.transport)
+        with self.assertRaises(LLMError) as cm:
+            list(c.stream_chat("m", MSGS))
+        self.assertEqual(cm.exception.code, "invalid_json_response")
 
     def test_string_error_in_stream_raises(self):
         rec = Recorder(sse_response('data: {"error": "boom"}\n\n'))
