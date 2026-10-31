@@ -15,8 +15,8 @@ async def main(spec):
     async with llm(spec) as m:
         print(await m.aask("Say hello in one short sentence."))
 
-        # astream() is iterated directly with `async for` (no await).
-        async for piece in m.astream("Tell me a two-sentence story about a dog."):
+        # aask_stream() is iterated directly with `async for` (no await).
+        async for piece in m.aask_stream("Tell me a two-sentence story about a dog."):
             print(piece, end="", flush=True)
         print()
 

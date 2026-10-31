@@ -240,7 +240,7 @@ class SyncMetadataTest(unittest.TestCase):
         rec = Recorder(sse(STREAM, "req-s"))
         m = llm("openai:m", api_key="k", transport=rec.transport, cache=False, log=False)
         self.addCleanup(m.close)
-        stream = m.stream("q")
+        stream = m.ask_stream("q")
         self.assertEqual(stream.request_id, "req-s")
         self.assertEqual("".join(stream), "AB")
 
@@ -250,7 +250,7 @@ class SyncMetadataTest(unittest.TestCase):
         self.addCleanup(m.close)
         seen = []
         m.add_event_listener(None, listen(seen))
-        stream = m.stream("q")
+        stream = m.ask_stream("q")
         self.assertEqual(next(stream), "A")
         stream.close()
         self.assertEqual([event for event, _ in seen], ["response"])
@@ -267,7 +267,7 @@ class SyncMetadataTest(unittest.TestCase):
         m.add_event_listener(None, listen(seen))
         got = []
         with self.assertRaises(APIStreamError) as cm:
-            for piece in m.stream("q"):
+            for piece in m.ask_stream("q"):
                 got.append(piece)
         self.assertEqual(got, ["A"])
         self.assertEqual(cm.exception.provider, "openai")
@@ -322,10 +322,10 @@ class SyncMetadataTest(unittest.TestCase):
             rec = Recorder(sse(STREAM, "req-s"))
             m = llm("openai:m", api_key="k", transport=rec.transport, cache=path, log=False)
             self.addCleanup(m.close)
-            self.assertEqual("".join(m.stream("q")), "AB")
+            self.assertEqual("".join(m.ask_stream("q")), "AB")
             seen = []
             m.add_event_listener(None, listen(seen))
-            again = m.stream("q")
+            again = m.ask_stream("q")
             self.assertEqual(again.request_id, "req-s")
             self.assertEqual("".join(again), "AB")
             self.assertEqual([event for event, _ in seen], ["cache_hit"])
@@ -362,7 +362,7 @@ class AsyncMetadataTest(unittest.IsolatedAsyncioTestCase):
         m = llm("openai:m", api_key="k", transport=rec.transport, cache=False, log=False)
         seen = []
         m.add_event_listener(None, listen(seen))
-        stream = m.astream("q")
+        stream = m.aask_stream("q")
         self.assertIsNone(stream.request_id)
         self.assertEqual(await stream.__anext__(), "A")
         self.assertEqual(stream.request_id, "req-s")
@@ -403,7 +403,7 @@ class AsyncMetadataTest(unittest.IsolatedAsyncioTestCase):
         m = llm("openai:m", api_key="k", transport=rec.transport, cache=False, log=False)
         seen = []
         m.add_event_listener("stream_error", listen(seen))
-        stream = m.astream("q")
+        stream = m.aask_stream("q")
         with self.assertRaises(APIStreamError) as cm:
             await stream.__anext__()
         self.assertEqual(cm.exception.request_id, "req-e")

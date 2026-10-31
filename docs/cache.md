@@ -34,7 +34,7 @@ print(result.text)
 print(result.raw["usage"])
 ```
 
-`ask()` and `stream()` take a plain string question, so use `chat()` when you pass a list of blocks.
+`ask()` and `ask_stream()` take a plain string question, so use `chat()` when you pass a list of blocks.
 
 From the second call on, the part that is identical to the previous call (the `system` above) is read from the cache. Check whether the cache was hit in `result.raw["usage"]`:
 

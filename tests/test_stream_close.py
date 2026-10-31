@@ -94,7 +94,7 @@ class SyncStreamCloseTest(unittest.TestCase):
         return m
 
     def test_llm_stream_dropped_without_iteration_closes_response(self):
-        s = self.make().stream("q")
+        s = self.make().ask_stream("q")
         self.assertEqual(self.body.closes, 0)
         del s
         gc.collect()
@@ -102,7 +102,7 @@ class SyncStreamCloseTest(unittest.TestCase):
 
     def test_recorded_stream_dropped_without_iteration_closes_response(self):
         with tempfile.TemporaryDirectory() as d:
-            s = self.make(cache=os.path.join(d, "cache.db")).stream("q")
+            s = self.make(cache=os.path.join(d, "cache.db")).ask_stream("q")
             del s
             gc.collect()
         self.assertEqual(self.body.closes, 1)
@@ -116,14 +116,14 @@ class SyncStreamCloseTest(unittest.TestCase):
         self.assertEqual(self.body.closes, 1)
 
     def test_partially_consumed_then_dropped_closes_response(self):
-        s = self.make().stream("q")
+        s = self.make().ask_stream("q")
         self.assertEqual(next(s), "0")
         del s
         gc.collect()
         self.assertEqual(self.body.closes, 1)
 
     def test_full_iteration_closes_once(self):
-        s = self.make().stream("q")
+        s = self.make().ask_stream("q")
         self.assertEqual("".join(s), "01234")
         del s
         gc.collect()
@@ -182,7 +182,7 @@ class AsyncStreamCloseTest(unittest.IsolatedAsyncioTestCase):
     async def test_break_without_aclose_schedules_close(self):
         body = AsyncCountingStream()
         async with self.make(body) as m:
-            s = m.astream("q")
+            s = m.aask_stream("q")
             async for piece in s:
                 self.assertEqual(piece, "0")
                 break
@@ -196,7 +196,7 @@ class AsyncStreamCloseTest(unittest.IsolatedAsyncioTestCase):
         body = AsyncCountingStream()
         with tempfile.TemporaryDirectory() as d:
             async with self.make(body, cache=os.path.join(d, "cache.db")) as m:
-                s = m.astream("q")
+                s = m.aask_stream("q")
                 async for _ in s:
                     break
                 del s
@@ -207,7 +207,7 @@ class AsyncStreamCloseTest(unittest.IsolatedAsyncioTestCase):
     async def test_full_iteration_closes_once(self):
         body = AsyncCountingStream()
         async with self.make(body) as m:
-            s = m.astream("q")
+            s = m.aask_stream("q")
             self.assertEqual("".join([p async for p in s]), "01234")
             del s
             gc.collect()
@@ -217,7 +217,7 @@ class AsyncStreamCloseTest(unittest.IsolatedAsyncioTestCase):
     async def test_explicit_aclose_is_idempotent(self):
         body = AsyncCountingStream()
         async with self.make(body) as m:
-            s = m.astream("q")
+            s = m.aask_stream("q")
             await s.__anext__()
             await s.aclose()
             await s.aclose()
@@ -229,7 +229,7 @@ class AsyncStreamCloseTest(unittest.IsolatedAsyncioTestCase):
     async def test_dropped_from_other_thread_schedules_close_on_loop(self):
         body = AsyncCountingStream()
         async with self.make(body) as m:
-            holder = [m.astream("q")]
+            holder = [m.aask_stream("q")]
             async for _ in holder[0]:
                 break
             self.assertEqual(body.closes, 0)

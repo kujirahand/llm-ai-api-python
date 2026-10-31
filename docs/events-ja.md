@@ -29,7 +29,7 @@ remove_event_listener(event, listener) -> None
 - 同じ関数は複数回登録できます。登録した順に、登録の数だけ呼ばれます。`remove_event_listener` は一致するものを 1 件だけ外します（`is` による同一性）。登録されていないリスナーを外してもエラーにはなりません。
 - 未知のイベント名は、登録時も削除時も `LLMConfigError`（`code="invalid_event"`）です。呼び出し可能でないリスナーは `LLMConfigError`（`code="invalid_listener"`）です。
 - リスナーが `Exception` を出しても、その例外は捨てます。リクエストは続き、リトライは変わらず、後続のリスナーも呼ばれます。`BaseException`（`KeyboardInterrupt` や `asyncio.CancelledError` など）は捕まえません。
-- `m.add_event_listener` と `m.client.add_event_listener` は同じリストです。最初の `aask` / `achat` / `astream` で作る非同期クライアントもそのリストを使います。同期と非同期の呼び出しは、同じリスナーに知らせます。
+- `m.add_event_listener` と `m.client.add_event_listener` は同じリストです。最初の `aask` / `achat` / `aask_stream` / `achat_stream` で作る非同期クライアントもそのリストを使います。同期と非同期の呼び出しは、同じリスナーに知らせます。
 - リスナーは同期関数です。非同期の経路でもイベントループのスレッドから呼ぶので、長くブロックしないでください。
 - プロバイダークライアント（`OpenAIClient` など）も同じ 2 つのメソッドを持ちます。自分で作ったクライアントは、別のリストを持ちます。
 
@@ -43,8 +43,8 @@ payload に API キー、認証ヘッダー、リクエスト本文、レスポ�
 |---|---|
 | `chat()` / `achat()` の `ChatResult` | `request_id`、`latency`（ボディを読み終わるまでの秒）、`retries` |
 | `stream_chat()` の `ChatChunk` | 各チャンクの `request_id`（すべて同じ値） |
-| `stream()` / `stream_chat()` / `request_stream()` のイテレータ | 呼び出しが返った時点の `request_id` と `retries` |
-| `astream()` のイテレータ | 最初の反復がヘッダーを受け取ったあと、最初のテキストを返す前の `request_id` と `retries`。ヘッダーより前に失敗したときは未設定（`None` / `0`）のまま |
+| `ask_stream()` / `chat_stream()` / `stream_chat()` / `request_stream()` のイテレータ | 呼び出しが返った時点の `request_id` と `retries` |
+| `aask_stream()` / `achat_stream()` のイテレータ | 最初の反復がヘッダーを受け取ったあと、最初のテキストを返す前の `request_id` と `retries`。ヘッダーより前に失敗したときは未設定（`None` / `0`）のまま |
 | `APIConnectionError`、`APITimeoutError` | `provider`、`request_id`、`retries`、`latency`。ヘッダーのあとでストリームが切れたときは `request_id` が入る |
 | `APIStatusError`（HTTP 4xx / 5xx） | 上に加え `status_code`、`body`、`headers` |
 | `APIStreamError` | `provider`、`request_id`、`retries`、`latency`、`body` |
@@ -193,7 +193,7 @@ m.add_event_listener(None, on_event)
 result = m.chat([{"role": "user", "content": "こんにちは"}])
 print(result.request_id, result.retries, result.latency)
 
-stream = m.stream("短い物語を書いて")
+stream = m.ask_stream("短い物語を書いて")
 print(stream.request_id)  # 呼び出しが返った時点で入っている
 for piece in stream:
     print(piece, end="", flush=True)

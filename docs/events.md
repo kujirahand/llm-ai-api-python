@@ -29,7 +29,7 @@ remove_event_listener(event, listener) -> None
 - The same function can be registered more than once. Each registration is called, in the order they were added. `remove_event_listener` drops one match, compared by identity (`is`). Removing a listener that was not registered does nothing.
 - An unknown event name raises `LLMConfigError` (`code="invalid_event"`) on add and on remove. A listener that is not callable raises `LLMConfigError` (`code="invalid_listener"`).
 - If a listener raises `Exception`, the exception is discarded. The request continues, retries are unchanged, and later listeners still run. `BaseException` (`KeyboardInterrupt`, `asyncio.CancelledError`, and similar) is not caught.
-- `m.add_event_listener` and `m.client.add_event_listener` share one list. The async client, created on the first `aask` / `achat` / `astream`, uses that same list. Sync and async calls notify the same listeners.
+- `m.add_event_listener` and `m.client.add_event_listener` share one list. The async client, created on the first `aask` / `achat` / `aask_stream` / `achat_stream`, uses that same list. Sync and async calls notify the same listeners.
 - Listeners are synchronous. On the async path they run on the event-loop thread, so they should not block.
 - Provider clients (`OpenAIClient` and the others) have the same two methods. A client you construct yourself has its own list.
 
@@ -43,8 +43,8 @@ The header is `x-request-id` (OpenAI-style APIs) or `request-id` (Anthropic). It
 |---|---|
 | `ChatResult` from `chat()` / `achat()` | `request_id`, `latency` (seconds until the body was read), `retries` |
 | `ChatChunk` from `stream_chat()` | `request_id` on every chunk (the same value) |
-| Iterator from `stream()` / `stream_chat()` / `request_stream()` | `request_id` and `retries` as soon as the call returns |
-| Iterator from `astream()` | `request_id` and `retries` after the first iteration receives headers, before the first text. Both stay unset (`None` / `0`) if the call fails before headers |
+| Iterator from `ask_stream()` / `chat_stream()` / `stream_chat()` / `request_stream()` | `request_id` and `retries` as soon as the call returns |
+| Iterator from `aask_stream()` / `achat_stream()` | `request_id` and `retries` after the first iteration receives headers, before the first text. Both stay unset (`None` / `0`) if the call fails before headers |
 | `APIConnectionError`, `APITimeoutError` | `provider`, `request_id`, `retries`, `latency`. `request_id` is set when a stream drops after headers |
 | `APIStatusError` (HTTP 4xx / 5xx) | the same, plus `status_code`, `body`, `headers` |
 | `APIStreamError` | `provider`, `request_id`, `retries`, `latency`, and `body` |
@@ -193,8 +193,8 @@ m.add_event_listener(None, on_event)
 result = m.chat([{"role": "user", "content": "Hello"}])
 print(result.request_id, result.retries, result.latency)
 
-stream = m.stream("Write a short story")
-print(stream.request_id)  # set when stream() returns
+stream = m.ask_stream("Write a short story")
+print(stream.request_id)  # set when ask_stream() returns
 for piece in stream:
     print(piece, end="", flush=True)
 ```

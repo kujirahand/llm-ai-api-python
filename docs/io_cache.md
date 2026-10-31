@@ -62,7 +62,7 @@ m = llm("openai:gpt-6-luna", cache=SQLiteCache("./cache.db", max_size=10_000_000
 
 ## Behavior
 
-- **Scope**: `chat()` / `ask()` and `stream_chat()` / `stream()` (streaming). The raw layer (`request()`) is not cached.
+- **Scope**: `chat()` / `ask()` and `stream_chat()` / `ask_stream()` / `chat_stream()` (streaming). The raw layer (`request()`) is not cached.
 - **Key**: hex `sha256("{provider}:{model}@{api_key}>>>{input}")`. `{input}` is the request body (`messages`, `temperature`, `max_tokens`, anything added with `extra`, `stream`, ...) plus the client settings that can change a response (`base_url`, extra headers, Anthropic's `anthropic_version`) as JSON with sorted keys. The body is the one after parameters the model rejects have been removed. Two requests that differ only by a dropped key share a cache key.
 - **Value**: the whole response (`ChatResult`, including `request_id`, `latency`, and `retries`), encrypted. A stream is stored as the list of its SSE events and replayed from the cache. On a cache hit those fields are the values stored with the original call. Rows written before the fields existed load with `request_id` and `latency` as `None` and `retries` as `0`.
 - **A different API key means a separate cache.** The API key is used only to build the key hash and to derive the encryption key; it is never stored in plain text.

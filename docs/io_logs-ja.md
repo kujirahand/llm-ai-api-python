@@ -28,14 +28,14 @@ m.ask("可愛い犬の名前を考えて")
 
 ## 記録される内容
 
-`ask()` / `chat()` / `stream()` / `stream_chat()` の呼び出しごとに 1 行を追記します。生レイヤー（`request()` / `request_stream()`）は記録しません。
+`ask()` / `chat()` / `ask_stream()` / `chat_stream()` / `stream_chat()` の呼び出しごとに 1 行を追記します。生レイヤー（`request()` / `request_stream()`）は記録しません。
 
 | フィールド | 意味 |
 |---|---|
 | `time` | UTC の時刻（ISO 8601） |
 | `provider` | `openai`、`anthropic` など |
 | `model` | リクエストで送ったモデル |
-| `stream` | `stream()` / `stream_chat()` なら `true` |
+| `stream` | `ask_stream()` / `chat_stream()` / `stream_chat()` なら `true` |
 | `cached` | 応答キャッシュ（[io_cache-ja.md](io_cache-ja.md)）から返したなら `true` |
 | `request` | 送ったリクエストボディ（モデルが拒否するパラメータを落としたあと） |
 | `response` | 生の応答 dict。ストリームは `{"text": "連結したテキスト", "chunks": [生のイベント JSON, ...]}` |

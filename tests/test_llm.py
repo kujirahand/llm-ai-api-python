@@ -81,9 +81,9 @@ class LLMTest(unittest.TestCase):
         self.assertNotIn("temperature", rec.body())
         rec = Recorder(sse_response("data: [DONE]\n\n"))
         m = llm("openai:m", api_key="k", temperature=0.4, transport=rec.transport)
-        list(m.stream("q", temperature=None))
+        list(m.ask_stream("q", temperature=None))
         self.assertNotIn("temperature", rec.body())
-        list(m.stream("q"))
+        list(m.ask_stream("q"))
         self.assertEqual(rec.body()["temperature"], 0.4)
 
     def test_known_rejection_is_dropped_through_the_common_interface(self):
@@ -116,7 +116,35 @@ class LLMTest(unittest.TestCase):
             'data: {"choices":[{"delta":{"content":"チ"}}]}\n\n'
             "data: [DONE]\n\n"))
         m = llm("openrouter:a/b", api_key="k", transport=rec.transport)
+        self.assertEqual(list(m.ask_stream("q")), ["ポ", "チ"])
+
+    def test_chat_stream_sends_messages_and_old_stream_is_an_alias(self):
+        body = (
+            'data: {"choices":[{"delta":{"content":"ポ"}}]}\n\n'
+            'data: {"choices":[{"delta":{"content":"チ"}}]}\n\n'
+            "data: [DONE]\n\n"
+        )
+        rec = Recorder(sse_response(body))
+        m = llm("openrouter:a/b", api_key="k", transport=rec.transport)
+        messages = [
+            {"role": "user", "content": "q1"},
+            {"role": "assistant", "content": "a1"},
+            {"role": "user", "content": "q2"},
+        ]
+        self.assertEqual(list(m.chat_stream(messages, system="S")), ["ポ", "チ"])
+        b = rec.body()
+        self.assertTrue(b["stream"])
+        self.assertEqual(b["messages"], [{"role": "system", "content": "S"}] + messages)
+        self.assertEqual(len(messages), 3)  # the caller's list is not modified
+
+        # ask_stream() is chat_stream() with one user message.
+        list(m.ask_stream("q"))
+        ask_body = rec.body()
+        self.assertEqual(ask_body["messages"], [{"role": "user", "content": "q"}])
+
+        # The deprecated name still works and sends the same request.
         self.assertEqual(list(m.stream("q")), ["ポ", "チ"])
+        self.assertEqual(rec.body(), ask_body)
 
     def test_chat_returns_result_and_context_manager(self):
         rec = Recorder(json_response(OPENAI_REPLY))

@@ -1,4 +1,4 @@
-"""Async provider clients (internal; used by `LLM.aask()` / `achat()` / `astream()`).
+"""Async provider clients (internal; used by `LLM.aask()` / `achat()` / `aask_stream()` / `achat_stream()`).
 
 Body building, response parsing and per-event stream parsing are shared with the
 sync clients; only the I/O differs.

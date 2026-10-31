@@ -107,20 +107,22 @@ print(result.model, result.stop_reason, result.usage)
 
 ## 5. ストリーミング
 
-`stream()` は、生成されたテキストを少しずつ返します。
+`ask_stream()` は、生成されたテキストを少しずつ返します。
 
 ```python
 from llm_ai_api import llm
 
 m = llm("openai:gpt-6-luna")
 
-stream = m.stream("短い物語を書いて")
+stream = m.ask_stream("短い物語を書いて")
 print(stream.request_id)  # 呼び出しが返った時点で入っている
 
 for piece in stream:
     print(piece, end="", flush=True)
 print()
 ```
+
+会話履歴（messages）を渡すときは `chat_stream()` を使います。旧名の `stream()` は非推奨で、`ask_stream()` の別名として残してあります。
 
 ## 6. 条件を指定する
 
@@ -145,7 +147,7 @@ print(m.ask("日本の首都は？", system="関西弁で答えてください�
 
 ## 7. 非同期で使う
 
-メソッド名の先頭に `a` を付けると、`asyncio` で使えます（`aask()` / `achat()` / `astream()`）。
+メソッド名の先頭に `a` を付けると、`asyncio` で使えます（`aask()` / `achat()` / `aask_stream()` / `achat_stream()`）。
 
 ```python
 import asyncio
@@ -156,7 +158,7 @@ async def main():
     async with llm("openai:gpt-6-luna") as m:
         print(await m.aask("可愛い犬の名前を考えて"))
 
-        async for piece in m.astream("短い物語を書いて"):  # await は付けない
+        async for piece in m.aask_stream("短い物語を書いて"):  # await は付けない
             print(piece, end="", flush=True)
         print()
 
@@ -170,7 +172,7 @@ asyncio.run(main())
 
 - `async with`（または `await m.aclose()`）で閉じます。閉じた `LLM` は再利用できません。
 - `asyncio.run()` のたびに新しい `llm()` を作ってください。
-- 非同期コードの中で同期版の `ask()` / `chat()` / `stream()` を呼ぶと、イベントループ全体が止まります。必ず `aask()` / `achat()` / `astream()` を使ってください。
+- 非同期コードの中で同期版の `ask()` / `chat()` / `ask_stream()` / `chat_stream()` を呼ぶと、イベントループ全体が止まります。必ず `aask()` / `achat()` / `aask_stream()` / `achat_stream()` を使ってください。
 
 ## 8. エラーを処理する
 

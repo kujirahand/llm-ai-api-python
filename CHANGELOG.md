@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Rename `LLM.stream()` / `astream()` to `ask_stream()` / `aask_stream()`, and add `chat_stream()` / `achat_stream()`, which take `messages` like `chat()` (#62).
+- The old names `stream()` / `astream()` remain as deprecated aliases (no warning is emitted).
+
 ## 0.6.0
 
 Production hardening (#49):
