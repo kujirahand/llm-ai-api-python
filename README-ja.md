@@ -1,5 +1,7 @@
 # llm-ai-api
 
+[![PyPI](https://img.shields.io/pypi/v/llm-ai-api)](https://pypi.org/project/llm-ai-api/)
+
 OpenAI / OpenRouter / Claude (Anthropic) / Google の API を呼び出す、薄くて壊れにくい HTTP ラッパーです。公式 SDK を使わず、依存は `httpx` のみです。
 
 [English](README.md)
