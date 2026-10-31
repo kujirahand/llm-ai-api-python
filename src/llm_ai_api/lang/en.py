@@ -28,8 +28,10 @@ MESSAGES = {
     "api_error": "{provider} API error (HTTP {status})",
     "stream_error": "{provider} stream error",
     "hint_400": (
-        "Hint: check the request. Some models reject parameters such as temperature "
-        "even at their default value; try not passing them."
+        "Hint: parameters this library knows the model rejects are omitted before "
+        "the request. If this is still HTTP 400, check the request and remove the "
+        "other parameters you sent. Some models reject values such as temperature "
+        "even at their defaults."
     ),
     "hint_401": "Hint: check that the API key is correct and has not expired or been revoked.",
     "hint_403": "Hint: this API key may not have permission to use this model or feature.",

@@ -37,7 +37,7 @@ result = luna.chat([{"role": "user", "content": "hi"}])  # ChatResult: text, sto
 A stream closes its connection by itself when it is read to the end or dropped (for async streams, only while the event loop that created the stream is still running). To stop early, call `close()` (`await stream.aclose()` in async code) to release the connection right away.
 
 Parameters you do not pass are never sent (newer models reject even default values such as `temperature`).
-Anything else can go through `extra={...}`, or the raw layer: `luna.client.request(path, body)`.
+Parameters the official docs say a model rejects are omitted even when you pass them, including through `extra` (for example `temperature`, `top_p`, and `top_k` on Claude API version `2026-10-21`, and `temperature` on some OpenAI models such as `gpt-6-astra`). Models and parameters that are not in that list, and OpenRouter and Google, are sent as given. To send a dropped key unchanged, use the raw layer `luna.client.request(path, body)` (it does not rewrite the body). Anything else can go through `extra={...}`.
 
 #### Per-call timeout
 

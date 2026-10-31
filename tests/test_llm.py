@@ -86,6 +86,21 @@ class LLMTest(unittest.TestCase):
         list(m.stream("q"))
         self.assertEqual(rec.body()["temperature"], 0.4)
 
+    def test_known_rejection_is_dropped_through_the_common_interface(self):
+        rec = Recorder(json_response(OPENAI_REPLY))
+        m = llm("openai:gpt-6-astra", api_key="k", temperature=0.4, extra={"logprobs": True},
+                transport=rec.transport)
+        m.ask("q")
+        self.assertNotIn("temperature", rec.body())
+        self.assertNotIn("logprobs", rec.body())
+        rec = Recorder(json_response(CLAUDE_REPLY))
+        m = llm("claude:claude-x", api_key="k", temperature=0.4, extra={"top_k": 2},
+                transport=rec.transport)
+        m.ask("q")
+        self.assertNotIn("temperature", rec.body())
+        self.assertNotIn("top_k", rec.body())
+        self.assertEqual(rec.body()["max_tokens"], 16000)
+
     def test_explicit_none_on_claude_keeps_required_max_tokens(self):
         rec = Recorder(json_response(CLAUDE_REPLY))
         m = llm("claude:m", api_key="k", max_tokens=100, system="S", transport=rec.transport)

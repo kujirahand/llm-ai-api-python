@@ -58,6 +58,19 @@ class CacheKeyTest(unittest.TestCase):
         )
         self.assertEqual(key, cache_key("openai", base, {"base_url": "https://a.example/v1"}))
 
+    def test_client_drops_rejected_keys_before_the_cache_key(self):
+        from llm_ai_api import AnthropicClient
+
+        rec = Recorder(json_response(CLAUDE_REPLY))
+        c = AnthropicClient(api_key="k", transport=rec.transport)
+        messages = [{"role": "user", "content": "q"}]
+        c.chat("claude-x", messages)
+        plain = cache_key("anthropic", rec.body())
+        c.chat("claude-x", messages, temperature=0.2, extra={"top_k": 1})
+        self.assertEqual(plain, cache_key("anthropic", rec.body()))
+        c.chat("claude-x", messages, max_tokens=5)
+        self.assertNotEqual(plain, cache_key("anthropic", rec.body()))
+
 
 class SQLiteCacheTest(CacheTestBase):
     def make_result(self):

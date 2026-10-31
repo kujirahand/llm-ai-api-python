@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llm-ai-api"
-version = "0.3.1"
+version = "0.4.0"
 description = "A thin, robust HTTP wrapper for the OpenAI, OpenRouter, Anthropic (Claude), and Google APIs (only dependency: httpx)"
 readme = "README.md"
 requires-python = ">=3.9"

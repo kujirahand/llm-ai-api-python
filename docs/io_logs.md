@@ -37,7 +37,7 @@ m.ask("Suggest a cute name for a dog")
 | `model` | The model sent in the request |
 | `stream` | `true` for `stream()` / `stream_chat()` |
 | `cached` | `true` when the response came from the response cache ([io_cache.md](io_cache.md)) |
-| `request` | The request body, exactly as sent |
+| `request` | The request body as sent, after parameters the model rejects are removed |
 | `response` | The raw response dict. For a stream: `{"text": "<concatenated text>", "chunks": [<raw event JSON>, ...]}` |
 
 Example (pretty-printed; the file has one object per line):
