@@ -83,6 +83,8 @@ llm-ai-api-python/
 │   ├── test_anthropic.py
 │   ├── test_llm.py
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
+├── docs/
+│   └── publish.md       # PyPI への公開手順
 └── examples/
 ```
 
