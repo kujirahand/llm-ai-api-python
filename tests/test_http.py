@@ -9,6 +9,7 @@ from llm_ai_api import (
     BadRequestError,
     InternalServerError,
     LLMConfigError,
+    LLMError,
     OpenAIClient,
     RateLimitError,
 )
@@ -53,6 +54,13 @@ class HttpTest(unittest.TestCase):
         )
         self.assertIn("https://example.example/v1", repr(plain))
         self.assertNotIn("***", repr(plain))
+
+    def test_request_non_object_response_raises_library_error(self):
+        for payload in (["x"], 42, "str", None):
+            c = make(Recorder(json_response(payload)))
+            with self.assertRaises(LLMError) as cm:
+                c.request("/x", {})
+            self.assertEqual(cm.exception.code, "invalid_json_response")
 
     def test_headers_and_raw_passthrough(self):
         rec = Recorder(json_response({"x": 1}))

@@ -47,9 +47,16 @@ class SSEEvent:
     def json(self) -> Dict[str, Any]:
         """`data` を JSON として解釈して返す。"""
         try:
-            return json.loads(self.data)
+            value = json.loads(self.data)
         except ValueError as e:
             raise LLMError(
                 t("invalid_json_response", preview=self.data[:200]),
                 code="invalid_json_response",
             ) from e
+        if not isinstance(value, dict):
+            # Valid JSON but not an object (array, scalar, null).
+            raise LLMError(
+                t("invalid_json_response", preview=self.data[:200]),
+                code="invalid_json_response",
+            )
+        return value

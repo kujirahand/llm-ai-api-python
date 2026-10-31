@@ -39,6 +39,16 @@ A stream closes its connection by itself when it is read to the end or dropped (
 Parameters you do not pass are never sent (newer models reject even default values such as `temperature`).
 Anything else can go through `extra={...}`, or the raw layer: `luna.client.request(path, body)`.
 
+#### Per-call timeout
+
+`ask()` / `chat()` / `stream()` (and the async `aask()` / `achat()` / `astream()`) take a keyword argument `timeout` (seconds) that overrides the timeout for that call only. If omitted (`None`), the client's setting is used (default 600 seconds).
+
+```python
+text = luna.ask("A short question", timeout=30)
+```
+
+This is a **per-operation timeout**, not a total deadline (for a stream, it is the time to wait for the next data). Retries (2 by default) extend the total time. This parameter alone cannot guarantee a total deadline in sync code: the wait resets whenever data arrives, so even with `max_retries=0` the total time is unbounded, especially for streams and slow-drip responses. In async code, if you need a hard deadline, wrap the coroutine that consumes the whole stream in `asyncio.wait_for()`, not just the `astream()` call, because the request only starts at the first iteration.
+
 You can also pick from the model constants (they are just `"provider:model"` strings):
 
 ```python
@@ -74,10 +84,12 @@ asyncio.run(main())
 - `astream()` starts the request at the first iteration, so connection and HTTP errors are raised there (when `async for` starts), not when `astream()` is called (the sync `stream()` raises on the call). To stop early, call `await stream.aclose()`.
 - Close it with `async with` (or `await m.aclose()`). A closed `LLM` cannot be reused.
 - Do not carry one across event loops: create a new `llm()` for each `asyncio.run()`.
+- Do not call the sync `ask()` / `chat()` / `stream()` from async code (for example, a FastAPI handler running in the event loop): they block the whole loop until the request finishes. Use `aask()` / `achat()` / `astream()` instead.
+- `close()` closes only the sync client, not the async one. If you used the async API, call `await m.aclose()` (or use `async with`), which closes both.
 
 The cache and the log work the same way as in the sync API. Only the common interface (`llm()`) is async; there are no async provider clients or raw layer (`request()`).
 
-To try things step by step from the beginning, see the [Tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md).
+To try things step by step from the beginning, see the [Tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md). For reusing and closing the client, see [“Reuse and cleanup” in the tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md#9-reuse-and-cleanup).
 
 ## Response caching
 
@@ -92,7 +104,7 @@ m2 = llm("openai:gpt-6-luna", cache="other.db")  # per instance
 m3 = llm("openai:gpt-6-luna", cache=False)       # off for this instance only
 ```
 
-`cache=True` uses the default file `llm_ai_api_cache.db`. A `SQLiteCache` object can also be passed. Setting the environment variable `LLM_AI_API_CACHE_DIR` to a directory turns the cache on as `<dir>/cache.db` without calling `set_cache()`. Streaming (`stream()` / `stream_chat()`) is cached too (stored only when read to the end).
+`cache=True` uses the default file `llm_ai_api_cache.db`. A `SQLiteCache` object can also be passed. Setting the environment variable `LLM_AI_API_CACHE_DIR` to a directory turns the cache on as `<dir>/cache.db` without calling `set_cache()`. Streaming (`stream()` / `stream_chat()`) is cached too (stored only when read up to the terminal event).
 
 Stored responses are encrypted with a key derived from the API key. The lookup key is a hash of `{provider}:{model}@{api_key}>>>{input}`, so a different API key means a separate cache. Remove old entries with `clear_cache(days)` (`clear_cache(0)` deletes everything). When the file grows past `max_size` (default 100 MB; `set_cache(..., max_size=None)` for unlimited), the oldest third of the rows is deleted automatically.
 
@@ -115,6 +127,19 @@ m2 = llm("openai:gpt-6-luna", log=False)         # off for this instance only
 Set the `LLM_AI_API_LOG_DIR` environment variable to a directory to enable it as `<dir>/llm.jsonl`. Each line has `time`, `provider`, `model`, `stream`, `cached`, `request` and `response`. The API key is never recorded. The log is plain text and contains your prompts and the answers, so protect it. A stream is recorded only after it has been read to the end. When the file grows past `max_size` (default 100 MB; `set_log(..., max_size=None)` for unlimited), the oldest third of the lines is deleted automatically.
 
 See [docs/io_logs.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/io_logs.md) for details.
+
+## Connection settings
+
+Connection-level settings such as the number of concurrent connections, a proxy, or TLS options can be set process-wide with `set_connection()`, or per instance with `connection=`.
+
+```python
+from llm_ai_api import llm, set_connection
+
+set_connection(max_connections=50, proxy="http://proxy.example:8080")  # process-wide
+m = llm("openai:gpt-6-luna", connection={"max_connections": 5})        # per-instance override
+```
+
+The available keys are `max_connections` (default 100), `max_keepalive_connections` (default 20), `keepalive_expiry` (seconds, default 5.0), `connect_timeout` (seconds, default 10.0), `verify` (bool or a CA path, default True), `cert` (a certificate path or pair), and `proxy` (an http/https URL). Settings are resolved when the client is created; calling `set_connection()` later does not affect existing instances. `set_connection()` replaces the whole setting, and calling it with no arguments restores the defaults.
 
 ## Examples
 
@@ -145,6 +170,8 @@ from llm_ai_api import llm, set_language
 set_language("ja")                       # for the whole process
 m = llm("openai:gpt-6-luna", lang="en")  # or per model
 ```
+
+`set_language()` is process-global: it changes the language of error messages for the whole process, including other threads and instances created earlier when they raise (unlike `set_cache()` / `set_log()`, which are resolved when an instance is created). For a per-instance language, use the `lang=` option.
 
 Every exception has a language-independent `code` (e.g. `"missing_api_key"`) you can check instead of the message.
 Messages returned by the API itself are never translated.
