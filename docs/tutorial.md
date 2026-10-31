@@ -182,8 +182,11 @@ except LLMError as e:
 
 Every exception has a language-independent `code` attribute (e.g. `"missing_api_key"`). Check `code` rather than the message text, which changes with translation.
 
+Failed requests are retried automatically, up to `max_retries` times (2 by default). Only connection-stage failures (the request never reached the server) and HTTP 408 / 409 / 429 / 5xx are retried. Failures after the request was sent, such as read timeouts, are not retried (to avoid running and paying for the same generation twice). In latency-sensitive services, consider `llm(..., max_retries=0)` or a short `timeout`. See the [configuration reference](config.md) for details.
+
 ## 9. Next steps
 
+- [Configuration reference](config.md): `llm()` settings and the retry policy.
 - [Local response cache](io_cache.md): repeat requests return the stored result without calling the API (off by default).
 - [Input/output log](io_logs.md): record inputs and outputs as JSON Lines (off by default).
 - [Prompt caching](cache.md): how to use the provider-side cache.

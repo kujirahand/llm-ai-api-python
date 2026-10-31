@@ -6,6 +6,7 @@ httpx の例外は、ここで自前の例外に変換して外に出さない�
 from __future__ import annotations
 
 import json
+import math
 import os
 import random
 import time
@@ -28,7 +29,51 @@ from .lang import t
 from .types import ChatChunk, ChatResult, SSEEvent
 
 _RETRY_STATUS = {408, 409, 429}
-_MAX_RETRY_AFTER = 60.0
+_DEFAULT_RETRY_AFTER_MAX = 60.0
+
+# Transport errors raised before the request reached the server: always safe to retry.
+_CONNECT_STAGE_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
+
+
+def _is_retryable_transport_error(exc: Exception, retry_read_timeout: bool) -> bool:
+    """Whether a transport error may be retried without risking a duplicate request.
+
+    Generation requests are not idempotent, so by default only connection-stage
+    failures (the request provably never reached the server) are retried. A read
+    timeout is retried only when `retry_read_timeout` is on; other errors after the
+    request was sent (write errors, read errors, protocol errors, ...) never are.
+    """
+    if isinstance(exc, _CONNECT_STAGE_ERRORS):
+        return True
+    return retry_read_timeout and isinstance(exc, httpx.ReadTimeout)
+
+
+def _check_retry_after_max(value: Any, lang: Optional[str]) -> float:
+    """Validate `retry_after_max` at configuration time: a finite number >= 0.
+
+    A negative or NaN cap would otherwise reach `time.sleep()` / `asyncio.sleep()` on
+    the first `retry-after` response and fail there instead of at setup.
+    """
+    try:
+        ok = math.isfinite(value) and value >= 0
+    except TypeError:
+        ok = False
+    if not ok:
+        raise LLMConfigError(
+            t("invalid_option", lang, name="retry_after_max", value=value),
+            code="invalid_option",
+        )
+    return value
+
+
+def _retry_after_delay(retry_after: Optional[str], cap: float) -> Optional[float]:
+    """Parse a `retry-after` header (seconds) and cap it; None if absent or invalid."""
+    if not retry_after:
+        return None
+    try:
+        return min(max(float(retry_after), 0.0), cap)
+    except ValueError:
+        return None
 
 
 class _SSEDecoder:
@@ -160,12 +205,19 @@ class BaseClient:
         max_retries: int = 2,
         headers: Optional[Dict[str, str]] = None,
         *,
+        retry_read_timeout: bool = False,
+        retry_after_max: float = _DEFAULT_RETRY_AFTER_MAX,
         lang: Optional[str] = None,
         cache: Any = CACHE_NOT_SET,
         log: Any = LOG_NOT_SET,
         transport: Optional[httpx.BaseTransport] = None,
     ) -> None:
         """`lang` はエラーメッセージの言語（`"ja"` / `"en"`）。None なら環境から判定する。
+
+        `max_retries` はリトライ回数。通信エラーは、既定では接続段階の失敗（リクエストが
+        サーバーに届いていないもの）だけをリトライする。`retry_read_timeout=True` にすると
+        読み取りタイムアウトもリトライする（サーバーが生成を始めていれば二重課金になりうる）。
+        `retry_after_max` は `retry-after` ヘッダーに従って待つ秒数の上限。
 
         `cache` は chat() の応答キャッシュ（True / パス / SQLiteCache / False / None。
         未指定なら `set_cache()` のグローバル設定に従う）。
@@ -176,6 +228,7 @@ class BaseClient:
         `transport` はテスト用（`httpx.MockTransport` を渡す）。
         """
         self.lang = lang
+        _check_retry_after_max(retry_after_max, lang)
         self.cache = resolve_cache(cache, lang=lang)
         self.log = resolve_log(log, lang=lang)
         key = api_key
@@ -192,6 +245,8 @@ class BaseClient:
         ).rstrip("/")
         self.timeout = timeout
         self.max_retries = max_retries
+        self.retry_read_timeout = retry_read_timeout
+        self.retry_after_max = retry_after_max
         self._extra_headers = dict(headers or {})
         self._client = httpx.Client(
             transport=transport, timeout=httpx.Timeout(timeout, connect=10.0)
@@ -387,12 +442,7 @@ class BaseClient:
         time.sleep(seconds)
 
     def _backoff(self, attempt: int, retry_after: Optional[str]) -> None:
-        delay = None
-        if retry_after:
-            try:
-                delay = min(max(float(retry_after), 0.0), _MAX_RETRY_AFTER)
-            except ValueError:
-                delay = None
+        delay = _retry_after_delay(retry_after, self.retry_after_max)
         if delay is None:
             delay = min(8.0, 0.5 * (2 ** attempt)) * (0.75 + random.random() / 2)
         self._sleep(delay)
@@ -430,21 +480,17 @@ class BaseClient:
                     # With stream=True the error body has not been read yet, and reading
                     # it can fail too, so it has to be inside this try (conversion + retry).
                     resp.read()
-            except httpx.TimeoutException as e:
-                if resp is not None:
-                    resp.close()
-                if attempt < self.max_retries:
-                    self._backoff(attempt, None)
-                    attempt += 1
-                    continue
-                raise APITimeoutError(self._t("timeout"), code="timeout") from e
             except httpx.RequestError as e:
                 if resp is not None:
                     resp.close()
-                if attempt < self.max_retries:
+                if attempt < self.max_retries and _is_retryable_transport_error(
+                    e, self.retry_read_timeout
+                ):
                     self._backoff(attempt, None)
                     attempt += 1
                     continue
+                if isinstance(e, httpx.TimeoutException):
+                    raise APITimeoutError(self._t("timeout"), code="timeout") from e
                 raise APIConnectionError(
                     self._t("connection_error", detail=e), code="connection_error"
                 ) from e

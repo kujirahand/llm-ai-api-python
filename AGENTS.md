@@ -105,9 +105,12 @@ llm-ai-api-python/
 │   ├── test_log.py
 │   ├── test_cache_crypto.py
 │   ├── test_stream_close.py  # ストリームの閉じ忘れ（#25）
+│   ├── test_retry_policy.py  # リトライの分類、retry_after_max、set_config()（#26）
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
 ├── docs/
 │   ├── publish.md       # PyPI への公開手順
+│   ├── config.md        # 設定リファレンスとリトライの方針（英語）
+│   ├── config-ja.md     # 同（日本語）
 │   ├── cache.md         # プロンプトキャッシュの使い方（英語）
 │   ├── cache-ja.md      # 同（日本語）
 │   ├── io_cache.md      # 応答のローカルキャッシュ（英語）
@@ -143,7 +146,8 @@ m = llm(
     max_tokens=None,       # 既定の最大出力トークン（指定時のみ送信）
     temperature=None,      # 既定の temperature（指定時のみ送信）
     extra=None,            # 既定の追加ボディ（dict）
-    **client_options,      # api_key, base_url, timeout, max_retries, headers など → クライアントへ
+    **client_options,      # api_key, base_url, timeout, max_retries, retry_read_timeout,
+                           # retry_after_max, headers など → クライアントへ
 )
 
 text: str = m.ask("可愛い犬の名前を考えて")              # 一問一答。テキストだけ返す
@@ -162,6 +166,7 @@ m.client    # 下位の OpenAIClient など（生レイヤーにアクセスで�
 - `ask()` / `stream()` は **状態を持たない**（会話履歴を保持しない）。会話を続けたい場合は `chat()` に messages を渡してもらう。
 - `ask()` は `ChatResult.text` をそのまま返す。`stop_reason` が `"refusal"` や `"max_tokens"` でも例外にしない（必要なら `chat()` を使って確認してもらう）。
 - `LLM` は `close()` とコンテキストマネージャ（`with llm(...) as m:`）に対応する。
+- `m.set_config(*, max_retries=UNSET, retry_read_timeout=UNSET, retry_after_max=UNSET) -> None` で、生成後にリトライ設定を変える。渡した引数だけを同期クライアントの属性に設定し、非同期クライアントが作成済みならそちらにも設定する。非同期クライアントを後で作るときは、同期クライアントの現在の値を引き継ぐ。
 
 #### 非同期（async）
 
@@ -208,6 +213,8 @@ client = AnthropicClient(
     timeout=600.0,         # 秒
     max_retries=2,
     headers=None,          # 追加ヘッダー（dict）
+    retry_read_timeout=False,  # True で読み取りタイムアウトもリトライ（6 章を参照）
+    retry_after_max=60.0,  # retry-after に従って待つ秒数の上限（0 以上の有限の数）
     cache=CACHE_NOT_SET,   # 応答キャッシュ（未指定ならグローバル設定。5.7 を参照）
     log=LOG_NOT_SET,       # 入出力ログ（未指定ならグローバル設定。5.8 を参照）
     anthropic_version="2026-10-21",  # AnthropicClient のみ
@@ -324,13 +331,19 @@ class ChatChunk:
 - タイムアウト既定値は 600 秒（長い生成に対応するため）。接続タイムアウトは 10 秒。
 - ストリーミングは `client.stream("POST", ...)` と `response.iter_lines()` を使い、SSE パースは自前で行う。
 - `request_stream()` は `httpx.Response` を所有する `_EventStream`（`close()` を持つイテレータ）を返す。最後まで読んだとき・エラー時・`close()` でレスポンスを閉じ、一度も読まずに捨てられた場合も `__del__` で閉じる（素の generator では `finally` が動かず、接続プールが枯渇するため。#25）。
-- 例外の変換: `httpx.TimeoutException` → `APITimeoutError`、その他の `httpx.RequestError`（`TransportError` や `DecodingError` など）→ `APIConnectionError`（リトライ対象）。リクエスト組み立て時の `httpx.InvalidURL` → `LLMConfigError`（`code="invalid_url"`、URL は `_mask_url()` でマスクして表示）。httpx の例外をそのまま外に出さない。
-- リトライ（自前で実装する）:
-  - 対象: 408, 409, 429, 500 以上、および接続エラー・タイムアウト。
-  - 既定 2 回。指数バックオフ（0.5 秒起点、上限 8 秒、ジッターあり）。
-  - `retry-after` ヘッダーがあれば優先（上限 60 秒）。
+- 例外の変換: `httpx.TimeoutException` → `APITimeoutError`、その他の `httpx.RequestError`（`TransportError` や `DecodingError` など）→ `APIConnectionError`（リトライするかどうかは下の「リトライ」の分類による）。リクエスト組み立て時の `httpx.InvalidURL` → `LLMConfigError`（`code="invalid_url"`、URL は `_mask_url()` でマスクして表示）。httpx の例外をそのまま外に出さない。
+- リトライ（自前で実装する。#26）:
+  - 生成のリクエストは冪等ではない。送信後に失敗したリクエストをリトライすると、サーバーが処理を始めていた場合に二重課金になる。このため、リトライするのは「サーバーに届いていないことが確実な失敗」と「サーバーが応答したステータス」だけにする。
+  - HTTP ステータス: 408, 409, 429, 500 以上はリトライする（サーバーが応答しているので曖昧さがない）。
+  - 通信エラー（既定）: 接続段階の失敗 `httpx.ConnectError` / `httpx.ConnectTimeout` / `httpx.PoolTimeout` だけをリトライする。それ以外（`ReadTimeout`, `WriteTimeout`, `ReadError`, `WriteError`, `RemoteProtocolError`, `DecodingError` など）はリトライせず、すぐに `APITimeoutError`（タイムアウト）/ `APIConnectionError` に変換して送出する。
+  - `retry_read_timeout=True`（クライアント／`llm()` の引数、`set_config()`）のときだけ、`httpx.ReadTimeout` もリトライする。その他の送信後の失敗は、これを有効にしてもリトライしない。
+  - 判定は `_http._is_retryable_transport_error()` に集約し、同期・非同期で共用する。
+  - 既定 2 回（`max_retries`）。指数バックオフ（0.5 秒起点、上限 8 秒、ジッターあり）。
+  - `retry-after` ヘッダーがあれば優先（上限は `retry_after_max`、既定 60 秒）。
+  - `retry_after_max` は 0 以上の有限の数に限る。負の値・NaN・無限大（数でない値も）は、同期・非同期クライアントの生成時と `LLM.set_config()` で `LLMConfigError`（`code="invalid_option"`）にする（判定は `_http._check_retry_after_max()`）。`set_config()` は検証してから適用するので、不正な値では何も変えない。そのまま `sleep()` に渡ると `ValueError` が漏れるため。
+  - `max_retries` は検証しない。ループは `attempt < max_retries` で判定するので、負の値は `0`（リトライしない）と同じに動く。
   - ストリーミングは、レスポンスを読み始めた後はリトライしない。
-- ストリーミングでは、HTTP エラー応答のボディ読み取り（`resp.read()`）もヘッダー受信と同じ例外変換・リトライの対象にする。ここで httpx の例外を外に漏らしてはならない。
+- ストリーミングでは、HTTP エラー応答のボディ読み取り（`resp.read()`）もヘッダー受信と同じ例外変換・リトライ判定の対象にする（例外の種類で判定するので、ここでの読み取りタイムアウトも既定ではリトライしない）。ここで httpx の例外を外に漏らしてはならない。
 - パッケージ内の `llm` は関数（`llm_ai_api.llm`）で、同名のモジュール `llm.py` を隠す。モジュールを直接参照するときは `sys.modules["llm_ai_api.llm"]` を使う。
 - エラー時はレスポンスボディを読み、JSON として解釈できれば dict、できなければ文字列として例外に格納する。
 
@@ -378,6 +391,7 @@ LLMError                      # 基底
   | `invalid_cache` | `LLMConfigError`（キャッシュ設定の誤り） |
   | `invalid_log` | `LLMConfigError`（ログ設定の誤り） |
   | `invalid_url` | `LLMConfigError`（ベース URL / パスが URL として不正） |
+  | `invalid_option` | `LLMConfigError`（オプションの値が範囲外。現在は `retry_after_max`） |
   | `invalid_json_response` | `LLMError` |
 
 ## 7.1 多言語化（`lang/`）
@@ -411,7 +425,7 @@ LLMError                      # 基底
   - 送信ボディ: 未指定パラメータが送られないこと、`extra` が最後にマージされること、system メッセージの変換、`max_tokens` の名前変換
   - ヘッダー: 認証ヘッダー、`anthropic-version`、追加ヘッダー
   - SSE: 複数行 data、コメント行、`[DONE]`、`ping`、`error` イベント、改行コード `\r\n`
-  - エラー: ステータスコードごとの例外クラス、JSON/非 JSON のエラーボディ、リトライと `retry-after`、httpx 例外の変換
+  - エラー: ステータスコードごとの例外クラス、JSON/非 JSON のエラーボディ、リトライと `retry-after`（`retry_after_max` による上限）、通信エラーごとのリトライ有無（接続段階の失敗だけ。`retry_read_timeout`）、httpx 例外の変換
   - 多言語化: 言語判定の優先順位、フォールバック（言語 → en → ID）、ja が en にない ID を持たないこと、テンプレートの引数が言語間で一致すること、コード中のメッセージ ID が `en.py` に存在すること
   - テストは実行環境のロケールに依存してはならない。メッセージを検証するときは `lang=` を明示する
 - ライブテスト（`tests/test_live.py`）は `LLM_AI_API_LIVE=1` かつ各 API キーがあるときだけ実行する。課金が発生するため `max_tokens` を小さくする。

@@ -37,7 +37,7 @@ class SyncRequestErrorTest(_Base):
         self.addCleanup(m.close)
         return m
 
-    def test_decoding_error_becomes_connection_error_with_retries(self):
+    def test_decoding_error_becomes_connection_error_without_retries(self):
         rec = Recorder(httpx.DecodingError("bad gzip"))
         m = self.make(rec)
         with mock.patch.object(BaseClient, "_sleep", lambda self, seconds: None):
@@ -45,7 +45,8 @@ class SyncRequestErrorTest(_Base):
                 m.ask("q")
         self.assertEqual(cm.exception.code, "connection_error")
         self.assertNotIsInstance(cm.exception, httpx.HTTPError)
-        self.assertEqual(len(rec.requests), m.client.max_retries + 1)
+        # The response was already received: not a connection-stage failure (#26).
+        self.assertEqual(len(rec.requests), 1)
 
     def test_decoding_error_while_streaming(self):
         rec = Recorder(httpx.Response(
@@ -89,7 +90,7 @@ class AsyncRequestErrorTest(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(m.aclose)
         return m
 
-    async def test_decoding_error_becomes_connection_error_with_retries(self):
+    async def test_decoding_error_becomes_connection_error_without_retries(self):
         rec = Recorder(httpx.DecodingError("bad gzip"))
         m = self.make(rec)
 
@@ -101,7 +102,8 @@ class AsyncRequestErrorTest(unittest.IsolatedAsyncioTestCase):
                 await m.aask("q")
         self.assertEqual(cm.exception.code, "connection_error")
         self.assertNotIsInstance(cm.exception, httpx.HTTPError)
-        self.assertEqual(len(rec.requests), m.client.max_retries + 1)
+        # The response was already received: not a connection-stage failure (#26).
+        self.assertEqual(len(rec.requests), 1)
 
     async def test_decoding_error_while_streaming(self):
         rec = Recorder(httpx.Response(

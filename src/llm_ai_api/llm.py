@@ -11,7 +11,7 @@ from ._async_clients import (
     _AsyncOpenRouterClient,
 )
 from ._async_http import _AsyncBaseClient
-from ._http import BaseClient
+from ._http import BaseClient, _check_retry_after_max
 from .anthropic import AnthropicClient
 from .errors import LLMConfigError
 from .google import GoogleClient
@@ -36,6 +36,9 @@ _ASYNC_PROVIDERS = {
     "anthropic": _AsyncAnthropicClient,
     "claude": _AsyncAnthropicClient,
 }
+
+# Client attributes that LLM.set_config() can change after construction.
+_RETRY_SETTINGS = ("max_retries", "retry_read_timeout", "retry_after_max")
 
 
 class _Unset:
@@ -112,6 +115,35 @@ class LLM:
     def close(self) -> None:
         """下位クライアントを閉じる。"""
         self.client.close()
+
+    def set_config(
+        self,
+        *,
+        max_retries: Union[int, _Unset] = UNSET,
+        retry_read_timeout: Union[bool, _Unset] = UNSET,
+        retry_after_max: Union[float, _Unset] = UNSET,
+    ) -> None:
+        """生成後にリトライ設定を変更する。渡した引数だけを変え、他はそのまま。
+
+        同期クライアントと、作成済みなら非同期クライアントの両方に反映する
+        （非同期クライアントを後で作る場合も、その時点の値を使う）。
+        """
+        changes = {
+            "max_retries": max_retries,
+            "retry_read_timeout": retry_read_timeout,
+            "retry_after_max": retry_after_max,
+        }
+        if not isinstance(retry_after_max, _Unset):
+            # Validate before applying anything, so a bad value changes nothing.
+            _check_retry_after_max(retry_after_max, self.client.lang)
+        clients: List[Any] = [self.client]
+        if self._async_client_instance is not None:
+            clients.append(self._async_client_instance)
+        for name, value in changes.items():
+            if isinstance(value, _Unset):
+                continue
+            for client in clients:
+                setattr(client, name, value)
 
     def __enter__(self) -> "LLM":
         return self
@@ -207,6 +239,9 @@ class LLM:
             options["cache"] = self.client.cache
             options["log"] = self.client.log
             options["api" + "_key"] = getattr(self.client, "_api" + "_key")  # resolved key
+            # Current retry settings, including changes made by set_config().
+            for name in _RETRY_SETTINGS:
+                options[name] = getattr(self.client, name)
             self._async_client_instance = _ASYNC_PROVIDERS[self._provider_key](**options)
         return self._async_client_instance
 
