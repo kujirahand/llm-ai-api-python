@@ -47,6 +47,34 @@ m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 
 The constants are examples. Any other model works as a plain string, e.g. `llm("openai:some-new-model")`.
 
+### Async
+
+The same `llm()` works with asyncio: add an `a` to the method name (`aask()`, `achat()`, `astream()`).
+
+```python
+import asyncio
+from llm_ai_api import llm
+
+async def main():
+    async with llm("openai:gpt-6-luna") as m:
+        print(await m.aask("Come up with a cute name for a dog"))
+
+        async for piece in m.astream("Write a short story"):  # no await here
+            print(piece, end="", flush=True)
+
+        # One LLM can be shared by concurrent calls
+        answers = await asyncio.gather(m.aask("One dog name"), m.aask("One cat name"))
+        print(answers)
+
+asyncio.run(main())
+```
+
+- `astream()` starts the request at the first iteration, so connection and HTTP errors are raised there (when `async for` starts), not when `astream()` is called (the sync `stream()` raises on the call). To stop early, call `await stream.aclose()`.
+- Close it with `async with` (or `await m.aclose()`). A closed `LLM` cannot be reused.
+- Do not carry one across event loops: create a new `llm()` for each `asyncio.run()`.
+
+The cache and the log work the same way as in the sync API. Only the common interface (`llm()`) is async; there are no async provider clients or raw layer (`request()`).
+
 ## Response caching
 
 Off by default. When on, a repeat call with the same provider, model and request (messages and parameters) returns the stored result without calling the API.
@@ -92,6 +120,7 @@ See [`examples/`](https://github.com/kujirahand/llm-ai-api-python/tree/main/exam
 |---|---|
 | `hello.py` | Ask for a greeting |
 | `hello_stream.py` | Print the reply as it streams |
+| `hello_async.py` | `aask()` and `astream()` with `asyncio.run` and `async with` |
 | `chat_history.py` | Reply based on a chat history |
 | `ocr_test.py` | Read the text in an image |
 | `image_desc.py` | Describe an image |
