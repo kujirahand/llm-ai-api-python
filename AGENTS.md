@@ -45,6 +45,7 @@ print(luna.ask(question))  # ポチ
 | Anthropic | `anthropic`（別名 `claude`） | `POST https://api.anthropic.com/v1/messages` | `x-api-key: $ANTHROPIC_API_KEY` + `anthropic-version: 2026-10-21` |
 
 - 共通インターフェイス `llm()` によるテキストの一問一答・ストリーミング
+- 共通インターフェイス（`llm()` / `LLM`）の非同期版 `aask()` / `achat()` / `astream()`（内部実装のみで、プロバイダークライアントと生レイヤーの非同期版は公開しない。5.2 を参照）
 - テキストチャット（非ストリーミング / ストリーミング）
 - 任意パス・任意ボディを送る生リクエスト（上記以外のエンドポイントも呼べる）
 - 任意の API 応答キャッシュ（SQLite。既定はオフ。5.7 を参照）
@@ -52,7 +53,6 @@ print(luna.ask(question))  # ポチ
 
 ### v1 では対応しない（必要になったら別途検討）
 
-- async（asyncio）対応
 - OpenAI Responses API 専用の便利レイヤー（生レイヤー経由では呼べる）
 - Embeddings / 画像生成 / 音声 / ファイルアップロード / Batch の便利レイヤー
 - ツール呼び出しループの自動化、会話履歴管理
@@ -72,6 +72,8 @@ llm-ai-api-python/
 │       ├── __init__.py      # 公開 API の re-export、__version__
 │       ├── py.typed
 │       ├── _http.py         # httpx による送受信、SSE パーサー、リトライ
+│       ├── _async_http.py   # 非同期版の送受信・SSE・リトライ（内部専用、httpx.AsyncClient）
+│       ├── _async_clients.py # 非同期のプロバイダークライアント（内部専用、LLM の a* メソッドが使う）
 │       ├── errors.py        # 例外クラス
 │       ├── types.py         # ChatResult などの dataclass
 │       ├── cache.py         # SQLite による応答キャッシュ（暗号化、既定はオフ）、set_cache() / clear_cache()
@@ -95,6 +97,8 @@ llm-ai-api-python/
 │   ├── test_google.py
 │   ├── test_anthropic.py
 │   ├── test_llm.py
+│   ├── test_async_clients.py # 内部の非同期クライアント
+│   ├── test_async_llm.py     # LLM の aask / achat / astream
 │   ├── test_models.py
 │   ├── test_lang.py
 │   ├── test_cache.py
@@ -158,6 +162,24 @@ m.client    # 下位の OpenAIClient など（生レイヤーにアクセスで�
 - `ask()` / `stream()` は **状態を持たない**（会話履歴を保持しない）。会話を続けたい場合は `chat()` に messages を渡してもらう。
 - `ask()` は `ChatResult.text` をそのまま返す。`stop_reason` が `"refusal"` や `"max_tokens"` でも例外にしない（必要なら `chat()` を使って確認してもらう）。
 - `LLM` は `close()` とコンテキストマネージャ（`with llm(...) as m:`）に対応する。
+
+#### 非同期（async）
+
+```python
+async with llm("openai:gpt-6-luna") as m:
+    text = await m.aask("可愛い犬の名前を考えて")
+    result = await m.achat([{"role": "user", "content": "..."}])
+    async for piece in m.astream("長い物語を書いて"):   # await は付けない
+        print(piece, end="", flush=True)
+    answers = await asyncio.gather(m.aask("A"), m.aask("B"))  # 同じ LLM を共有してよい
+```
+
+- `aask()` / `achat()` / `astream()` は同期版と同じ引数・意味（`UNSET` と `None` の区別、`extra` のマージ、キャッシュ・ログ）。新しい公開名は増やさない（`__all__` は変えない）。
+- 非同期クライアントは最初の `a*` 呼び出しで内部に作る（`llm()` の時点では作らない）。キャッシュとログのファイル操作は `asyncio.to_thread()` で行う。同期版とキャッシュを共有する（キーと形式が同じ）。
+- 閉じるには `async with` か `await m.aclose()`。`aclose()` は非同期・同期の両クライアントを閉じ、何度呼んでもよい。`close()` は同期クライアントだけを閉じる（従来どおり）。閉じた `LLM` は再利用しない。
+- `astream()` は最初の反復で通信を始めるので、接続エラーや HTTP エラーも最初の反復で出る（同期版 `stream()` は呼び出し時）。途中でやめるときは `await stream.aclose()` を呼ぶ。キャンセルされたストリームはレスポンスを閉じ、キャッシュ・ログに残さない。
+- イベントループをまたいで使わない。`asyncio.run()` ごとに新しい `llm()` を作る。
+- 実装は `_async_http.py` / `_async_clients.py`（内部専用）。ボディ生成とパースは同期版の関数を共用する。ストリームは async generator ではなく `__anext__` / `aclose` を持つ通常のクラスで組む（generator の `finally` で `await` しないため）。Python 3.9 互換のため `anext()` / `contextlib.aclosing` / `asyncio.TaskGroup` / `asyncio.timeout` は使わない。
 
 ### 5.2.1 モデル定数（`models.py`）
 
