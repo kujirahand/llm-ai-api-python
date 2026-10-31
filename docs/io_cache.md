@@ -76,3 +76,5 @@ m = llm("openai:gpt-6-luna", cache=SQLiteCache("./cache.db", max_size=10_000_000
 - Do not commit the cache file to a repository.
 
 Stream cache buffering has a fixed 16 MiB budget per stream (the sum of each event’s JSON-encoded UTF-8 byte size). If exceeded, buffered events are released and the stream is not cached; delivery continues. This budget is independent of file `max_size`.
+
+With caching enabled, concurrent non-streaming chats with the same cache key in one process share the first successful cached result, across threads and asyncio tasks. If the first call fails or does not store a result, a waiter makes its own call. Streaming and raw requests are excluded. Waiting is not covered by the per-operation timeout.

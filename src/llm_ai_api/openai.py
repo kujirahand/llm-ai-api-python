@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
+from ._singleflight import singleflight
 from ._events import apply_result_meta, note_request_error, note_stream_error
 from ._http import BaseClient, _TaggedIter, error_message
 from ._model_params import adjust_body
@@ -114,15 +115,16 @@ class OpenAICompatClient(BaseClient):
         setting when ``None``, or an override for this call.
         """
         body = self._build_body(model, messages, max_tokens, temperature, extra, False)
-        cached = self._lookup_chat_cache(body)
-        if cached is not None:
-            self._log_call(body, cached.raw, cached=True)
-            return cached
-        raw, meta = self._read_json("/chat/completions", body, timeout=timeout)
-        result = apply_result_meta(_parse_response(raw), meta)
-        self._cache_store(body, result)
-        self._log_call(body, raw)
-        return result
+        with singleflight(self, body):
+            cached = self._lookup_chat_cache(body)
+            if cached is not None:
+                self._log_call(body, cached.raw, cached=True)
+                return cached
+            raw, meta = self._read_json("/chat/completions", body, timeout=timeout)
+            result = apply_result_meta(_parse_response(raw), meta)
+            self._cache_store(body, result)
+            self._log_call(body, raw)
+            return result
 
     def stream_chat(
         self,

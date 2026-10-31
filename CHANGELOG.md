@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Coalesce concurrent cache misses for non-streaming chats within one process.
+
 - Serialize writes and trims across log instances targeting the same normalized path, and use unique trim files.
 
 - Bound SSE lines during reading and limit retained event data to 16 MiB; oversized streams raise `response_too_large` and emit `request_error`.

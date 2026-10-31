@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from ._singleflight import async_singleflight
 from ._async_http import _AsyncBaseClient, _AsyncChunks, _AsyncLoggedChunks
 from .anthropic import AnthropicClient
 from .anthropic import _chunk_from_event as _anthropic_chunk
@@ -55,15 +56,16 @@ class _AsyncOpenAICompatClient(_AsyncBaseClient):
     ) -> ChatResult:
         """Call the chat once. Parameters that are not given are not sent."""
         body = self._build_body(model, messages, max_tokens, temperature, extra, False)
-        cached = await self._alookup_chat_cache(body)
-        if cached is not None:
-            await self._alog_call(body, cached.raw, cached=True)
-            return cached
-        raw, meta = await self._read_json("/chat/completions", body, timeout=timeout)
-        result = apply_result_meta(_openai_parse(raw), meta)
-        await self._acache_store(body, result)
-        await self._alog_call(body, raw)
-        return result
+        async with async_singleflight(self, body):
+            cached = await self._alookup_chat_cache(body)
+            if cached is not None:
+                await self._alog_call(body, cached.raw, cached=True)
+                return cached
+            raw, meta = await self._read_json("/chat/completions", body, timeout=timeout)
+            result = apply_result_meta(_openai_parse(raw), meta)
+            await self._acache_store(body, result)
+            await self._alog_call(body, raw)
+            return result
 
     async def stream_chat(
         self,
@@ -172,15 +174,16 @@ class _AsyncAnthropicClient(_AsyncBaseClient):
     ) -> ChatResult:
         """Call the chat once. Unspecified parameters other than `max_tokens` are not sent."""
         body = self._build_body(model, messages, max_tokens, temperature, extra, False)
-        cached = await self._alookup_chat_cache(body)
-        if cached is not None:
-            await self._alog_call(body, cached.raw, cached=True)
-            return cached
-        raw, meta = await self._read_json("/v1/messages", body, timeout=timeout)
-        result = apply_result_meta(_anthropic_parse(raw), meta)
-        await self._acache_store(body, result)
-        await self._alog_call(body, raw)
-        return result
+        async with async_singleflight(self, body):
+            cached = await self._alookup_chat_cache(body)
+            if cached is not None:
+                await self._alog_call(body, cached.raw, cached=True)
+                return cached
+            raw, meta = await self._read_json("/v1/messages", body, timeout=timeout)
+            result = apply_result_meta(_anthropic_parse(raw), meta)
+            await self._acache_store(body, result)
+            await self._alog_call(body, raw)
+            return result
 
     async def stream_chat(
         self,

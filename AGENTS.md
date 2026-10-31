@@ -344,6 +344,8 @@ class ChatChunk:
 
 ### 5.7 キャッシュ（`cache.py`）
 
+- キャッシュ有効時、同一プロセス内の同じキャッシュキーを持つ非ストリーミングチャットは同期・非同期をまたいで直列化し、待機後にキャッシュを再確認する。先行の失敗や保存失敗時は待機側が自分で実行する。ストリームと生リクエストは対象外。待機時間は操作ごとの timeout に含まれない。
+
 - **既定はオフ**。有効にすると、同じリクエストへの 2 回目以降は API を呼ばず、保存済みの結果を返す。
 - グローバル設定: `set_cache(cache)` / `get_cache()`。`set_cache(None)` でオフに戻す（環境変数より優先）。環境変数 `LLM_AI_API_CACHE_DIR` にディレクトリを指定すると、`set_cache()` を呼ばなくても `<dir>/cache.db` でオンになる。
 - インスタンスごとの設定: `llm(..., cache=...)` と各クライアントの `cache=...`。値は `True`（既定ファイル `llm_ai_api_cache.db`）、パス（`str` / `os.PathLike`）、`SQLiteCache`（同等のオブジェクトも可。インターフェイスは `get(key) -> ChatResult | None` と `put(key, provider, result)`）、`False` / `None`（このインスタンスだけオフ）。引数を渡さなければグローバル設定に従う（内部のセンチネル `CACHE_NOT_SET`）。
