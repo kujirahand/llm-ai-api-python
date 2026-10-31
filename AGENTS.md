@@ -265,6 +265,7 @@ class ChatChunk:
   - 既定 2 回。指数バックオフ（0.5 秒起点、上限 8 秒、ジッターあり）。
   - `retry-after` ヘッダーがあれば優先（上限 60 秒）。
   - ストリーミングは、レスポンスを読み始めた後はリトライしない。
+- ストリーミングでは、HTTP エラー応答のボディ読み取り（`resp.read()`）もヘッダー受信と同じ例外変換・リトライの対象にする。ここで httpx の例外を外に漏らしてはならない。
 - パッケージ内の `llm` は関数（`llm_ai_api.llm`）で、同名のモジュール `llm.py` を隠す。モジュールを直接参照するときは `sys.modules["llm_ai_api.llm"]` を使う。
 - エラー時はレスポンスボディを読み、JSON として解釈できれば dict、できなければ文字列として例外に格納する。
 
@@ -272,7 +273,7 @@ class ChatChunk:
 
 - 行単位で読み、空行でイベントを確定する。`event:` / `data:`（複数行は `\n` で連結）を扱う。
 - `:` で始まる行はコメントとして無視する（OpenRouter は `: OPENROUTER PROCESSING` を送ってくる）。
-- OpenAI 系は `data: [DONE]` で終了。
+- OpenAI 系は `data: [DONE]` で終了。ストリームの途中で `error` フィールドを持つイベント（OpenRouter など）を受け取ったら、空のチャンクとして扱わず `APIStreamError` を送出する（本文は `body` に保持する）。部分的な回答を完成したものと誤認させないため。
 - Anthropic は `ping` を無視し、`error` イベントを受け取ったら `APIStreamError` を送出する。`message_stop` で終了。
 - テキスト差分の取り出し:
   - OpenAI 系: `choices[0].delta.content`

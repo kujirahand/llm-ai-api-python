@@ -35,3 +35,14 @@ def sse_response(text, status=200):
     return httpx.Response(
         status, content=text.encode("utf-8"), headers={"content-type": "text/event-stream"}
     )
+
+
+class FailingStream(httpx.SyncByteStream):
+    """A response body that fails while being read (e.g. a connection dropped mid-body)."""
+
+    def __init__(self, exc):
+        self.exc = exc
+
+    def __iter__(self):
+        raise self.exc
+        yield b""  # pragma: no cover  (makes this a generator)

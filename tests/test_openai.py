@@ -1,6 +1,7 @@
+import json
 import unittest
 
-from llm_ai_api import OpenAIClient, OpenRouterClient
+from llm_ai_api import APIStreamError, OpenAIClient, OpenRouterClient, llm
 
 from .helpers import Recorder, json_response, sse_response
 
@@ -60,6 +61,31 @@ class OpenAITest(unittest.TestCase):
                          "stream_options": {"include_usage": True}},
         )
         self.assertEqual(rec.requests[0].headers["accept"], "text/event-stream")
+
+    def test_error_event_in_stream_raises(self):
+        err = {"error": {"code": 502, "message": "upstream failed"}}
+        text = (
+            'data: {"choices":[{"delta":{"content":"par"}}]}\n\n'
+            "data: " + json.dumps(err) + "\n\n"
+            'data: {"choices":[{"delta":{"content":"IGNORED"}}]}\n\n'
+        )
+        rec = Recorder(sse_response(text))
+        m = llm("openai:m", api_key="k", lang="en", transport=rec.transport)
+        got = []
+        with self.assertRaises(APIStreamError) as cm:
+            for piece in m.stream("q"):
+                got.append(piece)
+        self.assertEqual(got, ["par"])  # partial text was delivered before the failure
+        self.assertIn("upstream failed", str(cm.exception))
+        self.assertEqual(cm.exception.body, err)
+        self.assertEqual(cm.exception.code, "stream_error")
+
+    def test_string_error_in_stream_raises(self):
+        rec = Recorder(sse_response('data: {"error": "boom"}\n\n'))
+        c = OpenRouterClient(api_key="k", transport=rec.transport)
+        with self.assertRaises(APIStreamError) as cm:
+            list(c.stream_chat("m", MSGS))
+        self.assertIn("boom", str(cm.exception))
 
 
 class OpenRouterTest(unittest.TestCase):

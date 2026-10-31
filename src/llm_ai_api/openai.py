@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterator, List, Optional
 
-from ._http import BaseClient
+from ._http import BaseClient, error_message
+from .errors import APIStreamError
 from .types import ChatChunk, ChatResult, Usage
 
 
@@ -93,12 +94,19 @@ class OpenAICompatClient(BaseClient):
         events = self.request_stream("/chat/completions", body)
         return self._iter_chunks(events)
 
-    @staticmethod
-    def _iter_chunks(events: Iterator[Any]) -> Iterator[ChatChunk]:
+    def _iter_chunks(self, events: Iterator[Any]) -> Iterator[ChatChunk]:
         for ev in events:
             if ev.data.strip() == "[DONE]":
                 break
             raw = ev.json()
+            if raw.get("error"):
+                # An error in the middle of a stream (e.g. OpenRouter sends `data: {"error": ...}`).
+                # Without this it would look like an empty chunk and the stream would end "normally".
+                detail = error_message(raw) or raw["error"]  # not translated: comes from the API
+                raise APIStreamError(
+                    "%s: %s" % (self._t("stream_error", provider=self.provider), detail),
+                    body=raw,
+                )
             choices = raw.get("choices") or []
             delta = (choices[0].get("delta") if choices else None) or {}
             yield ChatChunk(text=_text_of(delta.get("content")), raw=raw)

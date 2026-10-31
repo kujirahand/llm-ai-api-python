@@ -60,7 +60,7 @@ def _user_agent() -> str:
     return "llm-ai-api-python/" + __version__
 
 
-def _error_message(body: Any) -> Optional[str]:
+def error_message(body: Any) -> Optional[str]:
     if isinstance(body, dict):
         err = body.get("error")
         if isinstance(err, dict):
@@ -245,15 +245,24 @@ class BaseClient:
             req = self._client.build_request(
                 method, url, content=content, headers=self._headers(stream, headers), **kwargs
             )
+            resp = None
             try:
                 resp = self._client.send(req, stream=stream)
+                if resp.status_code >= 400:
+                    # With stream=True the error body has not been read yet, and reading
+                    # it can fail too, so it has to be inside this try (conversion + retry).
+                    resp.read()
             except httpx.TimeoutException as e:
+                if resp is not None:
+                    resp.close()
                 if attempt < self.max_retries:
                     self._backoff(attempt, None)
                     attempt += 1
                     continue
                 raise APITimeoutError(self._t("timeout"), code="timeout") from e
             except httpx.TransportError as e:
+                if resp is not None:
+                    resp.close()
                 if attempt < self.max_retries:
                     self._backoff(attempt, None)
                     attempt += 1
@@ -265,7 +274,6 @@ class BaseClient:
             if resp.status_code < 400:
                 return resp
             try:
-                resp.read()
                 if (
                     resp.status_code in _RETRY_STATUS or resp.status_code >= 500
                 ) and attempt < self.max_retries:
@@ -281,7 +289,7 @@ class BaseClient:
             body: Any = resp.json()
         except ValueError:
             body = resp.text
-        msg = _error_message(body)
+        msg = error_message(body)
         message = self._t("api_error", provider=self.provider, status=resp.status_code)
         if msg:
             message += ": " + msg  # API が返したメッセージは翻訳しない

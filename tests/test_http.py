@@ -13,7 +13,7 @@ from llm_ai_api import (
     RateLimitError,
 )
 
-from .helpers import Recorder, json_response
+from .helpers import FailingStream, Recorder, json_response
 
 
 def make(rec, **kw):
@@ -96,6 +96,37 @@ class HttpTest(unittest.TestCase):
         with self.assertRaises(APIConnectionError):
             c.request("/x", {})
         c = make(Recorder(httpx.ReadTimeout("slow")), max_retries=0)
+        with self.assertRaises(APITimeoutError):
+            c.request("/x", {})
+
+    # --- the error body itself can fail to be read ---------------------------------
+
+    def failing(self, exc, status=500):
+        return httpx.Response(status, stream=FailingStream(exc))
+
+    def test_stream_error_body_timeout_is_converted(self):
+        # one response object per attempt: a consumed stream cannot be read again
+        rec = Recorder(self.failing(httpx.ReadTimeout("slow")), self.failing(httpx.ReadTimeout("slow")))
+        c = make(rec, max_retries=1)
+        with self.assertRaises(APITimeoutError):
+            c.request_stream("/x", {})
+        self.assertEqual(len(rec.requests), 2)  # retried once
+
+    def test_stream_error_body_disconnect_is_converted(self):
+        c = make(Recorder(self.failing(httpx.ReadError("reset"), 400)), max_retries=0)
+        with self.assertRaises(APIConnectionError):
+            c.request_stream("/x", {})
+
+    def test_stream_error_body_failure_then_success_is_retried(self):
+        from .helpers import sse_response
+
+        rec = Recorder(self.failing(httpx.ReadTimeout("slow")), sse_response("data: ok\n\n"))
+        c = make(rec)
+        self.assertEqual([e.data for e in c.request_stream("/x", {})], ["ok"])
+        self.assertEqual(len(c.sleeps), 1)
+
+    def test_non_stream_error_body_failure_is_converted(self):
+        c = make(Recorder(self.failing(httpx.ReadTimeout("slow"))), max_retries=0)
         with self.assertRaises(APITimeoutError):
             c.request("/x", {})
 
