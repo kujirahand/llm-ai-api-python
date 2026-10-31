@@ -4,7 +4,7 @@
 
 Listeners on an `LLM` or a provider client (`OpenAIClient` and the others) are told when a call retries, fails, or receives response headers. The I/O log records successful chats only. Use listeners to see retries and failures.
 
-`latency` in every payload below is **seconds** (`float`), measured before listeners run. It includes time spent waiting to retry. `None` means the value was not measured (for example a cache replay of a stream error).
+`latency`, when present in a payload below is **seconds** (`float`), measured before listeners run. It includes time spent waiting to retry. `None` means the value was not measured (for example a cache replay of a stream error).
 
 ## Register a listener
 
@@ -65,8 +65,9 @@ A cache hit returns the `request_id`, `latency`, and `retries` stored with the o
 | `response` | An HTTP response below status 400 was accepted |
 | `http_error` | An HTTP error that will not be retried. `APIStatusError` is raised after the listeners return |
 | `request_error` | This library rejected the body (`response_too_large` or `invalid_json_response`) |
-| `stream_error` | An error event in the middle of a stream. `APIStreamError` is raised after the listeners return |
+| `stream_error` | An error event or EOF without a terminal event in a chat stream. `APIStreamError` is raised after the listeners return |
 | `stream_end` | A live stream was closed after a terminal SSE event (`[DONE]` or `message_stop`) |
+| `cache_error` / `log_error` | A cache lookup/store or log write failed; the chat continues |
 | `cache_hit` | `chat` / `stream_chat` (and the async twins) returned a stored response. No `response` event |
 
 ### `retry`
@@ -130,7 +131,7 @@ The keys of `http_error`, plus `code`:
 
 | `code` | When |
 |---|---|
-| `response_too_large` | The body, or one SSE line, is over the size limit. Emitted instead of `response` when the body is rejected before it is accepted |
+| `response_too_large` | The body, an SSE line, or an SSE event is over the size limit. Emitted instead of `response` when the body is rejected before it is accepted |
 | `invalid_json_response` | The body or an SSE `data` line is not a JSON object. A non-stream HTTP success emits `response` first, then this event |
 
 On a stream, `method`, `path`, and `status_code` are `None` when the events are replayed from the cache.
@@ -144,7 +145,7 @@ On a stream, `method`, `path`, and `status_code` are `None` when the events are 
 | `retries` | Retries before that response |
 | `latency` | Seconds until the error event, or `None` on a cache replay |
 | `stream` | `True` |
-| `code` | `"stream_error"` |
+| `code` | `"stream_error"` or `"stream_incomplete"` |
 
 The error body is on the `APIStreamError`, not in the payload. `stream_end` is not emitted for this call.
 
@@ -159,7 +160,7 @@ The error body is on the `APIStreamError`, not in the payload. `stream_end` is n
 | `stream` | `True` |
 | `complete` | `True` |
 
-Emitted only when a live stream is closed after a terminal SSE event. Stopping early, reaching EOF without a terminal event, or failing does not emit it. A cache replay emits `cache_hit` only, not `stream_end`. An async stream that is garbage-collected without `aclose()` closes the response and does not emit `stream_end`.
+Emitted only when a live stream is closed after a terminal SSE event. Stopping early, reaching EOF without a terminal event, or failing does not emit it. A complete cache replay emits `cache_hit` only, not `stream_end`. An async stream that is garbage-collected without `aclose()` closes the response and does not emit `stream_end`.
 
 ### `cache_hit`
 
@@ -197,3 +198,11 @@ print(stream.request_id)  # set when stream() returns
 for piece in stream:
     print(piece, end="", flush=True)
 ```
+
+Chat streams that reach EOF without a terminal event raise `APIStreamError` with code `stream_incomplete` after any received chunks and emit `stream_error`. This also applies to incomplete cache replays; raw `request_stream()` remains an unmodified SSE iterator.
+
+### `cache_error` / `log_error`
+
+A failed cache lookup or store, or log write, emits an event and a warning through the `llm_ai_api` logger. The chat continues: lookup failures are misses, and store/write failures do not discard the response. The payload contains `provider`, `operation` (`lookup`, `store`, or `write`), `error_type` (exception class name), and `message` (always `Details omitted`). Exception messages are omitted because they may contain secrets. Async listeners run on the event-loop thread.
+
+Built-in `SQLiteCache` and `JSONLLog` objects expose a thread-safe, read-only `failure_count`, counting failures observed through clients since object creation, across sync and async calls. Direct calls to the objects are not counted. Custom objects need not implement this property; their failures still produce warnings and events.

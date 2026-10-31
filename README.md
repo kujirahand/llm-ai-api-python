@@ -13,6 +13,9 @@ A thin, stable HTTP wrapper for the OpenAI, OpenRouter, Claude (Anthropic), and 
 - **Built-in caching and logging**: SQLite response caching (encrypted with a key derived from your API key; streams can be cached too) via `set_cache()` (or `cache=`) and JSON Lines request/response logging via `set_log()` (or `log=`) are built right in.
 - **Lightweight dependencies (`httpx` only)**: The only dependency is `httpx`; official packages like `openai` or `anthropic` are not required, keeping installs small and reducing dependency conflicts.
 
+
+Header names are case-insensitive; client and per-request headers override earlier values. See the [configuration reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/config.md) for precedence.
+
 ## Installation
 
 ```sh
@@ -155,7 +158,7 @@ m = llm("openai:gpt-6-luna", log="other.jsonl")  # per instance
 m2 = llm("openai:gpt-6-luna", log=False)         # off for this instance only
 ```
 
-Set the `LLM_AI_API_LOG_DIR` environment variable to a directory to enable it as `<dir>/llm.jsonl`. Each line has `time`, `provider`, `model`, `stream`, `cached`, `request` and `response`. The API key is never recorded. The log is plain text and contains your prompts and the answers, so protect it. A stream is recorded only after it has been read to the end. When the file grows past `max_size` (default 100 MB; `set_log(..., max_size=None)` for unlimited), the oldest third of the lines is deleted automatically.
+Set the `LLM_AI_API_LOG_DIR` environment variable to a directory to enable it as `<dir>/llm.jsonl`. Each line has `time`, `provider`, `model`, `stream`, `cached`, `request` and `response`. The API key is never recorded. The log is plain text and contains your prompts and the answers, so protect it. `JSONLLog(..., redact=hook)` can filter or skip records; on POSIX, file permissions are set to `0600` before writing. A stream is recorded only after it has been read to the end. When the file grows past `max_size` (default 100 MB; `set_log(..., max_size=None)` for unlimited), the oldest third of the lines is deleted automatically.
 
 See [docs/io_logs.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/io_logs.md) for details.
 

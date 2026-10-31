@@ -105,7 +105,7 @@ class InternalServerError(APIStatusError):
 
 
 class APIStreamError(LLMError):
-    """An error event arrived in the middle of a stream.
+    """A stream reported an error or ended without its terminal event.
 
     `request_id` is taken from the response headers when the chat layer raises
     this. `retries` and `latency` describe the call that opened the stream.
@@ -116,12 +116,13 @@ class APIStreamError(LLMError):
         message: str,
         *,
         body: Any = None,
+        code: str = "stream_error",
         provider: Optional[str] = None,
         request_id: Optional[str] = None,
         retries: int = 0,
         latency: Optional[float] = None,
     ) -> None:
-        super().__init__(message, code="stream_error")
+        super().__init__(message, code=code)
         self.body = body
         self.provider = provider
         self.request_id = request_id

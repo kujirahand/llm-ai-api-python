@@ -31,6 +31,8 @@ EVENTS: Tuple[str, ...] = (
     "stream_error",
     "stream_end",
     "cache_hit",
+    "cache_error",
+    "log_error",
 )
 _EVENT_SET = frozenset(EVENTS)
 
@@ -196,7 +198,7 @@ def note_stream_error(client: Any, exc: APIStreamError, events: Any) -> None:
             "retries": exc.retries,
             "latency": exc.latency,
             "stream": True,
-            "code": "stream_error",
+            "code": exc.code,
         },
     )
 

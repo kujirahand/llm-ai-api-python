@@ -74,3 +74,11 @@ m = llm("openai:gpt-6-luna", cache=SQLiteCache("./cache.db", max_size=10_000_000
 - The cache file uses SQLite's WAL journal mode (falls back to the default where WAL is unavailable), so several processes can share one file. You may see `-wal` / `-shm` files next to it; they get the same permissions as the main file.
 - Entries do not expire by themselves. The same request keeps returning the same response; use `clear_cache()` or turn the cache off to get a fresh one.
 - Do not commit the cache file to a repository.
+
+Stream cache buffering has a fixed 16 MiB budget per stream (the sum of each event’s JSON-encoded UTF-8 byte size). If exceeded, buffered events are released and the stream is not cached; delivery continues. This budget is independent of file `max_size`.
+
+With caching enabled, concurrent non-streaming chats with the same cache key in one process share the first successful cached result, across threads and asyncio tasks. If the first call fails or does not store a result, a waiter makes its own call. Streaming and raw requests are excluded. Waiting is not covered by the per-operation timeout.
+
+Runtime lookup/store failures emit warnings and `cache_error` events; `cache.failure_count` counts failures observed through clients. See [Events](events.md#cache_error--log_error).
+
+Header names in cache keys are normalized to lowercase, and the effective Anthropic version is used. Existing cache entries may miss after this change.

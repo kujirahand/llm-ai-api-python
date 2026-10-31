@@ -13,6 +13,9 @@ OpenAI / OpenRouter / Claude (Anthropic) / Google の API を呼び出す、薄�
 - **SQLite キャッシュと JSON Lines ログを標準搭載**: `set_cache()`（または `cache=`）による SQLite レスポンスキャッシュ（API キーから作った鍵で暗号化。ストリーミングもキャッシュ可能）や、`set_log()`（または `log=`）による JSON Lines 入出力ログが組み込まれています。
 - **依存が軽い（`httpx` のみ）**: 依存は `httpx` のみで、公式の `openai` や `anthropic` パッケージなどは不要です。インストールが軽く、依存関係の競合が起きにくくなります。
 
+
+ヘッダー名は大文字・小文字を区別せず、クライアントとリクエストごとのヘッダーが先の値を上書きします。優先順位は[設定リファレンス](docs/config-ja.md)を参照してください。
+
 ## インストール
 
 ```sh
@@ -155,7 +158,7 @@ m = llm("openai:gpt-6-luna", log="other.jsonl")  # インスタンスごとの�
 m2 = llm("openai:gpt-6-luna", log=False)         # このインスタンスだけオフ
 ```
 
-環境変数 `LLM_AI_API_LOG_DIR` にディレクトリを指定すると、`<ディレクトリ>/llm.jsonl` でオンになります。1 行には `time`, `provider`, `model`, `stream`, `cached`, `request`, `response` が入ります。API キーは記録されません。ログは平文で、プロンプトと回答がそのまま入るので、取り扱いに注意してください。ストリーミングは最後まで読み切ったときだけ記録されます。ファイルサイズが `max_size`（既定 100 MB。`set_log(..., max_size=None)` で無制限）を超えると、古いほうから 1/3 の行が自動で削除されます。
+環境変数 `LLM_AI_API_LOG_DIR` にディレクトリを指定すると、`<ディレクトリ>/llm.jsonl` でオンになります。1 行には `time`, `provider`, `model`, `stream`, `cached`, `request`, `response` が入ります。API キーは記録されません。ログは平文で、プロンプトと回答がそのまま入るので、取り扱いに注意してください。`JSONLLog(..., redact=hook)` で記録を加工・省略できます。POSIX では書き込み前にファイル権限を `0600` にします。ストリーミングは最後まで読み切ったときだけ記録されます。ファイルサイズが `max_size`（既定 100 MB。`set_log(..., max_size=None)` で無制限）を超えると、古いほうから 1/3 の行が自動で削除されます。
 
 詳しくは、[こちら](docs/io_logs-ja.md) を参照してください。
 

@@ -65,8 +65,9 @@ payload に API キー、認証ヘッダー、リクエスト本文、レスポ�
 | `response` | ステータス 400 未満の HTTP 応答を受け入れた |
 | `http_error` | もうリトライしない HTTP エラー。リスナーのあとで `APIStatusError` が出る |
 | `request_error` | ライブラリがボディを拒否した（`response_too_large` または `invalid_json_response`） |
-| `stream_error` | ストリーム途中の error イベント。リスナーのあとで `APIStreamError` が出る |
+| `stream_error` | ストリーム途中の error イベント、またはチャットストリームで終端なしの EOF。リスナーのあとで `APIStreamError` が出る |
 | `stream_end` | 終端 SSE（`[DONE]` または `message_stop`）のあとで、ライブのストリームを閉じた |
+| `cache_error` / `log_error` | キャッシュの検索・保存、またはログの書き込みに失敗。チャットは続行 |
 | `cache_hit` | `chat` / `stream_chat`（と非同期版）が保存済みの応答を返した。`response` は出ない |
 
 ### `retry`
@@ -130,7 +131,7 @@ payload に API キー、認証ヘッダー、リクエスト本文、レスポ�
 
 | `code` | とき |
 |---|---|
-| `response_too_large` | ボディ、または SSE の 1 行がサイズ上限を超えた。受け入れる前に拒否したときは `response` の代わりに出る |
+| `response_too_large` | ボディ、SSE の 1 行、または 1 イベントがサイズ上限を超えた。受け入れる前に拒否したときは `response` の代わりに出る |
 | `invalid_json_response` | ボディまたは SSE の `data` が JSON オブジェクトでない。非ストリームで HTTP が成功したときは、先に `response`、続いてこのイベント |
 
 ストリームをキャッシュから再生しているとき、`method`、`path`、`status_code` は `None` になることがあります。
@@ -144,7 +145,7 @@ payload に API キー、認証ヘッダー、リクエスト本文、レスポ�
 | `retries` | その応答の前のリトライ回数 |
 | `latency` | error イベントまでの秒。キャッシュの再生では `None` |
 | `stream` | `True` |
-| `code` | `"stream_error"` |
+| `code` | `"stream_error"` または `"stream_incomplete"` |
 
 エラーの本文は payload ではなく `APIStreamError` に入っています。この呼び出しでは `stream_end` は出ません。
 
@@ -159,7 +160,7 @@ payload に API キー、認証ヘッダー、リクエスト本文、レスポ�
 | `stream` | `True` |
 | `complete` | `True` |
 
-ライブのストリームを、終端 SSE のあとで閉じたときだけ出ます。途中で止めたもの、終端なしで終わったもの、失敗したものは出ません。キャッシュの再生は `cache_hit` だけで、`stream_end` は出ません。非同期ストリームを `aclose()` せず捨てたときの回収は、レスポンスを閉じるだけで `stream_end` は出しません。
+ライブのストリームを、終端 SSE のあとで閉じたときだけ出ます。途中で止めたもの、終端なしで終わったもの、失敗したものは出ません。完了したキャッシュの再生は `cache_hit` だけで、`stream_end` は出ません。非同期ストリームを `aclose()` せず捨てたときの回収は、レスポンスを閉じるだけで `stream_end` は出しません。
 
 ### `cache_hit`
 
@@ -197,3 +198,11 @@ print(stream.request_id)  # 呼び出しが返った時点で入っている
 for piece in stream:
     print(piece, end="", flush=True)
 ```
+
+チャットストリームが終端イベントなしで EOF に達すると、受信済みチャンクの後に `code="stream_incomplete"` の `APIStreamError` を送出し、`stream_error` を通知します。不完全なキャッシュの再生にも同じ挙動が適用されます。生の `request_stream()` は SSE をそのまま返します。
+
+### `cache_error` / `log_error`
+
+キャッシュの検索・保存、またはログの書き込みに失敗するとイベントを通知し、`llm_ai_api` ロガーに警告を出します。チャットは続行し、検索失敗はミスとして扱い、保存・書き込み失敗でも応答を返します。payload は `provider`、`operation`（`lookup`、`store`、`write`）、`error_type`（例外クラス名）、`message`（常に `Details omitted`）を含みます。例外メッセージは機密を含む可能性があるため省略します。非同期リスナーはイベントループ上で実行します。
+
+標準の `SQLiteCache` と `JSONLLog` の読み取り専用 `failure_count` は、生成後にクライアント経由で観測した失敗数を同期・非同期で共有して数えます。スレッドセーフで、オブジェクトの直接呼び出しは数えません。カスタムオブジェクトにこの属性は不要で、失敗時は警告とイベントを出します。

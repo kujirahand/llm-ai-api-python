@@ -11,6 +11,7 @@ import os
 import random
 import time
 import urllib.parse
+from email.utils import parsedate_to_datetime
 from typing import Any, Dict, Iterable, Iterator, Mapping, Optional, Tuple
 
 import httpx
@@ -26,6 +27,7 @@ from ._events import (
     request_id_of,
     retry_payload,
 )
+from ._io_errors import report_io_error
 from .log import LOG_NOT_SET, resolve_log
 from .errors import (
     APIConnectionError,
@@ -40,8 +42,20 @@ from .types import ChatChunk, ChatResult, SSEEvent
 
 _RETRY_STATUS = {408, 409, 429}
 _DEFAULT_RETRY_AFTER_MAX = 60.0
+# Independent budgets for cache events and log chunks.
+_STREAM_BUFFER_LIMIT = 16 * 1024 * 1024
+
+
+def _stream_item_size(value: Any) -> int:
+    try:
+        return len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
+    except UnicodeEncodeError:
+        return len(json.dumps(value, ensure_ascii=True).encode("utf-8"))
+
+
 _MAX_RESPONSE_BYTES = 64 * 1024 * 1024  # largest non-stream response body that is accepted
 _MAX_SSE_LINE_BYTES = 16 * 1024 * 1024  # longest single SSE line that is accepted
+_MAX_SSE_EVENT_BYTES = 16 * 1024 * 1024  # retained event name and data
 
 # Transport errors raised before the request reached the server: always safe to retry.
 _CONNECT_STAGE_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
@@ -90,13 +104,22 @@ def _check_retry_after_max(value: Any, lang: Optional[str]) -> float:
 
 
 def _retry_after_delay(retry_after: Optional[str], cap: float) -> Optional[float]:
-    """Parse a `retry-after` header (seconds) and cap it; None if absent or invalid."""
+    """Parse seconds or an HTTP date, returning None for invalid delays."""
     if not retry_after:
         return None
     try:
-        return min(max(float(retry_after), 0.0), cap)
+        delay = float(retry_after)
     except ValueError:
+        try:
+            date = parsedate_to_datetime(retry_after)
+            if date.tzinfo is None:
+                return None
+            delay = date.timestamp() - time.time()
+        except (ValueError, TypeError, OverflowError, OSError):
+            return None
+    if not math.isfinite(delay) or delay < 0:
         return None
+    return min(delay, cap)
 
 
 def _declared_too_large(resp: httpx.Response) -> bool:
@@ -111,6 +134,69 @@ def _too_large(limit: int, lang: Optional[str]) -> LLMError:
     return LLMError(t("response_too_large", lang, limit=limit), code="response_too_large")
 
 
+class _ResponseBuffer:
+    """Collect decoded response bytes up to the shared response limit."""
+
+    def __init__(self, lang: Optional[str]) -> None:
+        self.lang = lang
+        self.buffer = bytearray()
+
+    def add(self, chunk: bytes) -> None:
+        if len(self.buffer) + len(chunk) > _MAX_RESPONSE_BYTES:
+            raise _too_large(_MAX_RESPONSE_BYTES, self.lang)
+        self.buffer.extend(chunk)
+
+    def content(self) -> bytes:
+        return bytes(self.buffer)
+
+
+class _SSELines:
+    """Split response bytes without buffering an unbounded line."""
+
+    def __init__(self, lang: Optional[str], encoding: str = "utf-8") -> None:
+        self._lang = lang
+        self._encoding = encoding
+        self._line = bytearray()
+        self._after_cr = False
+
+    def feed(self, chunk: bytes) -> Iterator[str]:
+        start = 0
+        if self._after_cr and chunk:
+            if chunk.startswith(b"\n"):
+                start = 1
+            self._after_cr = False
+        while start < len(chunk):
+            cr = chunk.find(b"\r", start)
+            lf = chunk.find(b"\n", start)
+            ends = [i for i in (cr, lf) if i >= 0]
+            end = min(ends) if ends else len(chunk)
+            if len(self._line) + end - start > _MAX_SSE_LINE_BYTES:
+                raise _too_large(_MAX_SSE_LINE_BYTES, self._lang)
+            self._line.extend(chunk[start:end])
+            if end == len(chunk):
+                break
+            yield self._line.decode(self._encoding, errors="replace")
+            self._line.clear()
+            start = end + 1
+            if chunk[end] == 13:
+                if start == len(chunk):
+                    self._after_cr = True
+                elif chunk[start] == 10:
+                    start += 1
+
+    def flush(self) -> Iterator[str]:
+        if self._line:
+            yield self._line.decode(self._encoding, errors="replace")
+            self._line.clear()
+
+
+def _iter_sse_lines(resp: httpx.Response, lang: Optional[str]) -> Iterator[str]:
+    lines = _SSELines(lang, resp.encoding or "utf-8")
+    for chunk in resp.iter_bytes():
+        yield from lines.feed(chunk)
+    yield from lines.flush()
+
+
 class _SSEDecoder:
     """Line-by-line SSE state machine, shared by the sync and async readers.
 
@@ -121,6 +207,8 @@ class _SSEDecoder:
         self._lang = lang
         self._event: Optional[str] = None
         self._data: list = []
+        self._data_bytes = 0
+        self._event_bytes = 0
 
     def feed(self, line: str) -> Optional[SSEEvent]:
         """Consume one line; return the event it completes, if any."""
@@ -134,8 +222,15 @@ class _SSEDecoder:
         if value.startswith(" "):
             value = value[1:]
         if name == "event":
-            self._event = value
+            size = len(value.encode("utf-8"))
+            if self._data_bytes + size > _MAX_SSE_EVENT_BYTES:
+                raise _too_large(_MAX_SSE_EVENT_BYTES, self._lang)
+            self._event, self._event_bytes = value, size
         elif name == "data":
+            size = len(value.encode("utf-8")) + (1 if self._data else 0)
+            if self._data_bytes + self._event_bytes + size > _MAX_SSE_EVENT_BYTES:
+                raise _too_large(_MAX_SSE_EVENT_BYTES, self._lang)
+            self._data_bytes += size
             self._data.append(value)
         return None
 
@@ -145,6 +240,7 @@ class _SSEDecoder:
         if self._data or self._event is not None:
             ev = SSEEvent(self._event, "\n".join(self._data))
         self._event, self._data = None, []
+        self._data_bytes = self._event_bytes = 0
         return ev
 
 
@@ -301,6 +397,11 @@ class _ReplayEvents:
         pass
 
 
+def _merge_headers(*groups: Dict[str, str]) -> Dict[str, str]:
+    """Merge header names case-insensitively, with later values winning."""
+    return {name.lower(): value for group in groups for name, value in group.items()}
+
+
 class BaseClient:
     """Shared raw HTTP layer for the provider clients."""
 
@@ -424,7 +525,7 @@ class BaseClient:
         """
         return {
             "base_url": self.base_url,
-            "headers": dict(self._extra_headers),
+            "headers": _merge_headers(self._extra_headers),
         }
 
     def _cache_lookup(self, body: Dict[str, Any]) -> Optional[ChatResult]:
@@ -436,8 +537,8 @@ class BaseClient:
             if isinstance(self.cache, SQLiteCache):
                 return self.cache.get(key, secret=self._api_key)
             return self.cache.get(key)
-        except Exception:
-            # The cache is best-effort at runtime: treat any failure as a miss.
+        except Exception as exc:
+            report_io_error(self, self.cache, "cache", "lookup", exc)
             return None
 
     def _cache_store(self, body: Dict[str, Any], result: ChatResult) -> None:
@@ -450,9 +551,8 @@ class BaseClient:
                 self.cache.put(key, self.provider, result, secret=self._api_key)
             else:
                 self.cache.put(key, self.provider, result)
-        except Exception:
-            # A cache failure must not lose an API response the caller already paid for.
-            pass
+        except Exception as exc:
+            report_io_error(self, self.cache, "cache", "store", exc)
 
     def _lookup_chat_cache(self, body: Dict[str, Any]) -> Optional[ChatResult]:
         """Return a cached chat result and emit ``cache_hit``, or None on a miss."""
@@ -472,9 +572,8 @@ class BaseClient:
             self.log.write(
                 self.provider, body.get("model"), body, response, stream=stream, cached=cached
             )
-        except Exception:
-            # A log failure must not lose an API response the caller already paid for.
-            pass
+        except Exception as exc:
+            report_io_error(self, self.log, "log", "write", exc)
 
     def _log_chunks(
         self, body: Dict[str, Any], chunks: Iterator[ChatChunk], cached: bool
@@ -485,11 +584,22 @@ class BaseClient:
             return
         texts: list = []
         raws: list = []
+        size = 0
+        recording = True
         for chunk in chunks:
-            texts.append(chunk.text or "")
-            raws.append(chunk.raw)
+            if recording:
+                size += _stream_item_size([chunk.text or "", chunk.raw])
+                if size > _STREAM_BUFFER_LIMIT:
+                    texts.clear()
+                    raws.clear()
+                    recording = False
+                else:
+                    texts.append(chunk.text or "")
+                    raws.append(chunk.raw)
             yield chunk
-        self._log_call(body, {"text": "".join(texts), "chunks": raws}, stream=True, cached=cached)
+        response = ({"text": "".join(texts), "chunks": raws} if recording else
+                    {"text": None, "chunks": None, "truncated": True})
+        self._log_call(body, response, stream=True, cached=cached)
 
     def _stream_events(
         self, path: str, body: Dict[str, Any], timeout: Optional[float] = None
@@ -531,9 +641,18 @@ class BaseClient:
         # stream), errors and early stops are not stored.
         recorded: list = []
         complete = False
+        size = 0
+        recording = True
         try:
             for ev in events:
-                recorded.append({"event": ev.event, "data": ev.data})
+                if recording:
+                    item = {"event": ev.event, "data": ev.data}
+                    size += _stream_item_size(item)
+                    if size > _STREAM_BUFFER_LIMIT:
+                        recorded.clear()
+                        recording = False
+                    else:
+                        recorded.append(item)
                 if _is_terminal_event(ev):
                     complete = True
                 yield ev
@@ -544,7 +663,7 @@ class BaseClient:
             close = getattr(events, "close", None)
             if close is not None:
                 close()
-            if complete:
+            if complete and recording:
                 stored = ChatResult("", None, None, None, {"events": recorded})
                 stored.request_id = events.request_id
                 stored.retries = events.retries
@@ -642,10 +761,7 @@ class BaseClient:
             "Accept": "text/event-stream" if stream else "application/json",
             "User-Agent": _user_agent(),
         }
-        h.update(self._auth_headers())
-        h.update(self._extra_headers)
-        h.update(extra or {})
-        return h
+        return _merge_headers(h, self._auth_headers(), self._extra_headers, extra or {})
 
     def _t(self, msg_id: str, **params: Any) -> str:
         return t(msg_id, self.lang, **params)
@@ -795,22 +911,19 @@ class BaseClient:
                 # Always send with stream=True so Content-Length can be checked before
                 # a non-stream body is read.
                 resp = self._client.send(req, stream=True)
-                if resp.status_code >= 400:
-                    # The error body has not been read yet, and reading
-                    # it can fail too, so it has to be inside this try (conversion + retry).
-                    resp.read()
-                elif not stream:
-                    if _declared_too_large(resp):
+                if resp.status_code >= 400 or not stream:
+                    try:
+                        if _declared_too_large(resp):
+                            raise _too_large(_MAX_RESPONSE_BYTES, self.lang)
+                        buffer = _ResponseBuffer(self.lang)
+                        for chunk in resp.iter_bytes():
+                            buffer.add(chunk)
+                        resp._content = buffer.content()
+                    except LLMError:
                         meta = self._call_meta(method, path, stream, started, attempt, resp)
                         resp.close()
                         self._emit_request_error(meta, "response_too_large")
-                        raise _too_large(_MAX_RESPONSE_BYTES, self.lang)
-                    resp.read()
-                    if len(resp.content) > _MAX_RESPONSE_BYTES:
-                        meta = self._call_meta(method, path, stream, started, attempt, resp)
-                        resp.close()
-                        self._emit_request_error(meta, "response_too_large")
-                        raise _too_large(_MAX_RESPONSE_BYTES, self.lang)
+                        raise
             except httpx.RequestError as e:
                 if resp is not None:
                     resp.close()
@@ -943,7 +1056,7 @@ class _EventStream:
     def __init__(self, client: BaseClient, resp: httpx.Response, meta: _CallMeta) -> None:
         self._client = client
         self._resp = resp
-        self._sse = iter_sse(resp.iter_lines(), client.lang)
+        self._sse = iter_sse(_iter_sse_lines(resp, client.lang), client.lang)
         self._meta = meta
         self.request_id = meta.request_id
         self.retries = meta.retries
