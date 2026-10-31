@@ -177,6 +177,13 @@ class AsyncLLMBasicsTest(AsyncLLMTestBase):
         self.assertEqual([p async for p in m.astream("q")], ["ポ", "チ"])
         self.assertEqual(rec.body(), ask_body)
 
+        # ... and forwards keyword arguments without dropping any.
+        kwargs = dict(system="S", temperature=0.5, extra={"top_p": 0.9}, timeout=5.0)
+        [p async for p in m.aask_stream("q", **kwargs)]
+        kwargs_body = rec.body()
+        self.assertEqual([p async for p in m.astream("q", **kwargs)], ["ポ", "チ"])
+        self.assertEqual(rec.body(), kwargs_body)
+
     async def test_astream_anthropic(self):
         rec = Recorder(sse_response(CLAUDE_STREAM))
         m = self.make(rec, "claude:claude-x")

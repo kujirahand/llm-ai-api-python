@@ -146,6 +146,13 @@ class LLMTest(unittest.TestCase):
         self.assertEqual(list(m.stream("q")), ["ポ", "チ"])
         self.assertEqual(rec.body(), ask_body)
 
+        # ... and forwards keyword arguments without dropping any.
+        kwargs = dict(system="S", temperature=0.5, extra={"top_p": 0.9}, timeout=5.0)
+        list(m.ask_stream("q", **kwargs))
+        kwargs_body = rec.body()
+        self.assertEqual(list(m.stream("q", **kwargs)), ["ポ", "チ"])
+        self.assertEqual(rec.body(), kwargs_body)
+
     def test_chat_returns_result_and_context_manager(self):
         rec = Recorder(json_response(OPENAI_REPLY))
         with llm("openai:m", api_key="k", transport=rec.transport) as m:
