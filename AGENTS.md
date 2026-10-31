@@ -93,7 +93,7 @@ llm-ai-api-python/
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
 ├── docs/
 │   └── publish.md       # PyPI への公開手順
-└── examples/
+└── examples/                # 使い方のサンプル（コメントは英語。_common.py は共通ヘルパー）
 ```
 
 - インポート名は `llm_ai_api`、配布名（PyPI）は `llm-ai-api`。

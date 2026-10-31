@@ -43,6 +43,20 @@ m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 
 The constants are examples. Any other model works as a plain string, e.g. `llm("openai:some-new-model")`.
 
+## Examples
+
+See [`examples/`](examples/). Each script takes a `provider:model` argument (or the `LLM_MODEL` env var).
+
+| Script | What it shows |
+|---|---|
+| `hello.py` | Ask for a greeting |
+| `hello_stream.py` | Print the reply as it streams |
+| `chat_history.py` | Reply based on a chat history |
+| `ocr_test.py` | Read the text in an image |
+| `image_desc.py` | Describe an image |
+
+Image content is not converted between providers; the examples build the right format for each one (see `examples/_common.py`).
+
 ## Error messages
 
 Error messages are available in English and Japanese. The language is chosen from
