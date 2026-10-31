@@ -29,6 +29,13 @@ class SSETest(unittest.TestCase):
             ev.json()
         self.assertEqual(cm.exception.code, "invalid_json_response")
 
+    def test_non_object_json_raises_library_error(self):
+        for data in ('["just","an","array"]', "42", "null", '"str"'):
+            ev = self.parse("data: %s\n\n" % data)[0]
+            with self.assertRaises(LLMError) as cm:
+                ev.json()
+            self.assertEqual(cm.exception.code, "invalid_json_response")
+
 
 if __name__ == "__main__":
     unittest.main()

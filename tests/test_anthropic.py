@@ -91,6 +91,23 @@ class AnthropicTest(unittest.TestCase):
         self.assertEqual("".join(c.text for c in chunks), "hello")
         self.assertTrue(rec.body()["stream"])
 
+    def test_non_object_event_in_stream_raises_library_error(self):
+        from llm_ai_api import LLMError
+
+        for data in ('["just","an","array"]', "42"):
+            rec = Recorder(sse_response("data: %s\n\n" % data))
+            with self.assertRaises(LLMError) as cm:
+                list(client(rec).stream_chat("claude-x", MSGS))
+            self.assertEqual(cm.exception.code, "invalid_json_response")
+
+    def test_non_object_response_raises_library_error(self):
+        from llm_ai_api import LLMError
+
+        rec = Recorder(json_response(["x"]))
+        with self.assertRaises(LLMError) as cm:
+            client(rec).chat("claude-x", MSGS)
+        self.assertEqual(cm.exception.code, "invalid_json_response")
+
     def test_stream_error_event(self):
         text = (
             'event: error\ndata: {"type":"error","error":{"type":"overloaded_error",'

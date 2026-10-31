@@ -343,7 +343,7 @@ class ChatChunk:
 - `:` で始まる行はコメントとして無視する（OpenRouter は `: OPENROUTER PROCESSING` を送ってくる）。
 - OpenAI 系は `data: [DONE]` で終了。ストリームの途中で `error` フィールドを持つイベント（OpenRouter など）を受け取ったら、空のチャンクとして扱わず `APIStreamError` を送出する（本文は `body` に保持する）。部分的な回答を完成したものと誤認させないため。
 - Anthropic は `ping` を無視し、`error` イベントを受け取ったら `APIStreamError` を送出する。`message_stop` で終了。
-- `data` が有効な JSON でない場合は、`json.JSONDecodeError` ではなく `LLMError`（`code="invalid_json_response"`）に変換して送出する（`SSEEvent.json()`）。
+- `data` が有効な JSON でない場合は、`json.JSONDecodeError` ではなく `LLMError`（`code="invalid_json_response"`）に変換して送出する（`SSEEvent.json()`）。JSON として有効でもオブジェクト（dict）でない場合（配列・数値・文字列・`null`）も同じ扱い。非ストリームのレスポンス本文（`request()`）も同様に、dict でなければ `invalid_json_response`。
 - テキスト差分の取り出し:
   - OpenAI 系: `choices[0].delta.content`
   - Anthropic: `content_block_delta` のうち `delta.type == "text_delta"` の `delta.text`
