@@ -31,6 +31,7 @@ print(luna.ask("Come up with a cute name for a dog"))
 Set the API key via an environment variable (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`).
 The model is always `"<provider>:<model>"` (providers: `openai`, `openrouter`, `anthropic` / `claude`, `google`).
 Google Gemini is called through Google's OpenAI-compatible endpoint.
+For step-by-step setup, including how to configure an API key, see the [Tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md).
 
 ### Streaming and chat
 
@@ -119,7 +120,7 @@ asyncio.run(main())
 
 The cache and the log work the same way as in the sync API. Only the common interface (`llm()`) is async; there are no async provider clients or raw layer (`request()`).
 
-To try things step by step from the beginning, see the [Tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md). For reusing and closing the client, see [“Reuse and cleanup” in the tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md#9-reuse-and-cleanup).
+For reusing and closing the client, see [“Reuse and cleanup” in the tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md#9-reuse-and-cleanup).
 
 ## Response caching
 
