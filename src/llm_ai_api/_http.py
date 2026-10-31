@@ -10,11 +10,12 @@ import os
 import random
 import time
 import urllib.parse
-from typing import Any, Dict, Iterable, Iterator, Optional, Tuple
+from typing import Any, Dict, Iterable, Iterator, Mapping, Optional, Tuple
 
 import httpx
 
 from .cache import CACHE_NOT_SET, SQLiteCache, cache_key, resolve_cache
+from ._connection import build_httpx_kwargs, resolve_connection
 from .log import LOG_NOT_SET, resolve_log
 from .errors import (
     APIConnectionError,
@@ -164,6 +165,7 @@ class BaseClient:
         cache: Any = CACHE_NOT_SET,
         log: Any = LOG_NOT_SET,
         transport: Optional[httpx.BaseTransport] = None,
+        connection: Optional[Mapping[str, Any]] = None,
     ) -> None:
         """`lang` はエラーメッセージの言語（`"ja"` / `"en"`）。None なら環境から判定する。
 
@@ -174,6 +176,9 @@ class BaseClient:
         未指定なら `set_log()` のグローバル設定に従う）。
 
         `transport` はテスト用（`httpx.MockTransport` を渡す）。
+
+        `connection` は接続設定の dict（`set_connection()` の全体設定をキー単位で上書きする。
+        `transport` 指定時は検証のみで httpx には適用しない）。
         """
         self.lang = lang
         self.cache = resolve_cache(cache, lang=lang)
@@ -192,10 +197,19 @@ class BaseClient:
         ).rstrip("/")
         self.timeout = timeout
         self.max_retries = max_retries
+        self.connection = resolve_connection(connection, lang=lang)
+        self._connect_timeout = self.connection["connect_timeout"]
         self._extra_headers = dict(headers or {})
-        self._client = httpx.Client(
-            transport=transport, timeout=httpx.Timeout(timeout, connect=10.0)
-        )
+        if transport is not None:
+            self._client = httpx.Client(
+                transport=transport,
+                timeout=httpx.Timeout(timeout, connect=self._connect_timeout),
+            )
+        else:
+            self._client = httpx.Client(
+                timeout=httpx.Timeout(timeout, connect=self._connect_timeout),
+                **build_httpx_kwargs(self.connection, lang=lang),
+            )
 
     def __repr__(self) -> str:
         return "%s(base_url=%r)" % (type(self).__name__, _mask_url(self.base_url))
@@ -422,7 +436,9 @@ class BaseClient:
         )
         kwargs: Dict[str, Any] = {}
         if timeout is not None:
-            kwargs["timeout"] = httpx.Timeout(timeout, connect=10.0)
+            kwargs["timeout"] = httpx.Timeout(
+            timeout, connect=self._connect_timeout
+        )
         attempt = 0
         while True:
             try:

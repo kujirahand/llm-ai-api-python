@@ -128,6 +128,19 @@ Set the `LLM_AI_API_LOG_DIR` environment variable to a directory to enable it as
 
 See [docs/io_logs.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/io_logs.md) for details.
 
+## Connection settings
+
+Connection-level settings such as the number of concurrent connections, a proxy, or TLS options can be set process-wide with `set_connection()`, or per instance with `connection=`.
+
+```python
+from llm_ai_api import llm, set_connection
+
+set_connection(max_connections=50, proxy="http://proxy.example:8080")  # process-wide
+m = llm("openai:gpt-6-luna", connection={"max_connections": 5})        # per-instance override
+```
+
+The available keys are `max_connections` (default 100), `max_keepalive_connections` (default 20), `keepalive_expiry` (seconds, default 5.0), `connect_timeout` (seconds, default 10.0), `verify` (bool or a CA path, default True), `cert` (a certificate path or pair), and `proxy` (an http/https URL). Settings are resolved when the client is created; calling `set_connection()` later does not affect existing instances. `set_connection()` replaces the whole setting, and calling it with no arguments restores the defaults.
+
 ## Examples
 
 See [`examples/`](https://github.com/kujirahand/llm-ai-api-python/tree/main/examples). Each script takes a `provider:model` argument (or the `LLM_MODEL` env var).

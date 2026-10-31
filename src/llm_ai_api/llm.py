@@ -221,6 +221,7 @@ class LLM:
             # friends) and would build separate cache/log instances.
             options["base_url"] = self.client.base_url
             options["cache"] = self.client.cache
+            options["connection"] = self.client.connection
             options["log"] = self.client.log
             options["api" + "_key"] = getattr(self.client, "_api" + "_key")  # resolved key
             self._async_client_instance = _ASYNC_PROVIDERS[self._provider_key](**options)
