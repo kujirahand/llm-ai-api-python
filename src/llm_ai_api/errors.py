@@ -6,7 +6,15 @@ from typing import Any, Dict, Optional
 
 
 class LLMError(Exception):
-    """このパッケージの例外の基底クラス。"""
+    """このパッケージの例外の基底クラス。
+
+    `code` は言語に依存しない識別子（例: `"missing_api_key"`）。メッセージの翻訳が変わっても、
+    コードでの判定にはこちらを使う。
+    """
+
+    def __init__(self, message: str = "", *, code: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class LLMConfigError(LLMError):
@@ -34,7 +42,7 @@ class APIStatusError(LLMError):
         request_id: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
     ) -> None:
-        super().__init__(message)
+        super().__init__(message, code="api_error")
         self.status_code = status_code
         self.body = body
         self.provider = provider
@@ -70,7 +78,7 @@ class APIStreamError(LLMError):
     """ストリームの途中で error イベントを受け取った。"""
 
     def __init__(self, message: str, *, body: Any = None) -> None:
-        super().__init__(message)
+        super().__init__(message, code="stream_error")
         self.body = body
 
 

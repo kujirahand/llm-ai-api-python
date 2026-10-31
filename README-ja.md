@@ -43,6 +43,22 @@ m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 
 定数は例です。載っていないモデルも `llm("openai:新しいモデル名")` のように文字列でそのまま使えます。
 
+## エラーメッセージ
+
+エラーメッセージは日本語と英語に対応しています。言語は環境変数 `LLM_AI_API_LANG`、
+`LANGUAGE` / `LC_ALL` / `LC_MESSAGES` / `LANG` の順に判定し、判定できなければ英語です。
+明示的に指定することもできます。
+
+```python
+from llm_ai_api import llm, set_language
+
+set_language("ja")                       # プロセス全体
+m = llm("openai:gpt-6-luna", lang="en")  # モデルごと
+```
+
+すべての例外は、言語に依存しない `code`（例: `"missing_api_key"`）を持っています。メッセージの文面ではなく `code` で判定してください。
+API 自身が返したメッセージは翻訳しません。
+
 ## ライセンス
 
 MIT

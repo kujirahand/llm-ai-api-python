@@ -43,6 +43,22 @@ m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 
 The constants are examples. Any other model works as a plain string, e.g. `llm("openai:some-new-model")`.
 
+## Error messages
+
+Error messages are available in English and Japanese. The language is chosen from
+`LLM_AI_API_LANG`, then `LANGUAGE` / `LC_ALL` / `LC_MESSAGES` / `LANG`, and falls back to English.
+You can also set it explicitly:
+
+```python
+from llm_ai_api import llm, set_language
+
+set_language("ja")                       # for the whole process
+m = llm("openai:gpt-6-luna", lang="en")  # or per model
+```
+
+Every exception has a language-independent `code` (e.g. `"missing_api_key"`) you can check instead of the message.
+Messages returned by the API itself are never translated.
+
 ## License
 
 MIT

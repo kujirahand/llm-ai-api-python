@@ -118,8 +118,7 @@ class AnthropicClient(BaseClient):
         events = self.request_stream("/v1/messages", body)
         return self._iter_chunks(events)
 
-    @staticmethod
-    def _iter_chunks(events: Iterator[Any]) -> Iterator[ChatChunk]:
+    def _iter_chunks(self, events: Iterator[Any]) -> Iterator[ChatChunk]:
         for ev in events:
             raw = ev.json() if ev.data else {}
             kind = raw.get("type") or ev.event
@@ -127,8 +126,10 @@ class AnthropicClient(BaseClient):
                 continue
             if kind == "error":
                 err = raw.get("error") or {}
+                detail = err.get("message") or raw  # API が返したメッセージは翻訳しない
                 raise APIStreamError(
-                    "anthropic stream error: %s" % (err.get("message") or raw), body=raw
+                    "%s: %s" % (self._t("stream_error", provider=self.provider), detail),
+                    body=raw,
                 )
             if kind == "message_stop":
                 break

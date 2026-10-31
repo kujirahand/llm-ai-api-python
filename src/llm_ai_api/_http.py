@@ -21,6 +21,7 @@ from .errors import (
     LLMError,
     status_error_class,
 )
+from .locale import t
 from .types import SSEEvent
 
 _RETRY_STATUS = {408, 409, 429}
@@ -92,14 +93,19 @@ class BaseClient:
         max_retries: int = 2,
         headers: Optional[Dict[str, str]] = None,
         *,
+        lang: Optional[str] = None,
         transport: Optional[httpx.BaseTransport] = None,
     ) -> None:
-        """`transport` はテスト用（`httpx.MockTransport` を渡す）。"""
+        """`lang` はエラーメッセージの言語（`"ja"` / `"en"`）。None なら環境から判定する。
+
+        `transport` はテスト用（`httpx.MockTransport` を渡す）。
+        """
+        self.lang = lang
         key = api_key or os.environ.get(self.api_key_env)
         if not key:
             raise LLMConfigError(
-                "%s の API キーがありません。api_key 引数か環境変数 %s で指定してください。"
-                % (self.provider, self.api_key_env)
+                t("missing_api_key", lang, provider=self.provider, env=self.api_key_env),
+                code="missing_api_key",
             )
         self._api_key = key
         self.base_url = (
@@ -146,7 +152,10 @@ class BaseClient:
         try:
             return resp.json()
         except ValueError as e:
-            raise LLMError("レスポンスが JSON ではありません: %r" % resp.text[:200]) from e
+            raise LLMError(
+                self._t("invalid_json_response", preview=resp.text[:200]),
+                code="invalid_json_response",
+            ) from e
         finally:
             resp.close()
 
@@ -169,9 +178,11 @@ class BaseClient:
             for ev in iter_sse(resp.iter_lines()):
                 yield ev
         except httpx.TimeoutException as e:
-            raise APITimeoutError("ストリームの読み取りがタイムアウトしました") from e
+            raise APITimeoutError(self._t("stream_timeout"), code="timeout") from e
         except httpx.TransportError as e:
-            raise APIConnectionError("ストリームの読み取りに失敗しました: %s" % e) from e
+            raise APIConnectionError(
+                self._t("stream_connection_error", detail=e), code="connection_error"
+            ) from e
         finally:
             resp.close()
 
@@ -185,6 +196,16 @@ class BaseClient:
         h.update(self._extra_headers)
         h.update(extra or {})
         return h
+
+    def _t(self, msg_id: str, **params: Any) -> str:
+        return t(msg_id, self.lang, **params)
+
+    def _hint(self, status: int) -> Optional[str]:
+        if status >= 500:
+            return self._t("hint_server")
+        if status in (400, 401, 403, 404, 429):
+            return self._t("hint_%d" % status)
+        return None
 
     def _sleep(self, seconds: float) -> None:
         time.sleep(seconds)
@@ -228,13 +249,15 @@ class BaseClient:
                     self._backoff(attempt, None)
                     attempt += 1
                     continue
-                raise APITimeoutError("リクエストがタイムアウトしました") from e
+                raise APITimeoutError(self._t("timeout"), code="timeout") from e
             except httpx.TransportError as e:
                 if attempt < self.max_retries:
                     self._backoff(attempt, None)
                     attempt += 1
                     continue
-                raise APIConnectionError("接続に失敗しました: %s" % e) from e
+                raise APIConnectionError(
+                    self._t("connection_error", detail=e), code="connection_error"
+                ) from e
 
             if resp.status_code < 400:
                 return resp
@@ -256,9 +279,12 @@ class BaseClient:
         except ValueError:
             body = resp.text
         msg = _error_message(body)
-        message = "%s API error (HTTP %d)" % (self.provider, resp.status_code)
+        message = self._t("api_error", provider=self.provider, status=resp.status_code)
         if msg:
-            message += ": " + msg
+            message += ": " + msg  # API が返したメッセージは翻訳しない
+        hint = self._hint(resp.status_code)
+        if hint:
+            message += "\n" + hint
         request_id = resp.headers.get("x-request-id") or resp.headers.get("request-id")
         return status_error_class(resp.status_code)(
             message,

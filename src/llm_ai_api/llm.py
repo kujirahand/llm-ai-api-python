@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterator, List, Optional
 from ._http import BaseClient
 from .anthropic import AnthropicClient
 from .errors import LLMConfigError
+from .locale import t
 from .openai import OpenAIClient
 from .openrouter import OpenRouterClient
 from .types import ChatResult
@@ -19,18 +20,17 @@ _PROVIDERS = {
 }
 
 
-def parse_model_spec(spec: str) -> "tuple[str, str]":
+def parse_model_spec(spec: str, lang: Optional[str] = None) -> "tuple[str, str]":
     """`"provider:model"` を (provider, model) に分ける。最初の `:` で分割する。"""
     provider, sep, model = spec.partition(":")
     provider = provider.strip().lower()
     model = model.strip()
     if not sep or not provider or not model:
-        raise LLMConfigError(
-            '"プロバイダー:モデル" の形式で指定してください（例: "openai:gpt-6-luna"）: %r' % spec
-        )
+        raise LLMConfigError(t("invalid_model_spec", lang, spec=spec), code="invalid_model_spec")
     if provider not in _PROVIDERS:
         raise LLMConfigError(
-            "未知のプロバイダーです: %r（対応: %s）" % (provider, ", ".join(sorted(_PROVIDERS)))
+            t("unknown_provider", lang, provider=provider, supported=", ".join(sorted(_PROVIDERS))),
+            code="unknown_provider",
         )
     return provider, model
 
@@ -48,7 +48,7 @@ class LLM:
         extra: Optional[Dict[str, Any]] = None,
         **client_options: Any,
     ) -> None:
-        provider, model = parse_model_spec(spec)
+        provider, model = parse_model_spec(spec, client_options.get("lang"))
         self.provider = "anthropic" if provider == "claude" else provider
         self.model = model
         self.system = system
