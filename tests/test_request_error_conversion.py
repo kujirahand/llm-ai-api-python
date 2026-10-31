@@ -11,7 +11,16 @@ from llm_ai_api._http import BaseClient
 
 from .helpers import AsyncFailingStream, FailingStream, Recorder
 
-BAD_URL = "http://host:badport"
+# Carries userinfo, a query and a fragment so the tests can check URL masking.
+BAD_URL = "http://user:pass@host:badport/v1?token=secret#frag"
+
+
+def _assert_url_masked(test, exc):
+    """The error text must hide userinfo, query and fragment, and show `***`."""
+    text = str(exc)
+    for leaked in ("pass", "secret", "frag"):
+        test.assertNotIn(leaked, text)
+    test.assertIn("***", text)
 
 
 class _Base(unittest.TestCase):
@@ -48,6 +57,8 @@ class SyncRequestErrorTest(_Base):
             list(m.stream("q"))
         self.assertEqual(cm.exception.code, "connection_error")
         self.assertNotIsInstance(cm.exception, httpx.HTTPError)
+        # Once the body has started streaming, there is no retry.
+        self.assertEqual(len(rec.requests), 1)
 
     def test_invalid_url_becomes_config_error(self):
         rec = Recorder(httpx.Response(200, json={}))
@@ -60,6 +71,7 @@ class SyncRequestErrorTest(_Base):
             m.ask("q")
         self.assertEqual(cm.exception.code, "invalid_url")
         self.assertIn("Invalid URL", str(cm.exception))
+        _assert_url_masked(self, cm.exception)
         self.assertNotIsInstance(cm.exception, httpx.InvalidURL)
 
 
@@ -102,6 +114,8 @@ class AsyncRequestErrorTest(unittest.IsolatedAsyncioTestCase):
                 pass
         self.assertEqual(cm.exception.code, "connection_error")
         self.assertNotIsInstance(cm.exception, httpx.HTTPError)
+        # Once the body has started streaming, there is no retry.
+        self.assertEqual(len(rec.requests), 1)
 
     async def test_invalid_url_becomes_config_error(self):
         rec = Recorder(httpx.Response(200, json={}))
@@ -110,6 +124,7 @@ class AsyncRequestErrorTest(unittest.IsolatedAsyncioTestCase):
             await m.aask("q")
         self.assertEqual(cm.exception.code, "invalid_url")
         self.assertIn("Invalid URL", str(cm.exception))
+        _assert_url_masked(self, cm.exception)
         self.assertNotIsInstance(cm.exception, httpx.InvalidURL)
 
 
