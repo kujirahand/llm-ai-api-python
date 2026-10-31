@@ -47,7 +47,7 @@ Anything else can go through `extra={...}`, or the raw layer: `luna.client.reque
 text = luna.ask("A short question", timeout=30)
 ```
 
-This is a **per-operation timeout**, not a total deadline (for a stream, it is the time to wait for the next data). Retries (2 by default) extend the total time. If you need a hard deadline, wrap the call with `asyncio.wait_for()` in async code, or combine a short `timeout` with `max_retries=0` (or a small value) in sync code.
+This is a **per-operation timeout**, not a total deadline (for a stream, it is the time to wait for the next data). Retries (2 by default) extend the total time. This parameter alone cannot guarantee a total deadline in sync code: the wait resets whenever data arrives, so even with `max_retries=0` the total time is unbounded, especially for streams and slow-drip responses. In async code, if you need a hard deadline, wrap the coroutine that consumes the whole stream in `asyncio.wait_for()`, not just the `astream()` call, because the request only starts at the first iteration.
 
 You can also pick from the model constants (they are just `"provider:model"` strings):
 

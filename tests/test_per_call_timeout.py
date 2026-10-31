@@ -111,6 +111,32 @@ class PerCallTimeoutTest(unittest.TestCase):
             list(m.stream("q", timeout=9.0))
             self.assertEqual(len(rec.requests), 1)
 
+    def test_async_cache_ignores_timeout(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "c.db")
+            msgs = [{"role": "user", "content": "q2"}]
+
+            async def run():
+                m, rec = self.make("openai:m", json_response(OPENAI_REPLY), cache=path)
+                async with m:
+                    first = await m.aask("q", timeout=1.0)
+                    second = await m.aask("q", timeout=9.0)
+                    third = (await m.achat(msgs, timeout=1.0)).text
+                    fourth = (await m.achat(msgs, timeout=9.0)).text
+                self.assertEqual(first, second)
+                self.assertEqual(third, fourth)
+                self.assertEqual(len(rec.requests), 2)  # one per distinct prompt
+
+                m, rec = self.make("openai:m", sse_response(OPENAI_STREAM), cache=path)
+                async with m:
+                    a = [p async for p in m.astream("s", timeout=1.0)]
+                    self.assertEqual(len(rec.requests), 1)  # populated the cache
+                    b = [p async for p in m.astream("s", timeout=9.0)]
+                self.assertEqual(a, b)
+                self.assertEqual(len(rec.requests), 1)  # replayed, no new request
+
+            asyncio.run(run())
+
 
 if __name__ == "__main__":
     unittest.main()
