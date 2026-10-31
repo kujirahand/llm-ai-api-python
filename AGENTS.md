@@ -292,9 +292,9 @@ for chunk in client.stream_chat(model=..., messages=..., ...):
 | `max_tokens` | `max_completion_tokens` として送信 | `max_tokens` として送信 | `max_tokens` として送信 | `max_tokens`（必須。未指定時 16000） |
 | `content` | 文字列またはパーツ配列をそのまま | 同左 | 同左 | 同左（Claude 形式のブロック配列をそのまま） |
 | ストリーミング | `stream: true` と `stream_options: {"include_usage": true}` を付与 | `stream: true` | `stream: true` | `stream: true` |
-| 拒否パラメータ | `_model_params.py` の表に合うモデルだけ、`extra` の後に落とす | 落とさない | 落とさない | `anthropic-version: 2026-10-21` のとき全モデルで `temperature` / `top_p` / `top_k` を落とす。別バージョンでは落とさない |
+| 拒否パラメータ | `_model_params.py` の表に合うモデルだけ、`extra` の後に落とす | 落とさない | 落とさない | 送る `anthropic-version` が `2026-10-21` のとき全モデルで `temperature` / `top_p` / `top_k` を落とす。別の値では落とさない |
 
-- 落とす処理は同期の `_build_body` の最後（`extra` のマージ後）だけ。非同期クライアントは同じ `_build_body` を呼ぶ。判定に使うモデル ID は、マージ後のボディの `model` が文字列ならそれ、そうでなければ `chat()` に渡した `model`。一致したルールの `drop` は和集合で消し、入力の dict は変更しない。警告は出さない。オフにする引数はない。
+- 落とす処理は同期の `_build_body` の最後（`extra` のマージ後）だけ。非同期クライアントは同じ `_build_body` を呼ぶ。判定に使うモデル ID は、マージ後のボディの `model` が文字列ならそれ、そうでなければ `chat()` に渡した `model`。一致したルールの `drop` は和集合で消し、入力の dict は変更しない。警告は出さない。オフにする引数はない。Anthropic のバージョンは、送るヘッダー `anthropic-version` の値（`anthropic_version=`。`headers` に同じキーがあればそれが上書きする）。
 - OpenAI の表（2026-10-31 に公式ページで確認。出典 URL は `_model_params.py` のコメント）: `gpt-6-astra` と `gpt-6.1-sol` は `temperature` / `top_p` / `logprobs` / `top_logprobs`。`gpt-5` / `gpt-5-mini` / `gpt-5-nano` とその日付スナップショット（`gpt-5-2025-08-07`、`gpt-5-mini-2025-08-07`、`gpt-5-nano-2025-08-07`）は `temperature` / `top_p` / `logprobs`。`o3` / `o3-2025-04-16` / `o4-mini` / `o4-mini-2025-04-16` は `stop`。`reasoning_effort` が `"none"` のときだけ温度を受け付けるモデル（`gpt-6-luna`、`gpt-5.2` など）は、常時落とすと正当なリクエストを壊すので表に入れない。
 - 値の注入（`temperature` を 1 にする、`reasoning_effort` を足す、など）はしない。必須の補完は今までどおり Claude の `max_tokens` と、OpenAI ストリームの `stream_options` だけ。
 - Google は OpenAI 互換エンドポイントを使うため、OpenAI 系の共通実装（`OpenAICompatClient`）を継承する。Google が互換エンドポイントを変更・廃止した場合は、ネイティブ API（`:generateContent`、`contents[]` / `systemInstruction` / `generationConfig.maxOutputTokens`）に切り替える。切り替えても `llm("google:...")` の使い方は変えない。

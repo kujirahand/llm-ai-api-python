@@ -268,6 +268,15 @@ class ChatCacheTest(CacheTestBase):
         self.assertEqual(m.ask("q"), "ポチ")
         self.assertEqual(len(rec.requests), 1)
 
+    def test_dropped_keys_share_one_cache_entry(self):
+        rec = Recorder(json_response(CLAUDE_REPLY))
+        m = llm("claude:claude-x", api_key="k", transport=rec.transport, cache=self.db)
+        m.ask("q")
+        m.ask("q", temperature=0.2, extra={"top_k": 1})
+        self.assertEqual(len(rec.requests), 1)
+        m.ask("q", max_tokens=5)
+        self.assertEqual(len(rec.requests), 2)
+
     def test_streaming_is_cached(self):
         rec = Recorder(sse_response(OPENAI_STREAM))
         m = self.make(rec, cache=self.db)

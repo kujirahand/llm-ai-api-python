@@ -36,8 +36,8 @@ class _AsyncOpenAICompatClient(_AsyncBaseClient):
         extra: Optional[Dict[str, Any]],
         stream: bool,
     ) -> Dict[str, Any]:
-        # Reuse the sync implementation: it only reads `self.max_tokens_field` and
-        # `self.stream_include_usage`, which this class defines with the same values.
+        # Reuse the sync implementation. It reads max_tokens_field,
+        # stream_include_usage, and provider, which this class sets the same way.
         return OpenAICompatClient._build_body(
             self, model, messages, max_tokens, temperature, extra, stream  # type: ignore[arg-type]
         )
@@ -152,8 +152,9 @@ class _AsyncAnthropicClient(_AsyncBaseClient):
         extra: Optional[Dict[str, Any]],
         stream: bool,
     ) -> Dict[str, Any]:
-        # Reuse the sync implementation: it only uses `_split_system()` and module
-        # constants, not the client's state.
+        # Reuse the sync implementation. It reads provider, anthropic_version,
+        # and _extra_headers so the drop rules follow the version header that
+        # will be sent. This class defines those the same way.
         return AnthropicClient._build_body(
             self, model, messages, max_tokens, temperature, extra, stream  # type: ignore[arg-type]
         )

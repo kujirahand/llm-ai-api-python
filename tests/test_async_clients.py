@@ -360,6 +360,25 @@ class AsyncAnthropicTest(AsyncClientTestBase):
         self.assertNotIn("top_k", body)
         self.assertNotIn("top_p", body)
 
+    async def test_header_override_selects_the_version_used_for_drops(self):
+        rec = Recorder(json_response(CLAUDE_REPLY))
+        c = self.make(rec, cls=_AsyncAnthropicClient, headers={"anthropic-version": "2023-06-01"})
+        await c.achat("claude-x", MESSAGES, temperature=0.2, extra={"top_k": 4})
+        self.assertEqual(rec.requests[0].headers["anthropic-version"], "2023-06-01")
+        self.assertEqual(rec.body()["temperature"], 0.2)
+        self.assertEqual(rec.body()["top_k"], 4)
+        rec = Recorder(json_response(CLAUDE_REPLY))
+        c = self.make(
+            rec,
+            cls=_AsyncAnthropicClient,
+            anthropic_version="2023-06-01",
+            headers={"anthropic-version": "2026-10-21"},
+        )
+        await c.achat("claude-x", MESSAGES, temperature=0.2, extra={"top_p": 0.3})
+        self.assertEqual(rec.requests[0].headers["anthropic-version"], "2026-10-21")
+        self.assertNotIn("temperature", rec.body())
+        self.assertNotIn("top_p", rec.body())
+
     async def test_stream_chat(self):
         rec = Recorder(sse_response(CLAUDE_STREAM))
         c = self.make(rec, cls=_AsyncAnthropicClient)

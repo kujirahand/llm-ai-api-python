@@ -131,7 +131,7 @@ print(m.ask("日本の首都は？", system="関西弁で答えてください�
 
 - 指定していないパラメータは API に送りません。新しいモデルは、デフォルト値の `temperature` などでも拒否することがあるためです。必要なときだけ指定してください。
 - 公式仕様で拒否されると確認したパラメータは、明示しても `extra` で渡しても送りません。表にないモデルとパラメータ、および OpenRouter と Google はそのまま送ります。落とすキーをそのまま送りたいときは `m.client.request(path, body)` を使います。
-- Claude の `max_tokens` は API の必須項目です。未指定のときはライブラリが 16000 を補います。API バージョン `2026-10-21`（既定）では `temperature` / `top_p` / `top_k` を送りません。別の `anthropic_version` を渡したときは送ります。
+- Claude の `max_tokens` は API の必須項目です。未指定のときはライブラリが 16000 を補います。送る API バージョンが `2026-10-21`（既定）のときは `temperature` / `top_p` / `top_k` を送りません。別のバージョンでは、指定した値を送ります。`headers` の `anthropic-version` は `anthropic_version=` を上書きします。
 - ここにないパラメータは `extra={...}` で渡せます（拒否表に載っていないキーは、リクエストボディの最後にマージされます）。
 - 呼び出しごとに `None` を渡すと、その呼び出しだけ `llm()` の既定値を使いません（例: `m.ask("q", temperature=None)`）。
 
