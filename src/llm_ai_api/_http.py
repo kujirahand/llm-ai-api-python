@@ -221,7 +221,7 @@ class BaseClient:
         texts: list = []
         raws: list = []
         for chunk in chunks:
-            texts.append(chunk.text)
+            texts.append(chunk.text or "")
             raws.append(chunk.raw)
             yield chunk
         self._log_call(body, {"text": "".join(texts), "chunks": raws}, stream=True, cached=cached)

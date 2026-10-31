@@ -118,11 +118,12 @@ def set_log(log: Any = None, *, lang: Optional[str] = None) -> Any:
     return _global_log
 
 
-def get_log() -> Any:
+def get_log(lang: Optional[str] = None) -> Any:
     """Return the process-wide log object, or None when it is off.
 
     Unless set_log() was called, the log is `<LLM_AI_API_LOG_DIR>/llm.jsonl` when that
     environment variable is set, and off otherwise.
+    `lang` is the language of the error message if that log file cannot be opened.
     """
     global _env_log
     if _global_set:
@@ -132,12 +133,12 @@ def get_log() -> Any:
         return None
     path = os.path.join(directory, LOG_NAME)
     if _env_log is None or _env_log.path != path:
-        _env_log = JSONLLog(path)
+        _env_log = JSONLLog(path, lang=lang)
     return _env_log
 
 
 def resolve_log(value: Any, *, lang: Optional[str] = None) -> Any:
     """Resolve a per-instance `log=` argument; LOG_NOT_SET falls back to the global log."""
     if value is LOG_NOT_SET:
-        return get_log()
+        return get_log(lang=lang)
     return _resolve(value, lang)
