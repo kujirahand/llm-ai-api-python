@@ -63,6 +63,23 @@ with open("llm_log.jsonl", encoding="utf-8") as f:
         print(record["time"], record["model"])
 ```
 
+## 最大サイズ
+
+```python
+from llm_ai_api import JSONLLog, llm, set_log
+
+set_log("./llm_log.jsonl", max_size=50 * 1024 * 1024)   # 50 MB（パスや True から作るとき）
+set_log("./llm_log.jsonl", max_size=None)                # 無制限
+m = llm("openai:gpt-6-luna", log=JSONLLog("./llm_log.jsonl", max_size=10_000_000))
+```
+
+- `max_size`（バイト）の既定値は **100 MB** です（`llm_ai_api.log.DEFAULT_MAX_SIZE`）。パスや `True` を渡したときと、環境変数 `LLM_AI_API_LOG_DIR` では、この既定値になります。
+- 1 行を追記するたびにファイルサイズを調べ、`max_size` を超えていたら、先頭（古いほう）の 1/3 の行を捨てて、残りを書き直します。まだ `max_size` を超えている場合は、次の書き込みでもう一度削除します。最後に書いた 1 行は、それだけで `max_size` を超えていても必ず残ります。
+- 同じプロセス内のスレッドは、ロックで直列化されます。複数の**プロセス**が同じログファイルに書き込む場合、削除中の動作は完全にはサポートされません。読み込んでから書き換えるまでの間にファイルが変化していたら、その削除は中止され（次の書き込みでやり直します）、最後の置き換えの直前のごくわずかな間に別プロセスが追記した行は、失われる可能性があります。すべての行が重要な場合は、プロセスごとに別のログファイルを使ってください。（キャッシュは SQLite 自身のロックを使うため、この注意はログだけに当てはまります。）
+- `max_size=None` で無制限（制限なし）になります。0 以下や整数以外は `LLMConfigError`（`code="invalid_log"`）です。
+- `set_log()` の `max_size` は、パスや `True` から作るときだけ使われます。`JSONLLog` オブジェクトを渡したときは、そのオブジェクトの `max_size` が優先されます。
+- 整理に失敗しても呼び出しは失敗しません（ベストエフォート）。
+
 ## 注意
 
 - API キーと認証ヘッダーは記録されません。

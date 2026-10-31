@@ -106,6 +106,7 @@ llm-ai-api-python/
 │   ├── test_connection.py # 接続設定（set_connection / connection=）
 │   ├── test_cache.py
 │   ├── test_log.py
+│   ├── test_max_size.py      # キャッシュとログの最大サイズ（#31）
 │   ├── test_cache_crypto.py
 │   ├── test_stream_close.py  # ストリームの閉じ忘れ（#25）
 │   ├── test_hardening.py     # キャッシュのファイル権限・WAL・サイズ上限・一括 XOR（#33）
@@ -326,6 +327,7 @@ class ChatChunk:
 - **削除**: `clear_cache(days, cache_dir=None)` は `days` 日より古いエントリを消して件数を返す（`days=0` で全削除）。ディレクトリは `cache_dir`、環境変数、グローバルキャッシュの順に探し、なければ `LLMConfigError`（`code="cache_dir_not_set"`）。`SQLiteCache.clear(days=None)` も同じ動き。
 - 有効にしている間、同じリクエストには常に同じ保存済み応答が返る。新しい応答が欲しい場合はキャッシュを空にするかオフにする。
 - 対象は `chat()` / `ask()` と `stream_chat()` / `stream()`。ストリームは、終端イベント（OpenAI 系の `[DONE]`、Anthropic の `message_stop`。判定は `_is_terminal_event()`）を受け取ったときだけ保存する。終端イベントなしで EOF になったものは未完了のストリームとして保存しない（呼び出し側には届いたチャンクをそのまま返し、例外にはしない）。途中で止めたもの・エラーになったものも保存しない。生レイヤー（`request()` / `request_stream()`）は対象外。
+- **最大サイズ**: `SQLiteCache(path, max_size=DEFAULT_MAX_SIZE)`（公開属性 `max_size`、バイト）。既定は 100 MB（`cache.DEFAULT_MAX_SIZE`）。`put()` のあとにファイルサイズが `max_size` を超えていたら、ロックの下で `created_at` の古い順に 1/3 の行を削除し、`VACUUM` で縮める（最新の行は必ず残す。1 回の `put()` につき整理は 1 回）。`None` は無制限。0 以下・整数以外は `LLMConfigError`（`code="invalid_cache"`）。整理の失敗はベストエフォート（無視）。`set_cache(..., max_size=...)` はパス / `True` から作るときだけ使い、`SQLiteCache` オブジェクトを渡したときはそのオブジェクトの `max_size` が優先。自作のキャッシュオブジェクトには影響しない。
 - 実行時のキャッシュの失敗はベストエフォート（読み取りはミス扱い、書き込みは無視）にして、料金を払って得た応答を失わない。設定の誤り（不正な値、使えないパス）は生成時に `LLMConfigError`（`code="invalid_cache"`）を送出する。
 - `close()` は渡されたキャッシュを閉じない（グローバルと共有されうるため）。
 
@@ -336,6 +338,7 @@ class ChatChunk:
 - インスタンスごとの設定: `llm(..., log=...)` と各クライアントの `log=...`。値は `True`（既定ファイル `llm_ai_api_log.jsonl`）、パス、`JSONLLog`（`write(provider, model, request, response, *, stream, cached)` を持つオブジェクトも可）、`False` / `None`（このインスタンスだけオフ）。引数を渡さなければグローバル設定に従う（内部のセンチネル `LOG_NOT_SET`）。
 - **1 行の内容**: `time`（UTC, ISO 8601）, `provider`, `model`, `stream`, `cached`（キャッシュから返したか）, `request`（送ったボディ）, `response`（生の応答 dict。ストリームは `{"text": 連結したテキスト, "chunks": [生のイベント JSON, ...]}`）。API キーと認証ヘッダーは記録しない。
 - ログは平文で、プロンプトと回答がそのまま入る。ファイルは新規作成時に権限 `0600`（親ディレクトリを作る場合は `0700`）にする（ベストエフォート）。
+- **最大サイズ**: `JSONLLog(path, max_size=DEFAULT_MAX_SIZE)`（公開属性 `max_size`、バイト）。既定は 100 MB（`log.DEFAULT_MAX_SIZE`）。`write()` で追記するたびにファイルサイズを調べ、`max_size` を超えていたらロックの下で先頭 1/3 の行を捨てて、残りを一時ファイル経由で書き直す（まだ超えていれば次の `write()` でもう一度整理する。読み込み前後で `os.stat` の inode / サイズ / mtime が変わっていたら、別プロセスの追記とみなして整理を中止する。ただし置き換え直前のごく短い間の別プロセスの追記は失われうるので、複数プロセスから同一ファイルへの書き込みは整理中は完全にはサポートしない。最後に書いた 1 行は、単独で `max_size` を超えていても必ず残す）。`None` は無制限。0 以下・整数以外は `LLMConfigError`（`code="invalid_log"`）。整理の失敗はベストエフォート（無視）。`set_log(..., max_size=...)` はパス / `True` から作るときだけ使い、`JSONLLog` オブジェクトを渡したときはそのオブジェクトの `max_size` が優先。自作のログオブジェクトには影響しない。
 - ストリームは最後まで読み切ったときだけ記録する。エラーになった呼び出しは記録しない。
 - 実行時のログの失敗はベストエフォート（無視する）にして、料金を払って得た応答を失わない。設定の誤り（不正な値、書けないパス）は生成時に `LLMConfigError`（`code="invalid_log"`）を送出する。
 

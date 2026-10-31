@@ -63,6 +63,23 @@ with open("llm_log.jsonl", encoding="utf-8") as f:
         print(record["time"], record["model"])
 ```
 
+## Maximum size
+
+```python
+from llm_ai_api import JSONLLog, llm, set_log
+
+set_log("./llm_log.jsonl", max_size=50 * 1024 * 1024)   # 50 MB (when created from a path or True)
+set_log("./llm_log.jsonl", max_size=None)                # unlimited
+m = llm("openai:gpt-6-luna", log=JSONLLog("./llm_log.jsonl", max_size=10_000_000))
+```
+
+- `max_size` (bytes) defaults to **100 MB** (`llm_ai_api.log.DEFAULT_MAX_SIZE`). A path or `True`, and the `LLM_AI_API_LOG_DIR` environment variable, use this default.
+- The file size is checked after every appended line. When it is over `max_size`, the first (oldest) third of the lines is dropped and the rest is rewritten. If the file is still over the limit, the next write trims again. The most recently written record is always kept, even if it alone is larger than `max_size`.
+- Threads of one process are serialized by a lock. Several **processes** writing to the same log file are not fully supported while a trim runs: the trim is abandoned if the file changed since it was read (the next write retries), but a record appended by another process in the tiny window just before the final rename can still be lost. Use one log file per process if every record matters. (The cache uses SQLite's own locking, so this caveat applies to the log only.)
+- `max_size=None` means unlimited. Zero, a negative number or a non-integer raises `LLMConfigError` (`code="invalid_log"`).
+- The `max_size` of `set_log()` is used only when it creates the log from a path or `True`. When you pass a `JSONLLog` object, its own `max_size` applies.
+- A failure while trimming never fails the call (best effort).
+
 ## Notes
 
 - The API key and auth headers are never recorded.

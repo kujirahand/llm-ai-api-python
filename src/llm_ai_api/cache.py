@@ -28,6 +28,7 @@ from .types import ChatResult, Usage
 DEFAULT_CACHE_PATH = "llm_ai_api_cache.db"
 CACHE_DIR_ENV = "LLM_AI_API_CACHE_DIR"
 DB_NAME = "cache.db"  # file name inside the directory given by CACHE_DIR_ENV
+DEFAULT_MAX_SIZE = 100 * 1024 * 1024  # bytes; above this the oldest third of the rows is dropped
 _NONCE = 16
 _MAC = 32
 _PLAIN, _ENCRYPTED = b"P", b"E"  # first byte of a stored value
@@ -122,11 +123,34 @@ def cache_key(
 
 
 class SQLiteCache:
-    """Stores ChatResult objects in an SQLite file, keyed by `cache_key()`."""
+    """Stores ChatResult objects in an SQLite file, keyed by `cache_key()`.
 
-    def __init__(self, path: Any = DEFAULT_CACHE_PATH, *, lang: Optional[str] = None) -> None:
-        """Open (and create if needed) the cache file. An unusable path raises LLMConfigError."""
+    `max_size` (bytes) caps the file: when a `put()` leaves the file larger than that, the
+    oldest third of the rows (by creation time) is deleted and the file is vacuumed. One
+    trim per `put()`. None means unlimited.
+    """
+
+    def __init__(
+        self,
+        path: Any = DEFAULT_CACHE_PATH,
+        *,
+        max_size: Optional[int] = DEFAULT_MAX_SIZE,
+        lang: Optional[str] = None,
+    ) -> None:
+        """Open (and create if needed) the cache file.
+
+        An unusable path or a `max_size` that is not a positive int (or None) raises
+        LLMConfigError.
+        """
         self.path = str(path)
+        if max_size is not None and (
+            isinstance(max_size, bool) or not isinstance(max_size, int) or max_size <= 0
+        ):
+            raise LLMConfigError(
+                t("invalid_cache", lang, detail="max_size=%r" % (max_size,)),
+                code="invalid_cache",
+            )
+        self.max_size = max_size
         self._lock = threading.Lock()
         self._keys: Dict[str, tuple] = {}  # secret -> (enc_key, mac_key)
         try:
@@ -272,6 +296,35 @@ class SQLiteCache:
                 "VALUES (?, ?, ?, ?, ?)",
                 (key, provider, result.model, value, time.time()),
             )
+        self._trim()
+
+    def _trim(self) -> None:
+        """Delete the oldest third of the rows and vacuum if the file exceeds `max_size`.
+
+        Takes the lock itself (after the insert was committed). Best effort: a failure
+        must not break the caller.
+        """
+        if self.max_size is None:
+            return
+        try:
+            with self._lock:
+                if os.path.getsize(self.path) <= self.max_size:
+                    return
+                # VACUUM cannot run inside a transaction, hence autocommit mode.
+                conn = sqlite3.connect(self.path, timeout=30.0, isolation_level=None)
+                try:
+                    count = conn.execute("SELECT COUNT(*) FROM llm_cache").fetchone()[0]
+                    if count > 1:  # always keep the newest row
+                        conn.execute(
+                            "DELETE FROM llm_cache WHERE key IN ("
+                            "SELECT key FROM llm_cache ORDER BY created_at, rowid LIMIT ?)",
+                            (max(1, count // 3),),
+                        )
+                    conn.execute("VACUUM")
+                finally:
+                    conn.close()
+        except (sqlite3.Error, OSError):
+            pass
 
     def clear(self, days: Optional[float] = None) -> int:
         """Delete entries older than `days` days (all of them when None); return the count."""
@@ -298,13 +351,13 @@ _global_set = False  # True once set_cache() was called (even with None = explic
 _env_cache: Any = None  # cache opened from LLM_AI_API_CACHE_DIR, created on first use
 
 
-def _resolve(value: Any, lang: Optional[str]) -> Any:
+def _resolve(value: Any, lang: Optional[str], max_size: Optional[int] = DEFAULT_MAX_SIZE) -> Any:
     if value is None or value is False:
         return None
     if value is True:
-        return SQLiteCache(DEFAULT_CACHE_PATH, lang=lang)
+        return SQLiteCache(DEFAULT_CACHE_PATH, max_size=max_size, lang=lang)
     if isinstance(value, (str, os.PathLike)):
-        return SQLiteCache(value, lang=lang)
+        return SQLiteCache(value, max_size=max_size, lang=lang)
     if isinstance(value, SQLiteCache) or (
         callable(getattr(value, "get", None)) and callable(getattr(value, "put", None))
     ):
@@ -315,13 +368,18 @@ def _resolve(value: Any, lang: Optional[str]) -> Any:
     )
 
 
-def set_cache(cache: Any = None, *, lang: Optional[str] = None) -> Any:
+def set_cache(
+    cache: Any = None, *, max_size: Optional[int] = DEFAULT_MAX_SIZE, lang: Optional[str] = None
+) -> Any:
     """Set the process-wide cache (None/False: off, True: default file, path, or cache object).
+
+    `max_size` (bytes, None = unlimited) is used when the cache is created here from True
+    or a path. A ready-made cache object keeps its own `max_size`; this argument is ignored.
 
     Once called, it takes precedence over the LLM_AI_API_CACHE_DIR environment variable.
     """
     global _global_cache, _global_set
-    _global_cache = _resolve(cache, lang)
+    _global_cache = _resolve(cache, lang, max_size)
     _global_set = True
     return _global_cache
 
