@@ -62,6 +62,42 @@ class LogTest(unittest.TestCase):
         self.assertEqual(r["response"]["text"], "ポチ")
         self.assertEqual(len(r["response"]["chunks"]), 2)
 
+    def test_stream_cache_hit_logged(self):
+        rec = Recorder(sse_response(OPENAI_STREAM))
+        m = self.make(rec, log=self.path, cache=self.path + ".db")
+        list(m.stream("q"))
+        list(m.stream("q"))
+        first, second = self.records()
+        self.assertEqual((first["stream"], first["cached"]), (True, False))
+        self.assertEqual((second["stream"], second["cached"]), (True, True))
+        self.assertEqual(first["response"]["text"], "ポチ")
+        self.assertEqual(second["response"]["text"], "ポチ")
+
+    def test_stream_abandoned_not_logged(self):
+        m = self.make(Recorder(sse_response(OPENAI_STREAM)), log=self.path)
+        it = m.stream("q")
+        next(it)
+        close = getattr(it, "close", None)
+        if close is not None:
+            close()
+        self.assertTrue(not os.path.exists(self.path) or len(self.records()) == 0)
+
+    def test_anthropic_null_text_delta(self):
+        text = (
+            'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,'
+            '"delta":{"type":"text_delta","text":null}}\n\n'
+            'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,'
+            '"delta":{"type":"text_delta","text":"ポチ"}}\n\n'
+            'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+        )
+        rec = Recorder(sse_response(text))
+        m = llm(
+            "anthropic:claude-x", api_key="sk-ant-test", transport=rec.transport, log=self.path
+        )
+        self.assertEqual("".join(m.stream("q")), "ポチ")
+        (r,) = self.records()
+        self.assertEqual(r["response"]["text"], "ポチ")
+
     def test_global_log_and_disable_per_instance(self):
         set_log(self.path)
         self.make(Recorder(json_response(OPENAI_REPLY))).ask("a")

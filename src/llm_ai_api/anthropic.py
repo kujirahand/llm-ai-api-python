@@ -150,5 +150,5 @@ class AnthropicClient(BaseClient):
             if kind == "content_block_delta":
                 delta = raw.get("delta") or {}
                 if delta.get("type") == "text_delta":
-                    text = delta.get("text", "")
+                    text = delta.get("text") or ""
             yield ChatChunk(text=text, raw=raw)
