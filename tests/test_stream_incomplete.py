@@ -17,7 +17,7 @@ class IncompleteStreamTest(unittest.TestCase):
                 self.addCleanup(m.close)
                 seen = []
                 m.add_event_listener(None, lambda event, data: seen.append((event, data)))
-                stream = m.stream("q")
+                stream = m.ask_stream("q")
                 self.assertEqual(next(stream), "x")
                 with self.assertRaises(APIStreamError) as raised:
                     next(stream)
@@ -40,7 +40,7 @@ class AsyncIncompleteStreamTest(unittest.IsolatedAsyncioTestCase):
                 m = llm(provider + ":model", api_key="k", lang="en", transport=rec.transport, cache=False, log=False)
                 seen = []
                 m.add_event_listener(None, lambda event, data: seen.append((event, data)))
-                stream = m.astream("q")
+                stream = m.aask_stream("q")
                 self.assertEqual(await stream.__anext__(), "x")
                 with self.assertRaises(APIStreamError) as raised:
                     await stream.__anext__()

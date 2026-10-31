@@ -1,4 +1,4 @@
-"""Tests for the public async API: LLM.aask() / achat() / astream() / aclose()."""
+"""Tests for the public async API: LLM.aask() / achat() / aask_stream() / achat_stream() / aclose()."""
 
 import asyncio
 import json
@@ -150,18 +150,49 @@ class AsyncLLMBasicsTest(AsyncLLMTestBase):
     async def test_astream_openai_compatible(self):
         rec = Recorder(sse_response(OPENAI_STREAM))
         m = self.make(rec, "openrouter:a/b")
-        self.assertEqual([p async for p in m.astream("q")], ["ポ", "チ"])
+        self.assertEqual([p async for p in m.aask_stream("q")], ["ポ", "チ"])
         self.assertTrue(rec.body()["stream"])
+
+    async def test_achat_stream_sends_messages_and_old_astream_is_an_alias(self):
+        rec = Recorder(sse_response(OPENAI_STREAM))
+        m = self.make(rec, "openrouter:a/b")
+        messages = [
+            {"role": "user", "content": "q1"},
+            {"role": "assistant", "content": "a1"},
+            {"role": "user", "content": "q2"},
+        ]
+        self.assertEqual(
+            [p async for p in m.achat_stream(messages, system="S")], ["ポ", "チ"]
+        )
+        b = rec.body()
+        self.assertTrue(b["stream"])
+        self.assertEqual(b["messages"], [{"role": "system", "content": "S"}] + messages)
+        self.assertEqual(len(messages), 3)  # the caller's list is not modified
+
+        self.assertEqual([p async for p in m.aask_stream("q")], ["ポ", "チ"])
+        ask_body = rec.body()
+        self.assertEqual(ask_body["messages"], [{"role": "user", "content": "q"}])
+
+        # The deprecated name still works and sends the same request.
+        self.assertEqual([p async for p in m.astream("q")], ["ポ", "チ"])
+        self.assertEqual(rec.body(), ask_body)
+
+        # ... and forwards keyword arguments without dropping any.
+        kwargs = dict(system="S", temperature=0.5, extra={"top_p": 0.9}, timeout=5.0)
+        [p async for p in m.aask_stream("q", **kwargs)]
+        kwargs_body = rec.body()
+        self.assertEqual([p async for p in m.astream("q", **kwargs)], ["ポ", "チ"])
+        self.assertEqual(rec.body(), kwargs_body)
 
     async def test_astream_anthropic(self):
         rec = Recorder(sse_response(CLAUDE_STREAM))
         m = self.make(rec, "claude:claude-x")
-        self.assertEqual([p async for p in m.astream("q")], ["ポ", "チ"])
+        self.assertEqual([p async for p in m.aask_stream("q")], ["ポ", "チ"])
 
     async def test_astream_is_lazy_and_raises_http_error_on_first_iteration(self):
         rec = Recorder(json_response({"error": {"message": "bad key"}}, status=401))
         m = self.make(rec)
-        stream = m.astream("q")
+        stream = m.aask_stream("q")
         self.assertEqual(rec.requests, [])
         with self.assertRaises(AuthenticationError) as cm:
             await stream.__anext__()
@@ -209,9 +240,9 @@ class AsyncLLMOverridesTest(AsyncLLMTestBase):
     async def test_astream_overrides(self):
         rec = Recorder(sse_response("data: [DONE]\n\n"))
         m = self.make(rec, "openai:m", temperature=0.4)
-        self.assertEqual([p async for p in m.astream("q", temperature=None)], [])
+        self.assertEqual([p async for p in m.aask_stream("q", temperature=None)], [])
         self.assertNotIn("temperature", rec.body())
-        self.assertEqual([p async for p in m.astream("q")], [])
+        self.assertEqual([p async for p in m.aask_stream("q")], [])
         self.assertEqual(rec.body()["temperature"], 0.4)
 
 
@@ -258,7 +289,7 @@ class AsyncLLMLifecycleTest(AsyncLLMTestBase):
         stream = BlockingAsyncStream('data: {"choices":[{"delta":{"content":"ポ"}}]}\n\n'.encode("utf-8"))
         rec = Recorder(httpx.Response(200, stream=stream, headers={"content-type": "text/event-stream"}))
         m = self.make(rec, cache=self.db, log=self.log_path)
-        it = m.astream("q")
+        it = m.aask_stream("q")
         self.assertEqual(await it.__anext__(), "ポ")
         task = asyncio.ensure_future(it.__anext__())
         await stream.started.wait()
@@ -273,7 +304,7 @@ class AsyncLLMLifecycleTest(AsyncLLMTestBase):
         stream = BlockingAsyncStream('data: {"choices":[{"delta":{"content":"ポ"}}]}\n\n'.encode("utf-8"))
         rec = Recorder(httpx.Response(200, stream=stream, headers={"content-type": "text/event-stream"}))
         m = self.make(rec)
-        it = m.astream("q")
+        it = m.aask_stream("q")
         self.assertEqual(await it.__anext__(), "ポ")
         await it.aclose()
         self.assertTrue(stream.closed)
@@ -308,7 +339,7 @@ class AsyncLLMErrorsTest(AsyncLLMTestBase):
                     await m.aask("q")
                 self.assertEqual(cm.exception.code, code)
                 with self.assertRaises(cls):
-                    async for _ in m.astream("q"):
+                    async for _ in m.aask_stream("q"):
                         pass
 
     async def test_astream_failure_mid_body(self):
@@ -318,7 +349,7 @@ class AsyncLLMErrorsTest(AsyncLLMTestBase):
         ))
         m = self.make(rec)
         with self.assertRaises(APIConnectionError) as cm:
-            async for _ in m.astream("q"):
+            async for _ in m.aask_stream("q"):
                 pass
         self.assertNotIsInstance(cm.exception, httpx.HTTPError)
 
@@ -347,12 +378,12 @@ class AsyncLLMCacheTest(AsyncLLMTestBase):
     async def test_completed_stream_is_cached_and_replayed(self):
         rec = FreshRecorder(lambda: sse_response(OPENAI_STREAM))
         m = self.make(rec, cache=self.db)
-        self.assertEqual([p async for p in m.astream("q")], ["ポ", "チ"])
-        self.assertEqual([p async for p in m.astream("q")], ["ポ", "チ"])
+        self.assertEqual([p async for p in m.aask_stream("q")], ["ポ", "チ"])
+        self.assertEqual([p async for p in m.aask_stream("q")], ["ポ", "チ"])
         self.assertEqual(len(rec.requests), 1)
         # a stream stored by the sync API is replayed by the async API
-        self.assertEqual(list(m.stream("r")), ["ポ", "チ"])
-        self.assertEqual([p async for p in m.astream("r")], ["ポ", "チ"])
+        self.assertEqual(list(m.ask_stream("r")), ["ポ", "チ"])
+        self.assertEqual([p async for p in m.aask_stream("r")], ["ポ", "チ"])
         self.assertEqual(len(rec.requests), 2)
 
     async def test_stream_without_terminal_event_is_not_cached(self):
@@ -360,28 +391,28 @@ class AsyncLLMCacheTest(AsyncLLMTestBase):
         rec = Recorder(sse_response(eof))
         m = self.make(rec, cache=self.db)
         with self.assertRaises(APIStreamError):
-            [p async for p in m.astream("q")]
+            [p async for p in m.aask_stream("q")]
         self.assertEqual(len(SQLiteCache(self.db)), 0)
         with self.assertRaises(APIStreamError):
-            [p async for p in m.astream("q")]
+            [p async for p in m.aask_stream("q")]
         self.assertEqual(len(rec.requests), 2)
 
     async def test_anthropic_stream_with_message_stop_is_cached(self):
         rec = Recorder(sse_response(CLAUDE_STREAM))
         m = llm("anthropic:claude-x", api_key="k", transport=rec.transport, cache=self.db)
-        self.assertEqual([p async for p in m.astream("q")], ["ポ", "チ"])
-        self.assertEqual([p async for p in m.astream("q")], ["ポ", "チ"])
+        self.assertEqual([p async for p in m.aask_stream("q")], ["ポ", "チ"])
+        self.assertEqual([p async for p in m.aask_stream("q")], ["ポ", "チ"])
         self.assertEqual(len(rec.requests), 1)
         await m.aclose()
 
     async def test_stream_closed_early_is_not_cached(self):
         rec = Recorder(sse_response(OPENAI_STREAM))
         m = self.make(rec, cache=self.db)
-        it = m.astream("q")
+        it = m.aask_stream("q")
         self.assertEqual(await it.__anext__(), "ポ")
         await it.aclose()
         self.assertEqual(len(SQLiteCache(self.db)), 0)
-        self.assertEqual([p async for p in m.astream("q")], ["ポ", "チ"])
+        self.assertEqual([p async for p in m.aask_stream("q")], ["ポ", "チ"])
         self.assertEqual(len(rec.requests), 2)
         self.assertEqual(len(SQLiteCache(self.db)), 1)
 
@@ -406,8 +437,8 @@ class AsyncLLMLogTest(AsyncLLMTestBase):
 
     async def test_astream_logs_stream_and_cached(self):
         m = self.make(Recorder(sse_response(OPENAI_STREAM)), cache=self.db, log=self.log_path)
-        self.assertEqual([p async for p in m.astream("q")], ["ポ", "チ"])
-        self.assertEqual([p async for p in m.astream("q")], ["ポ", "チ"])
+        self.assertEqual([p async for p in m.aask_stream("q")], ["ポ", "チ"])
+        self.assertEqual([p async for p in m.aask_stream("q")], ["ポ", "チ"])
         recs = self.records()
         self.assertEqual([(r["stream"], r["cached"]) for r in recs], [(True, False), (True, True)])
         for r in recs:
@@ -416,7 +447,7 @@ class AsyncLLMLogTest(AsyncLLMTestBase):
 
     async def test_stream_closed_early_is_not_logged(self):
         m = self.make(Recorder(sse_response(OPENAI_STREAM)), log=self.log_path)
-        it = m.astream("q")
+        it = m.aask_stream("q")
         await it.__anext__()
         await it.aclose()
         self.assertEqual(self.records(), [])

@@ -63,35 +63,35 @@ class StreamTerminalCacheSyncTest(unittest.TestCase):
 
     def test_good_terminal_event_is_cached(self):
         rec, m = self.make(GOOD_STREAM)
-        self.assertEqual(list(m.stream("q")), ["x"])
+        self.assertEqual(list(m.ask_stream("q")), ["x"])
         self.assertEqual(self.entries(), 1)
-        self.assertEqual(list(m.stream("q")), ["x"])
+        self.assertEqual(list(m.ask_stream("q")), ["x"])
         self.assertEqual(len(rec.requests), 1)  # second call was a cache replay
 
     def test_invalid_json_terminal_is_not_cached(self):
         rec, m = self.make(BAD_JSON_STREAM)
         with self.assertRaises(LLMError):
-            list(m.stream("q"))
+            list(m.ask_stream("q"))
         self.assertEqual(self.entries(), 0)
 
     def test_error_terminal_is_not_cached(self):
         rec, m = self.make(ERROR_STREAM)
         with self.assertRaises(APIStreamError):
-            list(m.stream("q"))
+            list(m.ask_stream("q"))
         self.assertEqual(self.entries(), 0)
 
     def test_anthropic_eof_without_message_stop_is_not_cached(self):
         rec, m = self.make(NO_STOP_STREAM)
         with self.assertRaises(APIStreamError):
-            list(m.stream("q"))
+            list(m.ask_stream("q"))
         self.assertEqual(self.entries(), 0)
         with self.assertRaises(APIStreamError):
-            list(m.stream("q"))
+            list(m.ask_stream("q"))
         self.assertEqual(len(rec.requests), 2)
 
     def test_payload_only_terminal_is_cached(self):
         rec, m = self.make(NO_EVENT_LINE_STREAM)
-        self.assertEqual(list(m.stream("q")), ["x"])
+        self.assertEqual(list(m.ask_stream("q")), ["x"])
         self.assertEqual(self.entries(), 1)
 
 
@@ -107,27 +107,27 @@ class StreamTerminalCacheAsyncTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_good_terminal_event_is_cached(self):
         m = self.make(GOOD_STREAM)
-        self.assertEqual([p async for p in m.astream("q")], ["x"])
+        self.assertEqual([p async for p in m.aask_stream("q")], ["x"])
         self.assertEqual(len(SQLiteCache(self.db)), 1)
         await m.aclose()
 
     async def test_invalid_json_terminal_is_not_cached(self):
         m = self.make(BAD_JSON_STREAM)
         with self.assertRaises(LLMError):
-            [p async for p in m.astream("q")]
+            [p async for p in m.aask_stream("q")]
         self.assertEqual(len(SQLiteCache(self.db)), 0)
         await m.aclose()
 
     async def test_error_terminal_is_not_cached(self):
         m = self.make(ERROR_STREAM)
         with self.assertRaises(APIStreamError):
-            [p async for p in m.astream("q")]
+            [p async for p in m.aask_stream("q")]
         self.assertEqual(len(SQLiteCache(self.db)), 0)
         await m.aclose()
 
     async def test_payload_only_terminal_is_cached(self):
         m = self.make(NO_EVENT_LINE_STREAM)
-        self.assertEqual([p async for p in m.astream("q")], ["x"])
+        self.assertEqual([p async for p in m.aask_stream("q")], ["x"])
         self.assertEqual(len(SQLiteCache(self.db)), 1)
         await m.aclose()
 

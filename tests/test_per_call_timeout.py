@@ -47,7 +47,7 @@ class PerCallTimeoutTest(unittest.TestCase):
                 m.chat([{"role": "user", "content": "q"}])
                 self.assertEqual([read_timeout(r) for r in rec.requests], [42.0, 42.0])
                 m, rec = self.make(spec, sse_response(stream), timeout=42.0)
-                list(m.stream("q"))
+                list(m.ask_stream("q"))
                 self.assertEqual(read_timeout(rec.requests[0]), 42.0)
 
     def test_sync_override(self):
@@ -62,7 +62,7 @@ class PerCallTimeoutTest(unittest.TestCase):
                 m.ask("q")  # the override applies to one call only
                 self.assertEqual(read_timeout(rec.requests[-1]), 42.0)
                 m, rec = self.make(spec, sse_response(stream), timeout=42.0)
-                self.assertEqual("".join(m.stream("q", timeout=2.5)), "a")
+                self.assertEqual("".join(m.ask_stream("q", timeout=2.5)), "a")
                 self.assertEqual(read_timeout(rec.requests[0]), 2.5)
 
     def test_timeout_is_not_sent_in_body(self):
@@ -88,12 +88,12 @@ class PerCallTimeoutTest(unittest.TestCase):
                     m, rec = self.make(spec, sse_response(stream), timeout=42.0)
                     async with m:
                         self.assertEqual(
-                            "".join([p async for p in m.astream("q", timeout=2.5)]), "a"
+                            "".join([p async for p in m.aask_stream("q", timeout=2.5)]), "a"
                         )
                     self.assertEqual(read_timeout(rec.requests[0]), 2.5)
                     m, rec = self.make(spec, sse_response(stream), timeout=42.0)
                     async with m:
-                        [p async for p in m.astream("q")]
+                        [p async for p in m.aask_stream("q")]
                     self.assertEqual(read_timeout(rec.requests[0]), 42.0)
                     self.assertNotIn("timeout", rec.body())
 
@@ -107,8 +107,8 @@ class PerCallTimeoutTest(unittest.TestCase):
             self.assertEqual(m.ask("q", timeout=9.0), "ok")  # same key: served from cache
             self.assertEqual(len(rec.requests), 1)
             m, rec = self.make("openai:m", sse_response(OPENAI_STREAM), cache=path)
-            list(m.stream("q", timeout=1.0))
-            list(m.stream("q", timeout=9.0))
+            list(m.ask_stream("q", timeout=1.0))
+            list(m.ask_stream("q", timeout=9.0))
             self.assertEqual(len(rec.requests), 1)
 
     def test_async_cache_ignores_timeout(self):
@@ -129,9 +129,9 @@ class PerCallTimeoutTest(unittest.TestCase):
 
                 m, rec = self.make("openai:m", sse_response(OPENAI_STREAM), cache=path)
                 async with m:
-                    a = [p async for p in m.astream("s", timeout=1.0)]
+                    a = [p async for p in m.aask_stream("s", timeout=1.0)]
                     self.assertEqual(len(rec.requests), 1)  # populated the cache
-                    b = [p async for p in m.astream("s", timeout=9.0)]
+                    b = [p async for p in m.aask_stream("s", timeout=9.0)]
                 self.assertEqual(a, b)
                 self.assertEqual(len(rec.requests), 1)  # replayed, no new request
 

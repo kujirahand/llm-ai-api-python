@@ -19,7 +19,7 @@ def _case(provider, key_env, model_env):
     def test(self):
         m = llm("%s:%s" % (provider, model), max_tokens=64)
         self.assertTrue(m.ask("Reply with one short word.").strip())
-        self.assertTrue("".join(m.stream("Reply with one short word.")).strip())
+        self.assertTrue("".join(m.ask_stream("Reply with one short word.")).strip())
 
     return test
 
