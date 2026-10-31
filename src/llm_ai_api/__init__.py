@@ -1,6 +1,6 @@
 """OpenAI / OpenRouter / Claude の API を呼び出す、薄くて壊れにくい HTTP ラッパー。"""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from . import models
 from .anthropic import AnthropicClient

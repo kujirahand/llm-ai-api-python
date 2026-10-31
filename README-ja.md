@@ -47,6 +47,34 @@ m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 
 定数は例です。載っていないモデルも `llm("openai:新しいモデル名")` のように文字列でそのまま使えます。
 
+### 非同期（async）
+
+同じ `llm()` で、メソッド名の先頭に `a` を付けると非同期で使えます（`aask()` / `achat()` / `astream()`）。
+
+```python
+import asyncio
+from llm_ai_api import llm
+
+async def main():
+    async with llm("openai:gpt-6-luna") as m:
+        print(await m.aask("可愛い犬の名前を考えて"))
+
+        async for piece in m.astream("短い物語を書いて"):  # await は付けない
+            print(piece, end="", flush=True)
+
+        # 同じ LLM で並行に呼び出せる
+        answers = await asyncio.gather(m.aask("犬の名前を1つ"), m.aask("猫の名前を1つ"))
+        print(answers)
+
+asyncio.run(main())
+```
+
+- `astream()` は最初の反復で通信を始めるため、接続エラーや HTTP エラーも最初の反復（`async for` の開始時）に発生します（同期版の `stream()` は呼び出し時に発生します）。途中でやめるときは `await stream.aclose()` を呼んでください。
+- `async with`（または `await m.aclose()`）で閉じてください。閉じた後は再利用できません。
+- イベントループをまたいで使わないでください。`asyncio.run()` のたびに新しい `llm()` を作ります。
+
+キャッシュとログは非同期でも同期版と同じように働きます。非同期に対応しているのは共通インターフェイス（`llm()`）だけで、プロバイダークライアントや生レイヤー（`request()`）の非同期版はありません。
+
 ## API応答のキャッシュ
 
 デフォルトではオフです。オンにすると、同じプロバイダー・モデル・リクエスト（メッセージとパラメータ）で再び呼び出したとき、API を呼ばずに保存済みの結果を返します。
@@ -92,6 +120,7 @@ m2 = llm("openai:gpt-6-luna", log=False)         # このインスタンスだ�
 |---|---|
 | `hello.py` | 挨拶を返してもらう |
 | `hello_stream.py` | ストリーミングで返信を表示する |
+| `hello_async.py` | `asyncio.run` と `async with` で `aask()` と `astream()` を使う |
 | `chat_history.py` | チャット履歴に基づいて返信する |
 | `ocr_test.py` | 画像に書かれた文字を読み取る |
 | `image_desc.py` | 画像の内容を説明してもらう |
