@@ -226,6 +226,13 @@ class AnthropicClient(BaseClient):
                 if chunk is not None:
                     chunk.request_id = request_id
                     yield chunk
+            else:
+                error = APIStreamError(
+                    self._t("stream_incomplete", provider=self.provider),
+                    code="stream_incomplete",
+                )
+                note_stream_error(self, error, events)
+                raise error
         finally:
             close = getattr(events, "close", None)
             if close is not None:

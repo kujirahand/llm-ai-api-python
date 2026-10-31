@@ -28,6 +28,7 @@ MESSAGES = {
     "response_too_large": "The response is larger than the size limit ({limit} bytes)",
     # API エラー
     "api_error": "{provider} API error (HTTP {status})",
+    "stream_incomplete": "{provider} stream ended without a terminal event",
     "stream_error": "{provider} stream error",
     "hint_400": (
         "Hint: parameters this library knows the model rejects are omitted before "

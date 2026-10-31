@@ -356,7 +356,7 @@ class ChatChunk:
 - 接続は操作ごとに開閉し、書き込みはロックで保護する。壊れた行・改ざんされた行はミスとして扱い、読み取り時に削除する。
 - **削除**: `clear_cache(days, cache_dir=None)` は `days` 日より古いエントリを消して件数を返す（`days=0` で全削除）。ディレクトリは `cache_dir`、環境変数、グローバルキャッシュの順に探し、なければ `LLMConfigError`（`code="cache_dir_not_set"`）。`SQLiteCache.clear(days=None)` も同じ動き。
 - 有効にしている間、同じリクエストには常に同じ保存済み応答が返る。新しい応答が欲しい場合はキャッシュを空にするかオフにする。
-- 対象は `chat()` / `ask()` と `stream_chat()` / `stream()`。ストリームは、終端イベント（OpenAI 系の `[DONE]`、Anthropic の `message_stop`。判定は `_is_terminal_event()`）を受け取ったときだけ保存する。終端イベントなしで EOF になったものは未完了のストリームとして保存しない（呼び出し側には届いたチャンクをそのまま返し、例外にはしない）。途中で止めたもの・エラーになったものも保存しない。生レイヤー（`request()` / `request_stream()`）は対象外。
+- 対象は `chat()` / `ask()` と `stream_chat()` / `stream()`。ストリームは、終端イベント（OpenAI 系の `[DONE]`、Anthropic の `message_stop`。判定は `_is_terminal_event()`）を受け取ったときだけ保存する。終端イベントなしで EOF になったものは未完了のストリームとして保存しない（届いたチャンクの後に `APIStreamError`（`code="stream_incomplete"`）を送出し、`stream_error` を通知する）。途中で止めたもの・エラーになったものも保存しない。生レイヤー（`request()` / `request_stream()`）は対象外。
 - **最大サイズ**: `SQLiteCache(path, max_size=DEFAULT_MAX_SIZE)`（公開属性 `max_size`、バイト）。既定は 100 MB（`cache.DEFAULT_MAX_SIZE`）。`put()` のあとにファイルサイズが `max_size` を超えていたら、ロックの下で `created_at` の古い順に 1/3 の行を削除し、`VACUUM` で縮める（最新の行は必ず残す。1 回の `put()` につき整理は 1 回）。`None` は無制限。0 以下・整数以外は `LLMConfigError`（`code="invalid_cache"`）。整理の失敗はベストエフォート（無視）。`set_cache(..., max_size=...)` はパス / `True` から作るときだけ使い、`SQLiteCache` オブジェクトを渡したときはそのオブジェクトの `max_size` が優先。自作のキャッシュオブジェクトには影響しない。
 - 実行時のキャッシュの失敗はベストエフォート（読み取りはミス扱い、書き込みは無視）にして、料金を払って得た応答を失わない。設定の誤り（不正な値、使えないパス）は生成時に `LLMConfigError`（`code="invalid_cache"`）を送出する。
 - `close()` は渡されたキャッシュを閉じない（グローバルと共有されうるため）。
@@ -401,7 +401,7 @@ m.remove_event_listener("retry", on_event)       # 同じ event と同一の関�
 | `response` | ステータス 400 未満の HTTP 応答を受け入れたとき | `provider`, `method`, `path`, `stream`, `attempt`, `retries`, `status_code`, `request_id`, `latency`, `cached`（常に False） |
 | `http_error` | リトライしない HTTP エラー（このあと `APIStatusError`） | `response` と同じうち `cached` 以外 |
 | `request_error` | ライブラリがボディを拒否したとき | 上に加え `code`（`response_too_large` / `invalid_json_response`） |
-| `stream_error` | ストリーム中の error イベント（このあと `APIStreamError`） | `provider`, `request_id`, `retries`, `latency`, `stream`, `code` |
+| `stream_error` | ストリーム中の error イベントまたは終端なしの EOF（このあと `APIStreamError`） | `provider`, `request_id`, `retries`, `latency`, `stream`, `code` |
 | `stream_end` | ライブのストリームを、終端 SSE のあとで閉じたとき | `provider`, `request_id`, `retries`, `latency`（閉じるまで）, `stream`, `complete`（True） |
 | `cache_hit` | チャットまたはストリームをキャッシュから返したとき | `provider`, `stream`, `model`, `request_id`, `retries`, `latency`（保存値）, `cached`（True） |
 

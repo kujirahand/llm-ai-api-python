@@ -82,9 +82,11 @@ class StreamTerminalCacheSyncTest(unittest.TestCase):
 
     def test_anthropic_eof_without_message_stop_is_not_cached(self):
         rec, m = self.make(NO_STOP_STREAM)
-        self.assertEqual(list(m.stream("q")), ["x"])
+        with self.assertRaises(APIStreamError):
+            list(m.stream("q"))
         self.assertEqual(self.entries(), 0)
-        self.assertEqual(list(m.stream("q")), ["x"])
+        with self.assertRaises(APIStreamError):
+            list(m.stream("q"))
         self.assertEqual(len(rec.requests), 2)
 
     def test_payload_only_terminal_is_cached(self):

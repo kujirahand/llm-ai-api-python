@@ -11,6 +11,7 @@ import httpx
 from llm_ai_api import (
     LLM,
     APIConnectionError,
+    APIStreamError,
     APIStatusError,
     APITimeoutError,
     AuthenticationError,
@@ -358,9 +359,11 @@ class AsyncLLMCacheTest(AsyncLLMTestBase):
         eof = OPENAI_STREAM.replace("data: [DONE]\n\n", "")
         rec = Recorder(sse_response(eof))
         m = self.make(rec, cache=self.db)
-        self.assertEqual([p async for p in m.astream("q")], ["ポ", "チ"])
+        with self.assertRaises(APIStreamError):
+            [p async for p in m.astream("q")]
         self.assertEqual(len(SQLiteCache(self.db)), 0)
-        self.assertEqual([p async for p in m.astream("q")], ["ポ", "チ"])
+        with self.assertRaises(APIStreamError):
+            [p async for p in m.astream("q")]
         self.assertEqual(len(rec.requests), 2)
 
     async def test_anthropic_stream_with_message_stop_is_cached(self):

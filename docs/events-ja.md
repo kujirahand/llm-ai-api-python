@@ -65,7 +65,7 @@ payload に API キー、認証ヘッダー、リクエスト本文、レスポ�
 | `response` | ステータス 400 未満の HTTP 応答を受け入れた |
 | `http_error` | もうリトライしない HTTP エラー。リスナーのあとで `APIStatusError` が出る |
 | `request_error` | ライブラリがボディを拒否した（`response_too_large` または `invalid_json_response`） |
-| `stream_error` | ストリーム途中の error イベント。リスナーのあとで `APIStreamError` が出る |
+| `stream_error` | ストリーム途中の error イベント、またはチャットストリームで終端なしの EOF。リスナーのあとで `APIStreamError` が出る |
 | `stream_end` | 終端 SSE（`[DONE]` または `message_stop`）のあとで、ライブのストリームを閉じた |
 | `cache_hit` | `chat` / `stream_chat`（と非同期版）が保存済みの応答を返した。`response` は出ない |
 
@@ -144,7 +144,7 @@ payload に API キー、認証ヘッダー、リクエスト本文、レスポ�
 | `retries` | その応答の前のリトライ回数 |
 | `latency` | error イベントまでの秒。キャッシュの再生では `None` |
 | `stream` | `True` |
-| `code` | `"stream_error"` |
+| `code` | `"stream_error"` または `"stream_incomplete"` |
 
 エラーの本文は payload ではなく `APIStreamError` に入っています。この呼び出しでは `stream_end` は出ません。
 
@@ -159,7 +159,7 @@ payload に API キー、認証ヘッダー、リクエスト本文、レスポ�
 | `stream` | `True` |
 | `complete` | `True` |
 
-ライブのストリームを、終端 SSE のあとで閉じたときだけ出ます。途中で止めたもの、終端なしで終わったもの、失敗したものは出ません。キャッシュの再生は `cache_hit` だけで、`stream_end` は出ません。非同期ストリームを `aclose()` せず捨てたときの回収は、レスポンスを閉じるだけで `stream_end` は出しません。
+ライブのストリームを、終端 SSE のあとで閉じたときだけ出ます。途中で止めたもの、終端なしで終わったもの、失敗したものは出ません。完了したキャッシュの再生は `cache_hit` だけで、`stream_end` は出ません。非同期ストリームを `aclose()` せず捨てたときの回収は、レスポンスを閉じるだけで `stream_end` は出しません。
 
 ### `cache_hit`
 
@@ -197,3 +197,5 @@ print(stream.request_id)  # 呼び出しが返った時点で入っている
 for piece in stream:
     print(piece, end="", flush=True)
 ```
+
+チャットストリームが終端イベントなしで EOF に達すると、受信済みチャンクの後に `code="stream_incomplete"` の `APIStreamError` を送出し、`stream_error` を通知します。不完全なキャッシュの再生にも同じ挙動が適用されます。生の `request_stream()` は SSE をそのまま返します。

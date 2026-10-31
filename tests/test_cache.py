@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from llm_ai_api import ChatResult, LLMConfigError, SQLiteCache, Usage, get_cache, llm, set_cache
+from llm_ai_api import APIStreamError, ChatResult, LLMConfigError, SQLiteCache, Usage, get_cache, llm, set_cache
 from llm_ai_api import cache as cache_module
 from llm_ai_api.cache import cache_key
 
@@ -317,9 +317,11 @@ class ChatCacheTest(CacheTestBase):
         eof = OPENAI_STREAM.replace("data: [DONE]\n\n", "")
         rec = Recorder(sse_response(eof))
         m = self.make(rec, cache=self.db)
-        self.assertEqual("".join(m.stream("q")), "ポチ")  # the caller still gets the chunks
+        with self.assertRaises(APIStreamError):
+            list(m.stream("q"))
         self.assertEqual(len(SQLiteCache(self.db)), 0)
-        self.assertEqual("".join(m.stream("q")), "ポチ")
+        with self.assertRaises(APIStreamError):
+            list(m.stream("q"))
         self.assertEqual(len(rec.requests), 2)
 
     def test_google_stream_with_done_is_cached(self):

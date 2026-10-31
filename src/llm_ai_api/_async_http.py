@@ -906,7 +906,13 @@ class _AsyncChunks:
                 ev = await self._events.__anext__()
             except StopAsyncIteration:
                 self._done = True
-                raise
+                error = APIStreamError(
+                    self._client._t("stream_incomplete", provider=self._client.provider),
+                    code="stream_incomplete",
+                )
+                note_stream_error(self._client, error, self._events)
+                await _close_quietly(self._events)
+                raise error
             except BaseException:
                 # Transport errors and size limits are already reported by the event stream.
                 self._done = True
