@@ -51,6 +51,8 @@ m = llm("anthropic:claude-opus-5-5")
 print(m.ask("Come up with a cute name for a dog"))
 ```
 
+This example needs `ANTHROPIC_API_KEY` (set separately from `OPENAI_API_KEY` for OpenAI).
+
 Common models are also available as constants in `models`. They are just `"<provider>:<model>"` strings.
 
 ```python
@@ -62,7 +64,9 @@ m = llm(models.GOOGLE_GEMINI_4_ARGON)
 print(m.ask("Come up with a cute name for a dog"))
 ```
 
-The constants are examples. Any other model works as a plain string, e.g. `llm("openai:some-new-model")`.
+This example needs `GEMINI_API_KEY` (or `GOOGLE_API_KEY`).
+
+The constants are examples. Any other model works as a plain string, e.g. `llm("openai:some-new-model")`. Check each provider's model list for the model IDs you can use.
 
 ## 4. Continue a conversation
 
@@ -184,4 +188,4 @@ Every exception has a language-independent `code` attribute (e.g. `"missing_api_
 - [Input/output log](io_logs.md): record inputs and outputs as JSON Lines (off by default).
 - [Prompt caching](cache.md): how to use the provider-side cache.
 - Raw layer: `m.client.request(path, body)` sends a dict to any endpoint.
-- The `examples/` directory: more samples, including image input and chat history.
+- The [`examples/`](../examples/) directory: more samples, including image input and chat history.

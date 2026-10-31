@@ -51,6 +51,8 @@ m = llm("anthropic:claude-opus-5-5")
 print(m.ask("可愛い犬の名前を考えて"))
 ```
 
+この例には `ANTHROPIC_API_KEY` が必要です（OpenAI の `OPENAI_API_KEY` とは別に設定します）。
+
 代表的なモデルは `models` の定数でも指定できます。中身は `"<プロバイダー>:<モデル名>"` の文字列です。
 
 ```python
@@ -62,7 +64,9 @@ m = llm(models.GOOGLE_GEMINI_4_ARGON)
 print(m.ask("可愛い犬の名前を考えて"))
 ```
 
-定数は例です。載っていないモデルも、`llm("openai:新しいモデル名")` のように文字列でそのまま指定できます。
+この例には `GEMINI_API_KEY`（または `GOOGLE_API_KEY`）が必要です。
+
+定数は例です。載っていないモデルも、`llm("openai:新しいモデル名")` のように文字列でそのまま指定できます。使えるモデル ID は、各プロバイダーのモデル一覧で確認してください。
 
 ## 4. 会話を続ける
 
@@ -184,4 +188,4 @@ except LLMError as e:
 - [入出力ログ](io_logs-ja.md): 入力と出力を JSON Lines で記録します（既定はオフ）。
 - [プロンプトキャッシュ](cache-ja.md): プロバイダー側のキャッシュの使い方です。
 - 生レイヤー: `m.client.request(path, body)` で、任意のエンドポイントに dict を送れます。
-- `examples/` ディレクトリ: 画像入力や履歴を使ったサンプルなどがあります。
+- [`examples/`](../examples/) ディレクトリ: 画像入力や履歴を使ったサンプルなどがあります。
