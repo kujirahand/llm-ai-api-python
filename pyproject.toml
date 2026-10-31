@@ -4,16 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llm-ai-api"
-version = "0.0.1"
+version = "0.2.0"
 description = "OpenAI / OpenRouter / Claude の API を呼び出す、薄くて壊れにくい HTTP ラッパー"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "kujirahand" }]
-keywords = ["llm", "openai", "openrouter", "anthropic", "claude", "api"]
+keywords = ["llm", "openai", "openrouter", "anthropic", "claude", "gemini", "api"]
 classifiers = [
-    "Development Status :: 1 - Planning",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
@@ -23,6 +23,11 @@ classifiers = [
 dependencies = [
     "httpx>=0.27,<1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/kujirahand/llm-ai-api-python"
+Repository = "https://github.com/kujirahand/llm-ai-api-python"
+Issues = "https://github.com/kujirahand/llm-ai-api-python/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
