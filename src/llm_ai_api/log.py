@@ -11,7 +11,9 @@ from __future__ import annotations
 import copy
 import json
 import os
+import tempfile
 import threading
+import weakref
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
@@ -22,6 +24,19 @@ DEFAULT_LOG_PATH = "llm_ai_api_log.jsonl"
 LOG_DIR_ENV = "LLM_AI_API_LOG_DIR"
 LOG_NAME = "llm.jsonl"  # file name inside the directory given by LOG_DIR_ENV
 DEFAULT_MAX_SIZE = 100 * 1024 * 1024  # bytes; above this the oldest third of the records is dropped
+
+
+_path_locks: "weakref.WeakValueDictionary[str, Any]" = weakref.WeakValueDictionary()
+_path_locks_guard = threading.Lock()
+
+
+def _lock_for_path(path: str) -> Any:
+    with _path_locks_guard:
+        lock = _path_locks.get(path)
+        if lock is None:
+            lock = threading.Lock()
+            _path_locks[path] = lock
+        return lock
 
 
 class _Unset:
@@ -55,8 +70,8 @@ class JSONLLog:
     `redact` receives a deep copy of each record and returns a dict to write, or None
     to skip it. It must be thread-safe when used by async calls.
 
-    Threads of one process are serialized by a lock. Several processes writing to the
-    same file are not fully supported while a trim runs: the trim abandons itself if the
+    Threads using the same normalized path in one process share a lock. Several
+    processes writing to the same file are not fully supported while a trim runs: the trim abandons itself if the
     file changed since it was read (the next write retries), but a record appended by
     another process in the tiny window between that check and the final rename can
     still be lost.
@@ -81,7 +96,8 @@ class JSONLLog:
             raise LLMConfigError(t("invalid_log", lang, detail="redact"), code="invalid_log")
         self.redact = redact
         self.max_size = max_size
-        self._lock = threading.Lock()
+        self._normalized_path = os.path.normcase(os.path.realpath(os.path.abspath(self.path)))
+        self._lock = _lock_for_path(self._normalized_path)
         try:
             parent = os.path.dirname(os.path.abspath(self.path))
             os.makedirs(parent, mode=0o700, exist_ok=True)
@@ -92,7 +108,7 @@ class JSONLLog:
             ) from e
 
     def _open(self) -> Any:
-        fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        fd = os.open(self._normalized_path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
         try:
             if os.name == "posix":
                 os.fchmod(fd, 0o600)
@@ -128,9 +144,9 @@ class JSONLLog:
             if not isinstance(record, dict):
                 raise TypeError("redact must return a dict or None")
         line = json.dumps(record, ensure_ascii=False, default=str)
-        with self._lock, self._open() as f:
-            f.write(line + "\n")
         with self._lock:
+            with self._open() as f:
+                f.write(line + "\n")
             self._trim()
 
     def _trim(self) -> None:
@@ -140,17 +156,18 @@ class JSONLLog:
         """
         if self.max_size is None:
             return
-        tmp = self.path + ".tmp"
+        tmp = None
         try:
-            before = os.stat(self.path)
+            before = os.stat(self._normalized_path)
             if before.st_size <= self.max_size:
                 return
-            with open(self.path, "rb") as f:
+            with open(self._normalized_path, "rb") as f:
                 lines = f.read().splitlines(keepends=True)
             if len(lines) < 2:  # keep the newest record even if it alone exceeds max_size
                 return
             keep = lines[max(1, len(lines) // 3):]
-            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            fd, tmp = tempfile.mkstemp(prefix=".llm-log-", suffix=".tmp",
+                                       dir=os.path.dirname(self._normalized_path))
             try:
                 if os.name == "posix":
                     os.fchmod(fd, 0o600)
@@ -160,17 +177,18 @@ class JSONLLog:
             finally:
                 if fd != -1:
                     os.close(fd)
-            after = os.stat(self.path)
+            after = os.stat(self._normalized_path)
             if (after.st_ino, after.st_size, after.st_mtime_ns) != (
                 before.st_ino, before.st_size, before.st_mtime_ns
             ):
                 # Another process appended while we worked: give up, retry on the next write.
                 os.remove(tmp)
                 return
-            os.replace(tmp, self.path)
+            os.replace(tmp, self._normalized_path)
         except OSError:
             try:
-                os.remove(tmp)
+                if tmp is not None:
+                    os.remove(tmp)
             except OSError:
                 pass
 
