@@ -57,7 +57,12 @@ def is_supported(code: str) -> bool:
 
 
 def set_language(lang: Optional[str]) -> None:
-    """プロセス全体で使う言語を設定する。None で自動判定に戻す。"""
+    """プロセス全体で使う言語を設定する。None で自動判定に戻す。
+
+    プロセス全体の設定なので、他のスレッドや作成済みのインスタンスが出す例外の
+    メッセージも変わる（`set_cache()` / `set_log()` は生成時に解決される）。
+    インスタンスごとの言語は `lang=` を使うこと。
+    """
     global _override
     _override = normalize_language(lang) if lang else None
 
