@@ -15,21 +15,9 @@ DEFAULT_MAX_TOKENS = 16000
 
 
 def _sent_anthropic_version(client: Any) -> Optional[str]:
-    """Return the ``anthropic-version`` value the request headers will send.
-
-    ``_headers`` copies auth headers and then ``headers=``. A value under the
-    exact key ``anthropic-version`` replaces the constructor's version, and
-    that is the value the drop rules see. A differently cased name is a
-    separate header entry, so it does not count as the version.
-    """
-    headers: Dict[str, Any] = {}
-    headers.update(client._auth_headers())
-    headers.update(getattr(client, "_extra_headers", None) or {})
-    version = headers.get("anthropic-version")
-    if isinstance(version, str):
-        return version
-    fallback = getattr(client, "anthropic_version", None)
-    return fallback if isinstance(fallback, str) else None
+    """Return the version in the effective chat request headers."""
+    version = client._headers(False, None).get("anthropic-version")
+    return version if isinstance(version, str) else None
 
 
 def _split_system(messages: List[Dict[str, Any]]) -> Tuple[Any, List[Dict[str, Any]]]:
@@ -117,7 +105,7 @@ class AnthropicClient(BaseClient):
     def _cache_context(self) -> Dict[str, Any]:
         """Add the API version to the cache key context (it is sent as a header)."""
         context = super()._cache_context()
-        context["anthropic_version"] = self.anthropic_version
+        context["anthropic_version"] = _sent_anthropic_version(self)
         return context
 
     def _auth_headers(self) -> Dict[str, str]:
@@ -170,7 +158,7 @@ class AnthropicClient(BaseClient):
 
         When the sent ``anthropic-version`` is ``2026-10-21``, ``temperature``,
         ``top_p``, and ``top_k`` are removed after ``extra`` is merged. A
-        ``headers`` entry with that exact name overrides ``anthropic_version``.
+        ``headers`` entry with that name, regardless of case, overrides ``anthropic_version``.
         ``timeout`` (seconds) is the client setting when ``None``, or an
         override for this call.
         """

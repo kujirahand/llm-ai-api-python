@@ -561,3 +561,7 @@ LLMError                      # 基底
 ### キャッシュ・ログの実行時障害通知（#49）
 
 キャッシュ検索・保存およびログ書き込みの実行時例外は処理を続行し、`llm_ai_api` ロガーの警告と `cache_error` / `log_error` イベントで通知する。payload は `provider`, `operation`, `error_type`, `message` を含み、機密保護のため例外メッセージは出さず `message` は固定文とする。標準 `SQLiteCache` / `JSONLLog` はクライアント経由の失敗をスレッドセーフな読み取り専用 `failure_count` で数える。カスタムオブジェクトには属性を要求しない。非同期イベントはイベントループ上で通知する。詳細は docs/events.md と docs/events-ja.md。
+
+### ヘッダー名の扱い（#49）
+
+ヘッダー名は大文字小文字を区別せず、既定値、認証、クライアントの追加ヘッダー、リクエストごとのヘッダーの順に後の値が優先される。同じ dict 内の重複も挿入順で最後の値を使う。OpenRouter の app_url / app_name より追加ヘッダーを優先する。キャッシュキーは追加ヘッダー名を小文字に統一し、Anthropic の実際に送るバージョンを使う。

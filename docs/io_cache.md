@@ -80,3 +80,5 @@ Stream cache buffering has a fixed 16 MiB budget per stream (the sum of each eve
 With caching enabled, concurrent non-streaming chats with the same cache key in one process share the first successful cached result, across threads and asyncio tasks. If the first call fails or does not store a result, a waiter makes its own call. Streaming and raw requests are excluded. Waiting is not covered by the per-operation timeout.
 
 Runtime lookup/store failures emit warnings and `cache_error` events; `cache.failure_count` counts failures observed through clients. See [Events](events.md#cache_error--log_error).
+
+Header names in cache keys are normalized to lowercase, and the effective Anthropic version is used. Existing cache entries may miss after this change.

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Merge headers case-insensitively and align Anthropic parameter filtering and cache keys with the effective headers (#49).
+
 - Report runtime cache and log failures via warnings, events, and built-in object failure counters (#49).
 
 - Coalesce concurrent cache misses for non-streaming chats within one process.

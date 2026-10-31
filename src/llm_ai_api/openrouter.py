@@ -25,6 +25,8 @@ class OpenRouterClient(OpenAICompatClient):
         """`app_url` は HTTP-Referer、`app_name` は X-Title として送る。"""
         super().__init__(*args, **kwargs)
         if app_url:
-            self._extra_headers.setdefault("HTTP-Referer", app_url)
+            if not any(k.lower() == "http-referer" for k in self._extra_headers):
+                self._extra_headers["HTTP-Referer"] = app_url
         if app_name:
-            self._extra_headers.setdefault("X-Title", app_name)
+            if not any(k.lower() == "x-title" for k in self._extra_headers):
+                self._extra_headers["X-Title"] = app_name

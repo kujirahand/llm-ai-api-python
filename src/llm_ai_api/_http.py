@@ -387,6 +387,11 @@ class _ReplayEvents:
         pass
 
 
+def _merge_headers(*groups: Dict[str, str]) -> Dict[str, str]:
+    """Merge header names case-insensitively, with later values winning."""
+    return {name.lower(): value for group in groups for name, value in group.items()}
+
+
 class BaseClient:
     """Shared raw HTTP layer for the provider clients."""
 
@@ -510,7 +515,7 @@ class BaseClient:
         """
         return {
             "base_url": self.base_url,
-            "headers": dict(self._extra_headers),
+            "headers": _merge_headers(self._extra_headers),
         }
 
     def _cache_lookup(self, body: Dict[str, Any]) -> Optional[ChatResult]:
@@ -746,10 +751,7 @@ class BaseClient:
             "Accept": "text/event-stream" if stream else "application/json",
             "User-Agent": _user_agent(),
         }
-        h.update(self._auth_headers())
-        h.update(self._extra_headers)
-        h.update(extra or {})
-        return h
+        return _merge_headers(h, self._auth_headers(), self._extra_headers, extra or {})
 
     def _t(self, msg_id: str, **params: Any) -> str:
         return t(msg_id, self.lang, **params)

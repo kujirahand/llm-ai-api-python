@@ -110,9 +110,11 @@ class _AsyncOpenRouterClient(_AsyncOpenAICompatClient):
         """`app_url` is sent as HTTP-Referer and `app_name` as X-Title."""
         super().__init__(*args, **kwargs)
         if app_url:
-            self._extra_headers.setdefault("HTTP-Referer", app_url)
+            if not any(k.lower() == "http-referer" for k in self._extra_headers):
+                self._extra_headers["HTTP-Referer"] = app_url
         if app_name:
-            self._extra_headers.setdefault("X-Title", app_name)
+            if not any(k.lower() == "x-title" for k in self._extra_headers):
+                self._extra_headers["X-Title"] = app_name
 
 
 class _AsyncGoogleClient(_AsyncOpenAICompatClient):
@@ -140,7 +142,7 @@ class _AsyncAnthropicClient(_AsyncBaseClient):
     def _cache_context(self) -> Dict[str, Any]:
         """Add the API version to the cache key context (it is sent as a header)."""
         context = super()._cache_context()
-        context["anthropic_version"] = self.anthropic_version
+        context["anthropic_version"] = self._headers(False, None).get("anthropic-version")
         return context
 
     def _auth_headers(self) -> Dict[str, str]:

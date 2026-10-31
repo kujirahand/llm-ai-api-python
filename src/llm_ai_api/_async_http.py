@@ -37,6 +37,7 @@ from ._http import (
     _check_retry_after_max,
     _is_retryable_transport_error,
     _mask_url,
+    _merge_headers,
     _is_terminal_event,
     _retry_after_delay,
     _transport_reason,
@@ -189,7 +190,7 @@ class _AsyncBaseClient:
         """Client settings that can change a response for the same body (see BaseClient)."""
         return {
             "base_url": self.base_url,
-            "headers": dict(self._extra_headers),
+            "headers": _merge_headers(self._extra_headers),
         }
 
     async def _acache_lookup(self, body: Dict[str, Any]) -> Optional[ChatResult]:
@@ -346,10 +347,7 @@ class _AsyncBaseClient:
             "Accept": "text/event-stream" if stream else "application/json",
             "User-Agent": _user_agent(),
         }
-        h.update(self._auth_headers())
-        h.update(self._extra_headers)
-        h.update(extra or {})
-        return h
+        return _merge_headers(h, self._auth_headers(), self._extra_headers, extra or {})
 
     def _t(self, msg_id: str, **params: Any) -> str:
         return t(msg_id, self.lang, **params)
