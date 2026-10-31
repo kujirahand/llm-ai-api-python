@@ -24,13 +24,14 @@ print(luna.ask(question))  # ポチ
 1. **依存は `httpx` のみ**: ランタイム依存として許可するのは `httpx` だけ。それ以外は標準ライブラリ（`json`, `os`, `time`, `dataclasses` など）で実装する。
    - `openai`, `anthropic` などの公式 SDK パッケージや、`requests`, `pydantic` などのサードパーティパッケージは一切使わない（テスト用も含めて導入しない）。
    - `httpx` の例外・型は公開 API に漏らさない（自前の例外に包んで送出する）。将来 HTTP ライブラリを差し替えられるようにするため。
-2. **パススルー優先**: リクエストボディは利用者が渡した dict をそのまま送る。レスポンスは生の dict を必ず保持して返す。未知のフィールドを削ったり検証したりしない。
+2. **パススルー優先**: リクエストボディは利用者が渡した dict をそのまま送る。レスポンスは生の dict を必ず保持して返す。未知のフィールドを削ったり検証したりしない。例外は、チャットのボディから落とす拒否パラメータだけ（原則 3 と 5.5。生レイヤーは加工しない）。
 3. **指定されていないパラメータは送らない**: `temperature`, `top_p`, `max_tokens` などは利用者が明示した場合のみ送信する。
-   - 理由: 新しいモデルや API バージョンでは、デフォルト値であっても送るだけで 400 になるパラメータがある（例: Claude の API バージョン `2026-10-21` では `temperature` / `top_p` / `top_k` が全モデルで拒否される。OpenAI の推論系モデルも `temperature` を拒否する）。
-   - 例外: API 仕様上必須のもの（Claude の `max_tokens`）のみ、デフォルト値を補う。
-4. **デフォルトモデルを持たない**: `model` は常に呼び出し側が指定する。ライブラリの処理が特定のモデル名に依存してはならない（分岐しない）。モデル名を書いてよいのは `models.py`（便利な定数）、サンプルコード、README、ライブテストだけ。`models.py` の定数は例にすぎず、載っていないモデルも文字列でそのまま指定できること。
+   - 理由: 新しいモデルや API バージョンでは、デフォルト値であっても送るだけで 400 になるパラメータがある（例: Claude の API バージョン `2026-10-21` では `temperature` / `top_p` / `top_k` が全モデルで拒否される。一部の OpenAI モデルも `temperature` などを拒否する）。
+   - 例外（足すもの）: API 仕様上必須のもの（Claude の `max_tokens`）のみ、デフォルト値を補う。拒否されるフィールドへ固定値を書き込むことはしない。
+   - 例外（落とすもの）: 公式ドキュメントで拒否されると確認したパラメータは、利用者が `temperature=` や `extra` で明示してもチャットのボディから落とす。表は `_model_params.py` だけに置く。`extra` で同じキーを入れても復活しない。表にないモデル・キーはそのまま送る。警告は出さない。
+4. **デフォルトモデルを持たない**: `model` は常に呼び出し側が指定する。モデル名による処理の分岐は、拒否パラメータを落とす `_model_params.py` の表だけに限る（モデル名を `if` の条件に書かない。一致したルールの `drop` を和集合で消す）。表にないモデルは無変換で、載っていないモデルも文字列のまま指定できる。モデル名の定数を書いてよいのは従来どおり `models.py`（便利な定数）、サンプルコード、README、ライブテスト。`models.py` の定数は例にすぎない。
 5. **API バージョン・URL は差し替え可能にする**: ベース URL、`anthropic-version` ヘッダー、追加ヘッダーはすべて引数または環境変数で上書きできるようにする。
-6. **エスケープハッチを常に用意する**: 共通インターフェイスが対応していない機能（ツール呼び出し、画像入力、構造化出力など）も、生レイヤー（`request()`）や `extra` 引数で必ず使えるようにする。
+6. **エスケープハッチを常に用意する**: 共通インターフェイスが対応していない機能（ツール呼び出し、画像入力、構造化出力など）も、生レイヤー（`request()`）で必ず使えるようにする。拒否表に載ったキーをそのまま送りたいときも `request()` を使う。`extra` は、拒否表に載っていないキーについては最後にマージされて勝つ。
 7. **小さく保つ**: 1 プロバイダーあたり 1 ファイル、数百行程度を目安にする。
 
 ## 3. 対応範囲
@@ -79,6 +80,7 @@ llm-ai-api-python/
 │       ├── cache.py         # SQLite による応答キャッシュ（暗号化、既定はオフ）、set_cache() / clear_cache()
 │       ├── log.py           # JSON Lines の入出力ログ（既定はオフ）、set_log() / get_log()
 │       ├── _connection.py   # 接続設定（内部）: set_connection() / get_connection()、解決と httpx 引数の生成
+│       ├── _model_params.py # モデルが拒否するパラメータを落とす表（内部。チャットのボディだけ）
 │       ├── openai.py        # OpenAIClient
 │       ├── openrouter.py    # OpenRouterClient（OpenAI 互換部分を共有）
 │       ├── google.py        # GoogleClient（OpenAI 互換部分を共有）
@@ -101,6 +103,7 @@ llm-ai-api-python/
 │   ├── test_async_clients.py # 内部の非同期クライアント
 │   ├── test_async_llm.py     # LLM の aask / achat / astream
 │   ├── test_per_call_timeout.py # 呼び出しごとの timeout（httpx に届くこと）
+│   ├── test_model_params.py # 拒否パラメータのドロップ表
 │   ├── test_models.py
 │   ├── test_lang.py
 │   ├── test_connection.py # 接続設定（set_connection / connection=）
@@ -167,7 +170,7 @@ m.client    # 下位の OpenAIClient など（生レイヤーにアクセスで�
 
 - モデル指定文字列は **最初の `:` で分割** する。OpenRouter のモデル名は `/` や `:` を含むため（例: `"openrouter:meta-llama/llama-4:free"` → provider `openrouter`、model `meta-llama/llama-4:free`）。
 - プロバイダー名は小文字に正規化する。`claude` は `anthropic` の別名。未知のプロバイダーや `:` がない文字列は `LLMConfigError`。
-- `ask()` / `stream()` / `chat()` は、キーワード引数（`system`, `max_tokens`, `temperature`, `extra`）で `llm()` の既定値を呼び出しごとに上書きできる。引数を渡さなければ既定値を使い、**`None` を明示すると、その呼び出しだけ既定値を無効にして送らない**（`llm(..., temperature=0.4).ask("q", temperature=None)` は `temperature` を送らない）。両者を区別するため、これらの引数の既定値は内部のセンチネル `UNSET` で、`None` ではない。`extra` は dict を渡すと既定値と浅くマージし、`None` で既定の `extra` を無効にする。ただし Claude の `max_tokens` は API の必須項目なので、`None` を指定してもライブラリ既定の 16000 が使われる。`llm()` 自体の引数では `None` は「既定値なし」の意味。
+- `ask()` / `stream()` / `chat()` は、キーワード引数（`system`, `max_tokens`, `temperature`, `extra`）で `llm()` の既定値を呼び出しごとに上書きできる。引数を渡さなければ既定値を使い、**`None` を明示すると、その呼び出しだけ既定値を無効にして送らない**（`llm(..., temperature=0.4).ask("q", temperature=None)` は `temperature` を送らない）。両者を区別するため、これらの引数の既定値は内部のセンチネル `UNSET` で、`None` ではない。`extra` は dict を渡すと既定値と浅くマージし、`None` で既定の `extra` を無効にする。ただし Claude の `max_tokens` は API の必須項目なので、`None` を指定してもライブラリ既定の 16000 が使われる。`llm()` 自体の引数では `None` は「既定値なし」の意味。明示した値でも、5.5 の拒否表に合うキーはプロバイダー層が落としてから送る（`None` で既定を切る処理とは別）。
 - `ask()` / `stream()` / `chat()`（と `aask()` / `achat()` / `astream()`）は、キーワード専用の `timeout: Optional[float] = None`（秒）も受け取る。`None`（既定）はクライアントの設定を使い、数値はその呼び出しだけ生レイヤーの `timeout` と同じ意味（`httpx.Timeout(timeout, connect=10.0)`）で上書きする。他の引数と違い `UNSET` は使わない（`llm()` に「既定のタイムアウト」はなく、クライアントの `timeout=` がそれにあたる）。プロバイダーの `chat()` / `stream_chat()` を通って `request()` / `request_stream()` の `timeout=` に渡される。リクエストボディにもキャッシュキーにも含めず、キャッシュヒット時は無視する。**操作ごとのタイムアウトで、合計の期限ではない**（ストリームでは次のデータまでの時間。リトライで延びる）。この引数だけでは、同期コードで合計の期限は保証できない（データが届くたびに待ち時間がリセットされるため、`max_retries=0` でも、特にストリームや少しずつ返る応答では上限がない）。非同期で厳密な期限が必要なときは、`astream()` の呼び出しではなく、ストリームを読み切る処理全体のコルーチンを `asyncio.wait_for()` で包んでもらう（通信は最初の反復で始まるため）。
 - `ask()` / `stream()` は **状態を持たない**（会話履歴を保持しない）。会話を続けたい場合は `chat()` に messages を渡してもらう。
 - `ask()` は `ChatResult.text` をそのまま返す。`stop_reason` が `"refusal"` や `"max_tokens"` でも例外にしない（必要なら `chat()` を使って確認してもらう）。
@@ -273,15 +276,15 @@ result = client.chat(
     model="...",
     messages=[{"role": "system", "content": "..."}, {"role": "user", "content": "..."}],
     max_tokens=None,       # 指定時のみ送信（Anthropic のみ未指定時 16000 を補う）
-    temperature=None,      # 指定時のみ送信
-    extra=None,            # dict。ボディにそのままマージ（最後に適用し、上書き可）
+    temperature=None,      # 指定時のみ送信。拒否表に合うモデルでは送らない（下記）
+    extra=None,            # dict。ボディにマージしたあと、拒否表のキーは落とす
     timeout=None,          # 秒。None ならクライアントの設定。この呼び出しだけ上書き（ボディには入れない）
 )
 for chunk in client.stream_chat(model=..., messages=..., ...):
     print(chunk.text, end="")  # テキスト差分
 ```
 
-メッセージ形式とパラメータ変換（ライブラリが行う変換はこれだけ）:
+メッセージ形式と、ライブラリが行う変換はこれだけです:
 
 | 項目 | OpenAI | OpenRouter | Google | Anthropic |
 |---|---|---|---|---|
@@ -289,7 +292,11 @@ for chunk in client.stream_chat(model=..., messages=..., ...):
 | `max_tokens` | `max_completion_tokens` として送信 | `max_tokens` として送信 | `max_tokens` として送信 | `max_tokens`（必須。未指定時 16000） |
 | `content` | 文字列またはパーツ配列をそのまま | 同左 | 同左 | 同左（Claude 形式のブロック配列をそのまま） |
 | ストリーミング | `stream: true` と `stream_options: {"include_usage": true}` を付与 | `stream: true` | `stream: true` | `stream: true` |
+| 拒否パラメータ | `_model_params.py` の表に合うモデルだけ、`extra` の後に落とす | 落とさない | 落とさない | 送る `anthropic-version` が `2026-10-21` のとき全モデルで `temperature` / `top_p` / `top_k` を落とす。別の値では落とさない |
 
+- 落とす処理は同期の `_build_body` の最後（`extra` のマージ後）だけ。非同期クライアントは同じ `_build_body` を呼ぶ。判定に使うモデル ID は、マージ後のボディの `model` が文字列ならそれ、そうでなければ `chat()` に渡した `model`。一致したルールの `drop` は和集合で消し、入力の dict は変更しない。警告は出さない。オフにする引数はない。Anthropic のバージョンは、送るヘッダー `anthropic-version` の値（`anthropic_version=`。`headers` に同じキーがあればそれが上書きする）。
+- OpenAI の表（2026-10-31 に公式ページで確認。出典 URL は `_model_params.py` のコメント）: `gpt-6-astra` と `gpt-6.1-sol` は `temperature` / `top_p` / `logprobs` / `top_logprobs`。`gpt-5` / `gpt-5-mini` / `gpt-5-nano` とその日付スナップショット（`gpt-5-2025-08-07`、`gpt-5-mini-2025-08-07`、`gpt-5-nano-2025-08-07`）は `temperature` / `top_p` / `logprobs`。`o3` / `o3-2025-04-16` / `o4-mini` / `o4-mini-2025-04-16` は `stop`。`reasoning_effort` が `"none"` のときだけ温度を受け付けるモデル（`gpt-6-luna`、`gpt-5.2` など）は、常時落とすと正当なリクエストを壊すので表に入れない。
+- 値の注入（`temperature` を 1 にする、`reasoning_effort` を足す、など）はしない。必須の補完は今までどおり Claude の `max_tokens` と、OpenAI ストリームの `stream_options` だけ。
 - Google は OpenAI 互換エンドポイントを使うため、OpenAI 系の共通実装（`OpenAICompatClient`）を継承する。Google が互換エンドポイントを変更・廃止した場合は、ネイティブ API（`:generateContent`、`contents[]` / `systemInstruction` / `generationConfig.maxOutputTokens`）に切り替える。切り替えても `llm("google:...")` の使い方は変えない。
 - Google の `max_tokens` と `stream_options` の扱いは、実際の API で未確認（ライブテストで確かめる）。
 
@@ -324,7 +331,7 @@ class ChatChunk:
 - **既定はオフ**。有効にすると、同じリクエストへの 2 回目以降は API を呼ばず、保存済みの結果を返す。
 - グローバル設定: `set_cache(cache)` / `get_cache()`。`set_cache(None)` でオフに戻す（環境変数より優先）。環境変数 `LLM_AI_API_CACHE_DIR` にディレクトリを指定すると、`set_cache()` を呼ばなくても `<dir>/cache.db` でオンになる。
 - インスタンスごとの設定: `llm(..., cache=...)` と各クライアントの `cache=...`。値は `True`（既定ファイル `llm_ai_api_cache.db`）、パス（`str` / `os.PathLike`）、`SQLiteCache`（同等のオブジェクトも可。インターフェイスは `get(key) -> ChatResult | None` と `put(key, provider, result)`）、`False` / `None`（このインスタンスだけオフ）。引数を渡さなければグローバル設定に従う（内部のセンチネル `CACHE_NOT_SET`）。
-- **キー**: `sha256("{provider}:{model}@{api_key}>>>{input}")`。`input` は、リクエストボディと、応答に影響するクライアント設定（`base_url`、追加ヘッダー、Anthropic の `anthropic_version`）の正規化 JSON（`sort_keys=True`）。ストリームかどうかはボディの `stream` で区別される。API キーはハッシュと暗号鍵の導出にだけ使い、平文では保存しない。API キーが違うクライアント同士はキャッシュを共有しない。
+- **キー**: `sha256("{provider}:{model}@{api_key}>>>{input}")`。`input` は、リクエストボディと、応答に影響するクライアント設定（`base_url`、追加ヘッダー、Anthropic の `anthropic_version`）の正規化 JSON（`sort_keys=True`）。ボディは拒否パラメータを落としたあと（送ったもの）を使う。落とされるキーだけが違うリクエストは同じキーになる。ストリームかどうかはボディの `stream` で区別される。API キーはハッシュと暗号鍵の導出にだけ使い、平文では保存しない。API キーが違うクライアント同士はキャッシュを共有しない。
 - **値**: `ChatResult`（text / model / stop_reason / usage / raw）を JSON にして、API キーから導出した鍵で暗号化し、SQLite のテーブル `llm_cache` に入れる。ストリームは `raw["events"]` に SSE イベントの一覧を入れた `ChatResult` として保存する。
 - **暗号**: 標準ライブラリだけで組む（`scrypt` による鍵導出、HMAC-SHA256 のカウンターモード、HMAC による改ざん検出）。平文のまま置かないための保護で、API キーの管理に代わるものではない。鍵は API キーから作るので、API キーを持つ人はキャッシュを読める。MAC にはキャッシュキーも含め（別の行への暗号文の差し替えを検出する）、`secret` を渡して読むときは暗号化形式以外（平文の値）を受け付けない。`SQLiteCache.get/put` に `secret` を渡さなければ暗号化しない（クライアント経由では常に渡す）。
 - キャッシュファイルは、自分で `os.open(..., O_CREAT | O_EXCL, 0o600)` して作ってから SQLite に開かせる（作成の瞬間から `0600`。umask が緩くても一時的に他人が読める状態を作らない。親ディレクトリを作る場合は `0700`）。既存のファイルの権限は変更しない。
@@ -343,7 +350,7 @@ class ChatChunk:
 - **既定はオフ**。有効にすると、`chat()` / `ask()` / `stream_chat()` / `stream()` の呼び出しごとに 1 行の JSON を追記する（JSON Lines）。生レイヤー（`request()` / `request_stream()`）は対象外。
 - グローバル設定: `set_log(log)` / `get_log()`。`set_log(None)` でオフに戻す（環境変数より優先）。環境変数 `LLM_AI_API_LOG_DIR` にディレクトリを指定すると、`<dir>/llm.jsonl` でオンになる。
 - インスタンスごとの設定: `llm(..., log=...)` と各クライアントの `log=...`。値は `True`（既定ファイル `llm_ai_api_log.jsonl`）、パス、`JSONLLog`（`write(provider, model, request, response, *, stream, cached)` を持つオブジェクトも可）、`False` / `None`（このインスタンスだけオフ）。引数を渡さなければグローバル設定に従う（内部のセンチネル `LOG_NOT_SET`）。
-- **1 行の内容**: `time`（UTC, ISO 8601）, `provider`, `model`, `stream`, `cached`（キャッシュから返したか）, `request`（送ったボディ）, `response`（生の応答 dict。ストリームは `{"text": 連結したテキスト, "chunks": [生のイベント JSON, ...]}`）。API キーと認証ヘッダーは記録しない。
+- **1 行の内容**: `time`（UTC, ISO 8601）, `provider`, `model`, `stream`, `cached`（キャッシュから返したか）, `request`（送ったボディ。拒否パラメータを落としたあと）, `response`（生の応答 dict。ストリームは `{"text": 連結したテキスト, "chunks": [生のイベント JSON, ...]}`）。API キーと認証ヘッダーは記録しない。
 - ログは平文で、プロンプトと回答がそのまま入る。ファイルは新規作成時に権限 `0600`（親ディレクトリを作る場合は `0700`）にする（ベストエフォート）。
 - **最大サイズ**: `JSONLLog(path, max_size=DEFAULT_MAX_SIZE)`（公開属性 `max_size`、バイト）。既定は 100 MB（`log.DEFAULT_MAX_SIZE`）。`write()` で追記するたびにファイルサイズを調べ、`max_size` を超えていたらロックの下で先頭 1/3 の行を捨てて、残りを一時ファイル経由で書き直す（まだ超えていれば次の `write()` でもう一度整理する。読み込み前後で `os.stat` の inode / サイズ / mtime が変わっていたら、別プロセスの追記とみなして整理を中止する。ただし置き換え直前のごく短い間の別プロセスの追記は失われうるので、複数プロセスから同一ファイルへの書き込みは整理中は完全にはサポートしない。最後に書いた 1 行は、単独で `max_size` を超えていても必ず残す）。`None` は無制限。0 以下・整数以外は `LLMConfigError`（`code="invalid_log"`）。整理の失敗はベストエフォート（無視）。`set_log(..., max_size=...)` はパス / `True` から作るときだけ使い、`JSONLLog` オブジェクトを渡したときはそのオブジェクトの `max_size` が優先。自作のログオブジェクトには影響しない。
 - ストリームは最後まで読み切ったときだけ記録する。エラーになった呼び出しは記録しない。
@@ -454,7 +461,7 @@ LLMError                      # 基底
 - ユニットテストはネットワークに出ない。`httpx.MockTransport` を使って、送信内容の検証と応答の差し替えを行う。
 - 最低限テストすること:
   - 共通インターフェイス: モデル指定文字列の分割（`:` を含むモデル名）、別名、エラー、既定値と呼び出しごとの上書き
-  - 送信ボディ: 未指定パラメータが送られないこと、`extra` が最後にマージされること、system メッセージの変換、`max_tokens` の名前変換
+  - 送信ボディ: 未指定パラメータが送られないこと、`extra` が最後にマージされること、拒否表のキーは `extra` の後でも送られないこと、表にないモデルと OpenRouter / Google は落とさないこと、生レイヤーは加工しないこと、system メッセージの変換、`max_tokens` の名前変換
   - ヘッダー: 認証ヘッダー、`anthropic-version`、追加ヘッダー
   - SSE: 複数行 data、コメント行、`[DONE]`、`ping`、`error` イベント、改行コード `\r\n`
   - エラー: ステータスコードごとの例外クラス、JSON/非 JSON のエラーボディ、リトライと `retry-after`（`retry_after_max` による上限）、通信エラーごとのリトライ有無（接続段階の失敗だけ。`retry_read_timeout`）、httpx 例外の変換

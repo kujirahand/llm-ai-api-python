@@ -24,6 +24,16 @@ class GoogleTest(unittest.TestCase):
         self.assertEqual(rec.body(), {"model": "gemini-x", "messages": MSGS, "max_tokens": 9})
         self.assertEqual(r.text, "ポチ")
 
+    def test_openai_model_id_is_not_rewritten(self):
+        rec = Recorder(json_response(REPLY))
+        c = GoogleClient(api_key="k", transport=rec.transport)
+        c.chat("gpt-6-astra", MSGS, temperature=0.2, extra={"stop": "END"})
+        body = rec.body()
+        self.assertEqual(body["model"], "gpt-6-astra")
+        self.assertEqual(body["temperature"], 0.2)
+        self.assertEqual(body["stop"], "END")
+        self.assertNotIn("max_tokens", body)
+
     def test_key_env_and_fallback(self):
         for env, ok in (
             ({"GEMINI_API_KEY": "a"}, "a"),

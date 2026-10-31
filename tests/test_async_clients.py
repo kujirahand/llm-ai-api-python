@@ -255,6 +255,15 @@ class AsyncOpenAICompatTest(AsyncClientTestBase):
             rec.body(), {"model": "gpt-x", "messages": MESSAGES, "max_completion_tokens": 5}
         )
 
+    async def test_known_model_drops_rejected_fields(self):
+        rec = Recorder(json_response(OPENAI_REPLY))
+        c = self.make(rec)
+        await c.achat("gpt-6.1-sol", MESSAGES, temperature=0.2, extra={"top_logprobs": 2, "n": 1})
+        body = rec.body()
+        self.assertNotIn("temperature", body)
+        self.assertNotIn("top_logprobs", body)
+        self.assertEqual(body["n"], 1)
+
     async def test_openrouter_and_google_settings(self):
         rec = Recorder(json_response(OPENAI_REPLY))
         c = self.make(rec, cls=_AsyncOpenRouterClient, app_url="https://e.x", app_name="App")
@@ -333,11 +342,42 @@ class AsyncAnthropicTest(AsyncClientTestBase):
         rec = Recorder(json_response(CLAUDE_REPLY))
         c = self.make(rec, cls=_AsyncAnthropicClient, anthropic_version="2099-01-01",
                       headers={"anthropic-beta": "x"})
-        await c.achat("claude-x", MESSAGES, max_tokens=10)
+        await c.achat("claude-x", MESSAGES, max_tokens=10, temperature=0.2, extra={"top_k": 1})
         req = rec.requests[0]
         self.assertEqual((req.headers["anthropic-version"], req.headers["anthropic-beta"]),
                          ("2099-01-01", "x"))
         self.assertEqual(rec.body()["max_tokens"], 10)
+        self.assertEqual(rec.body()["temperature"], 0.2)
+        self.assertEqual(rec.body()["top_k"], 1)
+
+    async def test_default_version_drops_sampling_params(self):
+        rec = Recorder(json_response(CLAUDE_REPLY))
+        c = self.make(rec, cls=_AsyncAnthropicClient)
+        await c.achat("claude-x", MESSAGES, temperature=0.2, extra={"top_k": 4, "top_p": 0.3})
+        body = rec.body()
+        self.assertEqual(body["max_tokens"], 16000)
+        self.assertNotIn("temperature", body)
+        self.assertNotIn("top_k", body)
+        self.assertNotIn("top_p", body)
+
+    async def test_header_override_selects_the_version_used_for_drops(self):
+        rec = Recorder(json_response(CLAUDE_REPLY))
+        c = self.make(rec, cls=_AsyncAnthropicClient, headers={"anthropic-version": "2023-06-01"})
+        await c.achat("claude-x", MESSAGES, temperature=0.2, extra={"top_k": 4})
+        self.assertEqual(rec.requests[0].headers["anthropic-version"], "2023-06-01")
+        self.assertEqual(rec.body()["temperature"], 0.2)
+        self.assertEqual(rec.body()["top_k"], 4)
+        rec = Recorder(json_response(CLAUDE_REPLY))
+        c = self.make(
+            rec,
+            cls=_AsyncAnthropicClient,
+            anthropic_version="2023-06-01",
+            headers={"anthropic-version": "2026-10-21"},
+        )
+        await c.achat("claude-x", MESSAGES, temperature=0.2, extra={"top_p": 0.3})
+        self.assertEqual(rec.requests[0].headers["anthropic-version"], "2026-10-21")
+        self.assertNotIn("temperature", rec.body())
+        self.assertNotIn("top_p", rec.body())
 
     async def test_stream_chat(self):
         rec = Recorder(sse_response(CLAUDE_STREAM))

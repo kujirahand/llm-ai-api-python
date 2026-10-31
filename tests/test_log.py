@@ -52,6 +52,23 @@ class LogTest(unittest.TestCase):
         with open(self.path, encoding="utf-8") as f:
             self.assertNotIn("sk-secret", f.read())
 
+    def test_logged_request_is_the_body_after_drops(self):
+        rec = Recorder(json_response(OPENAI_REPLY))
+        m = llm(
+            "openai:gpt-6-astra",
+            api_key="k",
+            transport=rec.transport,
+            log=self.path,
+            temperature=0.4,
+            extra={"logprobs": True, "n": 1},
+        )
+        m.ask("q")
+        (r,) = self.records()
+        self.assertEqual(r["request"], rec.body())
+        self.assertNotIn("temperature", r["request"])
+        self.assertNotIn("logprobs", r["request"])
+        self.assertEqual(r["request"]["n"], 1)
+
     def test_stream_logged_after_complete_read(self):
         m = self.make(Recorder(sse_response(OPENAI_STREAM)), log=self.path)
         it = m.stream("q")

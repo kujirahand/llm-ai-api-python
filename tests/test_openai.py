@@ -111,6 +111,40 @@ class OpenAITest(unittest.TestCase):
         self.assertIn("boom", str(cm.exception))
 
 
+    def test_known_models_drop_rejected_fields_after_extra(self):
+        rec = Recorder(json_response(REPLY))
+        c = OpenAIClient(api_key="k", transport=rec.transport)
+        c.chat(
+            "m",
+            MSGS,
+            temperature=0.2,
+            extra={"model": "gpt-6-astra", "temperature": 0.4, "logprobs": True, "n": 2},
+        )
+        body = rec.body()
+        self.assertEqual(body["model"], "gpt-6-astra")
+        self.assertEqual(body["n"], 2)
+        self.assertNotIn("temperature", body)
+        self.assertNotIn("logprobs", body)
+        c.chat("gpt-6-astra", MSGS, extra={"model": "gpt-4o", "temperature": 0.3})
+        self.assertEqual(rec.body()["temperature"], 0.3)
+        c.chat("o3", MSGS, temperature=0.1, extra={"stop": "END", "n": 1})
+        body = rec.body()
+        self.assertEqual(body["temperature"], 0.1)
+        self.assertNotIn("stop", body)
+        c.chat("o3-mini", MSGS, extra={"stop": "END"})
+        self.assertEqual(rec.body()["stop"], "END")
+
+    def test_stream_drops_the_same_fields(self):
+        rec = Recorder(sse_response("data: [DONE]\n\n"))
+        c = OpenAIClient(api_key="k", transport=rec.transport)
+        list(c.stream_chat("gpt-5", MSGS, temperature=0.2, extra={"top_p": 0.1}))
+        body = rec.body()
+        self.assertTrue(body["stream"])
+        self.assertNotIn("temperature", body)
+        self.assertNotIn("top_p", body)
+        self.assertIn("stream_options", body)
+
+
 class OpenRouterTest(unittest.TestCase):
     def test_headers_and_max_tokens_name(self):
         rec = Recorder(json_response(REPLY), sse_response('data: [DONE]\n\n'))
@@ -125,6 +159,15 @@ class OpenRouterTest(unittest.TestCase):
         self.assertEqual(rec.body()["max_tokens"], 7)
         list(c.stream_chat("a/b:free", MSGS))
         self.assertNotIn("stream_options", rec.body())
+
+    def test_openai_model_id_is_not_rewritten(self):
+        rec = Recorder(json_response(REPLY))
+        c = OpenRouterClient(api_key="k", transport=rec.transport)
+        c.chat("gpt-6-astra", MSGS, temperature=0.2, extra={"stop": "END", "logprobs": True})
+        body = rec.body()
+        self.assertEqual(body["temperature"], 0.2)
+        self.assertEqual(body["stop"], "END")
+        self.assertTrue(body["logprobs"])
 
 
 if __name__ == "__main__":

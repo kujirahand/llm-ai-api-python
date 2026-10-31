@@ -1,18 +1,37 @@
-"""Anthropic (Claude) Messages API のクライアント。"""
+"""Client for the Anthropic (Claude) Messages API."""
 
 from __future__ import annotations
 
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from ._http import BaseClient
+from ._model_params import adjust_body
 from .errors import APIStreamError
 from .types import ChatChunk, ChatResult, SSEEvent, Usage
 
 DEFAULT_MAX_TOKENS = 16000
 
 
+def _sent_anthropic_version(client: Any) -> Optional[str]:
+    """Return the ``anthropic-version`` value the request headers will send.
+
+    ``_headers`` copies auth headers and then ``headers=``. A value under the
+    exact key ``anthropic-version`` replaces the constructor's version, and
+    that is the value the drop rules see. A differently cased name is a
+    separate header entry, so it does not count as the version.
+    """
+    headers: Dict[str, Any] = {}
+    headers.update(client._auth_headers())
+    headers.update(getattr(client, "_extra_headers", None) or {})
+    version = headers.get("anthropic-version")
+    if isinstance(version, str):
+        return version
+    fallback = getattr(client, "anthropic_version", None)
+    return fallback if isinstance(fallback, str) else None
+
+
 def _split_system(messages: List[Dict[str, Any]]) -> Tuple[Any, List[Dict[str, Any]]]:
-    """messages から system を取り出す。文字列だけなら連結した文字列、ブロックを含むなら配列を返す。"""
+    """Pull system messages out. Join plain strings; return blocks if any part is not a string."""
     parts: List[Any] = []
     rest: List[Dict[str, Any]] = []
     for m in messages:
@@ -80,7 +99,7 @@ def _chunk_from_event(
 
 
 class AnthropicClient(BaseClient):
-    """Anthropic Messages API のクライアント。"""
+    """Client for the Anthropic Messages API."""
 
     provider = "anthropic"
     default_base_url = "https://api.anthropic.com"
@@ -125,7 +144,15 @@ class AnthropicClient(BaseClient):
             body["stream"] = True
         if extra:
             body.update(extra)
-        return body
+        # After extra, so a rejected key cannot be put back. Which keys are
+        # rejected depends on the anthropic-version header that will be sent.
+        # request() does not call this.
+        return adjust_body(
+            self.provider,
+            model,
+            body,
+            anthropic_version=_sent_anthropic_version(self),
+        )
 
     def chat(
         self,
@@ -137,9 +164,13 @@ class AnthropicClient(BaseClient):
         extra: Optional[Dict[str, Any]] = None,
         timeout: Optional[float] = None,
     ) -> ChatResult:
-        """チャットを 1 回呼び出す。`max_tokens` 以外の未指定パラメータは送らない。
+        """Call the chat once. Unspecified parameters other than ``max_tokens`` are not sent.
 
-        `timeout`（秒）は `None` ならクライアントの設定、数値ならこの呼び出しだけ上書きする。
+        When the sent ``anthropic-version`` is ``2026-10-21``, ``temperature``,
+        ``top_p``, and ``top_k`` are removed after ``extra`` is merged. A
+        ``headers`` entry with that exact name overrides ``anthropic_version``.
+        ``timeout`` (seconds) is the client setting when ``None``, or an
+        override for this call.
         """
         body = self._build_body(model, messages, max_tokens, temperature, extra, False)
         cached = self._cache_lookup(body)
@@ -162,7 +193,7 @@ class AnthropicClient(BaseClient):
         extra: Optional[Dict[str, Any]] = None,
         timeout: Optional[float] = None,
     ) -> Iterator[ChatChunk]:
-        """ストリーミングでチャットを呼び出し、差分を順に返す。"""
+        """Stream a chat and yield text deltas."""
         body = self._build_body(model, messages, max_tokens, temperature, extra, True)
         events, cached = self._stream_events("/v1/messages", body, timeout=timeout)
         return self._log_chunks(body, self._iter_chunks(events), cached)

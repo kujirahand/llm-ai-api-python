@@ -1,10 +1,11 @@
-"""OpenAI（および OpenAI 互換 API）のクライアント。"""
+"""Clients for OpenAI and OpenAI-compatible chat APIs."""
 
 from __future__ import annotations
 
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from ._http import BaseClient, error_message
+from ._model_params import adjust_body
 from .errors import APIStreamError
 from .types import ChatChunk, ChatResult, SSEEvent, Usage
 
@@ -14,7 +15,7 @@ def _text_of(content: Any) -> str:
         return ""
     if isinstance(content, str):
         return content
-    if isinstance(content, list):  # パーツ配列の場合は text を連結する
+    if isinstance(content, list):  # a list of parts: concatenate the text ones
         return "".join(
             p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"
         )
@@ -61,7 +62,7 @@ def _chunk_from_event(
 
 
 class OpenAICompatClient(BaseClient):
-    """`/chat/completions` 形式の API の共通実装。"""
+    """Shared implementation for ``/chat/completions``-style APIs."""
 
     max_tokens_field = "max_tokens"
     stream_include_usage = False
@@ -89,7 +90,11 @@ class OpenAICompatClient(BaseClient):
                 body["stream_options"] = {"include_usage": True}
         if extra:
             body.update(extra)
-        return body
+        # After extra, so a rejected key cannot be put back. The raw request()
+        # path does not call this.
+        return adjust_body(
+            self.provider, model, body, anthropic_version=getattr(self, "anthropic_version", None)
+        )
 
     def chat(
         self,
@@ -101,9 +106,11 @@ class OpenAICompatClient(BaseClient):
         extra: Optional[Dict[str, Any]] = None,
         timeout: Optional[float] = None,
     ) -> ChatResult:
-        """チャットを 1 回呼び出す。指定していないパラメータは送らない。
+        """Call the chat once. Parameters that are not given are not sent.
 
-        `timeout`（秒）は `None` ならクライアントの設定、数値ならこの呼び出しだけ上書きする。
+        Fields the model is known to reject are removed after ``extra`` is
+        merged (see ``_model_params``). ``timeout`` (seconds) is the client
+        setting when ``None``, or an override for this call.
         """
         body = self._build_body(model, messages, max_tokens, temperature, extra, False)
         cached = self._cache_lookup(body)
@@ -126,7 +133,7 @@ class OpenAICompatClient(BaseClient):
         extra: Optional[Dict[str, Any]] = None,
         timeout: Optional[float] = None,
     ) -> Iterator[ChatChunk]:
-        """ストリーミングでチャットを呼び出し、差分を順に返す。"""
+        """Stream a chat and yield text deltas."""
         body = self._build_body(model, messages, max_tokens, temperature, extra, True)
         events, cached = self._stream_events("/chat/completions", body, timeout=timeout)
         return self._log_chunks(body, self._iter_chunks(events), cached)
@@ -142,7 +149,7 @@ class OpenAICompatClient(BaseClient):
 
 
 class OpenAIClient(OpenAICompatClient):
-    """OpenAI Chat Completions API のクライアント。"""
+    """Client for the OpenAI Chat Completions API."""
 
     provider = "openai"
     default_base_url = "https://api.openai.com/v1"

@@ -58,6 +58,19 @@ class CacheKeyTest(unittest.TestCase):
         )
         self.assertEqual(key, cache_key("openai", base, {"base_url": "https://a.example/v1"}))
 
+    def test_client_drops_rejected_keys_before_the_cache_key(self):
+        from llm_ai_api import AnthropicClient
+
+        rec = Recorder(json_response(CLAUDE_REPLY))
+        c = AnthropicClient(api_key="k", transport=rec.transport)
+        messages = [{"role": "user", "content": "q"}]
+        c.chat("claude-x", messages)
+        plain = cache_key("anthropic", rec.body())
+        c.chat("claude-x", messages, temperature=0.2, extra={"top_k": 1})
+        self.assertEqual(plain, cache_key("anthropic", rec.body()))
+        c.chat("claude-x", messages, max_tokens=5)
+        self.assertNotEqual(plain, cache_key("anthropic", rec.body()))
+
 
 class SQLiteCacheTest(CacheTestBase):
     def make_result(self):
@@ -254,6 +267,15 @@ class ChatCacheTest(CacheTestBase):
         self.assertEqual(m.ask("q"), "ポチ")
         self.assertEqual(m.ask("q"), "ポチ")
         self.assertEqual(len(rec.requests), 1)
+
+    def test_dropped_keys_share_one_cache_entry(self):
+        rec = Recorder(json_response(CLAUDE_REPLY))
+        m = llm("claude:claude-x", api_key="k", transport=rec.transport, cache=self.db)
+        m.ask("q")
+        m.ask("q", temperature=0.2, extra={"top_k": 1})
+        self.assertEqual(len(rec.requests), 1)
+        m.ask("q", max_tokens=5)
+        self.assertEqual(len(rec.requests), 2)
 
     def test_streaming_is_cached(self):
         rec = Recorder(sse_response(OPENAI_STREAM))

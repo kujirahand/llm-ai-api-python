@@ -37,7 +37,7 @@ m.ask("可愛い犬の名前を考えて")
 | `model` | リクエストで送ったモデル |
 | `stream` | `stream()` / `stream_chat()` なら `true` |
 | `cached` | 応答キャッシュ（[io_cache-ja.md](io_cache-ja.md)）から返したなら `true` |
-| `request` | 送ったリクエストボディそのまま |
+| `request` | 送ったリクエストボディ（モデルが拒否するパラメータを落としたあと） |
 | `response` | 生の応答 dict。ストリームは `{"text": "連結したテキスト", "chunks": [生のイベント JSON, ...]}` |
 
 例（見やすく整形しています。実際のファイルは 1 行に 1 オブジェクトです）:
