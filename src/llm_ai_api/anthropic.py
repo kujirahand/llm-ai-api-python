@@ -135,14 +135,18 @@ class AnthropicClient(BaseClient):
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         extra: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
     ) -> ChatResult:
-        """チャットを 1 回呼び出す。`max_tokens` 以外の未指定パラメータは送らない。"""
+        """チャットを 1 回呼び出す。`max_tokens` 以外の未指定パラメータは送らない。
+
+        `timeout`（秒）は `None` ならクライアントの設定、数値ならこの呼び出しだけ上書きする。
+        """
         body = self._build_body(model, messages, max_tokens, temperature, extra, False)
         cached = self._cache_lookup(body)
         if cached is not None:
             self._log_call(body, cached.raw, cached=True)
             return cached
-        raw = self.request("/v1/messages", body)
+        raw = self.request("/v1/messages", body, timeout=timeout)
         result = _parse_response(raw)
         self._cache_store(body, result)
         self._log_call(body, raw)
@@ -156,10 +160,11 @@ class AnthropicClient(BaseClient):
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         extra: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
     ) -> Iterator[ChatChunk]:
         """ストリーミングでチャットを呼び出し、差分を順に返す。"""
         body = self._build_body(model, messages, max_tokens, temperature, extra, True)
-        events, cached = self._stream_events("/v1/messages", body)
+        events, cached = self._stream_events("/v1/messages", body, timeout=timeout)
         return self._log_chunks(body, self._iter_chunks(events), cached)
 
     def _iter_chunks(self, events: Iterator[Any]) -> Iterator[ChatChunk]:

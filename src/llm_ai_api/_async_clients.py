@@ -50,6 +50,7 @@ class _AsyncOpenAICompatClient(_AsyncBaseClient):
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         extra: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
     ) -> ChatResult:
         """Call the chat once. Parameters that are not given are not sent."""
         body = self._build_body(model, messages, max_tokens, temperature, extra, False)
@@ -57,7 +58,7 @@ class _AsyncOpenAICompatClient(_AsyncBaseClient):
         if cached is not None:
             await self._alog_call(body, cached.raw, cached=True)
             return cached
-        raw = await self.request("/chat/completions", body)
+        raw = await self.request("/chat/completions", body, timeout=timeout)
         result = _openai_parse(raw)
         await self._acache_store(body, result)
         await self._alog_call(body, raw)
@@ -71,10 +72,11 @@ class _AsyncOpenAICompatClient(_AsyncBaseClient):
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         extra: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
     ) -> _AsyncLoggedChunks:
         """Start a streaming chat and return the chunks. HTTP errors are raised here."""
         body = self._build_body(model, messages, max_tokens, temperature, extra, True)
-        events, cached = await self._astream_events("/chat/completions", body)
+        events, cached = await self._astream_events("/chat/completions", body, timeout=timeout)
         headline = self._t("stream_error", provider=self.provider)
         chunks = _AsyncChunks(events, lambda ev: _openai_chunk(ev, headline))
         return self._alog_chunks(chunks, body, cached)
@@ -164,6 +166,7 @@ class _AsyncAnthropicClient(_AsyncBaseClient):
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         extra: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
     ) -> ChatResult:
         """Call the chat once. Unspecified parameters other than `max_tokens` are not sent."""
         body = self._build_body(model, messages, max_tokens, temperature, extra, False)
@@ -171,7 +174,7 @@ class _AsyncAnthropicClient(_AsyncBaseClient):
         if cached is not None:
             await self._alog_call(body, cached.raw, cached=True)
             return cached
-        raw = await self.request("/v1/messages", body)
+        raw = await self.request("/v1/messages", body, timeout=timeout)
         result = _anthropic_parse(raw)
         await self._acache_store(body, result)
         await self._alog_call(body, raw)
@@ -185,10 +188,11 @@ class _AsyncAnthropicClient(_AsyncBaseClient):
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         extra: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
     ) -> _AsyncLoggedChunks:
         """Start a streaming chat and return the chunks. HTTP errors are raised here."""
         body = self._build_body(model, messages, max_tokens, temperature, extra, True)
-        events, cached = await self._astream_events("/v1/messages", body)
+        events, cached = await self._astream_events("/v1/messages", body, timeout=timeout)
         headline = self._t("stream_error", provider=self.provider)
         chunks = _AsyncChunks(events, lambda ev: _anthropic_chunk(ev, headline))
         return self._alog_chunks(chunks, body, cached)

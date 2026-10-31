@@ -161,6 +161,7 @@ asyncio.run(main())
 
 - Close it with `async with` (or `await m.aclose()`). A closed `LLM` cannot be reused.
 - Create a new `llm()` for each `asyncio.run()`.
+- Calling the sync `ask()` / `chat()` / `stream()` inside async code blocks the whole event loop. Always use `aask()` / `achat()` / `astream()` there.
 
 ## 8. Handle errors
 
@@ -182,7 +183,55 @@ except LLMError as e:
 
 Every exception has a language-independent `code` attribute (e.g. `"missing_api_key"`). Check `code` rather than the message text, which changes with translation.
 
-## 9. Next steps
+## 9. Reuse and cleanup
+
+`llm()` creates an HTTP client with a connection pool. Creating one for every request repeats connection setup and TLS handshakes. Create one when your process or service starts, then reuse it. This also makes response caching and connection reuse effective.
+
+For synchronous code, use `with` or call `close()` when you are done.
+
+```python
+from llm_ai_api import llm
+
+with llm("openai:gpt-6-luna") as m:
+    print(m.ask("Hello"))
+
+# Or close it when the application exits.
+m = llm("openai:gpt-6-luna")
+try:
+    print(m.ask("Hello"))
+finally:
+    m.close()
+```
+
+For asynchronous code, use `async with` or call `await aclose()`. `aclose()` closes both the async and synchronous clients, and it is safe to call more than once. `close()` closes only the synchronous client.
+
+```python
+import asyncio
+from llm_ai_api import llm
+
+
+async def main():
+    async with llm("openai:gpt-6-luna") as m:
+        print(await m.aask("Hello"))
+
+    # Or close it when the application exits.
+    m = llm("openai:gpt-6-luna")
+    try:
+        print(await m.aask("Hello"))
+    finally:
+        await m.aclose()
+
+
+asyncio.run(main())
+```
+
+It is fine to stop a stream early. When the stream object is discarded or closed, its underlying response is also closed. In long-running programs, explicitly call `stream.close()` or `await stream.aclose()` when stopping early.
+
+If you forget to close an instance, resources are released at process exit or during garbage collection. However, a long-running process can keep connections and file descriptors open, so close instances explicitly. A closed `LLM` cannot be reused; create a new one instead. For example, create a new `llm()` for each `asyncio.run()` call.
+
+For production deployments where you need to change the number of concurrent connections, a proxy, or TLS settings, see "Connection settings" (`set_connection()` and `connection=`) in the README.
+
+## 10. Next steps
 
 - [Local response cache](io_cache.md): repeat requests return the stored result without calling the API (off by default).
 - [Input/output log](io_logs.md): record inputs and outputs as JSON Lines (off by default).

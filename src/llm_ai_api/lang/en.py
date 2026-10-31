@@ -11,6 +11,7 @@ MESSAGES = {
     ),
     "invalid_log": "Invalid log setting: {detail}",
     "invalid_cache": "Invalid cache setting: {detail}",
+    "invalid_connection": "Invalid connection setting: {detail}",
     "invalid_url": "Invalid URL: {url}",
     "unknown_provider": "Unknown provider: {provider!r} (supported: {supported})",
     "cache_dir_not_set": "Set cache_dir=... or the LLM_AI_API_CACHE_DIR environment variable to choose the cache directory.",

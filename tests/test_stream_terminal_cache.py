@@ -39,6 +39,10 @@ NO_EVENT_LINE_STREAM = (
     'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"x"}}\n\n'
     'data: {"type":"message_stop"}\n\n'
 )
+# Cut off at EOF: no message_stop.
+NO_STOP_STREAM = (
+    'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"x"}}\n\n'
+)
 
 
 class StreamTerminalCacheSyncTest(unittest.TestCase):
@@ -75,6 +79,13 @@ class StreamTerminalCacheSyncTest(unittest.TestCase):
         with self.assertRaises(APIStreamError):
             list(m.stream("q"))
         self.assertEqual(self.entries(), 0)
+
+    def test_anthropic_eof_without_message_stop_is_not_cached(self):
+        rec, m = self.make(NO_STOP_STREAM)
+        self.assertEqual(list(m.stream("q")), ["x"])
+        self.assertEqual(self.entries(), 0)
+        self.assertEqual(list(m.stream("q")), ["x"])
+        self.assertEqual(len(rec.requests), 2)
 
     def test_payload_only_terminal_is_cached(self):
         rec, m = self.make(NO_EVENT_LINE_STREAM)

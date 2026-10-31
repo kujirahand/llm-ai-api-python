@@ -87,6 +87,22 @@ class OpenAITest(unittest.TestCase):
             list(c.stream_chat("m", MSGS))
         self.assertEqual(cm.exception.code, "invalid_json_response")
 
+    def test_non_object_event_in_stream_raises_library_error(self):
+        for data in ('["just","an","array"]', "42"):
+            rec = Recorder(sse_response("data: %s\n\n" % data))
+            c = OpenAIClient(api_key="k", transport=rec.transport)
+            with self.assertRaises(LLMError) as cm:
+                list(c.stream_chat("m", MSGS))
+            self.assertEqual(cm.exception.code, "invalid_json_response")
+
+    def test_non_object_response_raises_library_error(self):
+        for payload in (["x"], 42, None):
+            rec = Recorder(json_response(payload))
+            c = OpenAIClient(api_key="k", transport=rec.transport)
+            with self.assertRaises(LLMError) as cm:
+                c.chat("m", MSGS)
+            self.assertEqual(cm.exception.code, "invalid_json_response")
+
     def test_string_error_in_stream_raises(self):
         rec = Recorder(sse_response('data: {"error": "boom"}\n\n'))
         c = OpenRouterClient(api_key="k", transport=rec.transport)
