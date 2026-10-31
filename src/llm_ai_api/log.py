@@ -8,11 +8,12 @@ and the answers; protect it accordingly.
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import threading
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from .errors import LLMConfigError
 from .lang import t
@@ -51,6 +52,9 @@ class JSONLLog:
     still over the limit, the next write trims again. The newest record is always kept.
     None means unlimited.
 
+    `redact` receives a deep copy of each record and returns a dict to write, or None
+    to skip it. It must be thread-safe when used by async calls.
+
     Threads of one process are serialized by a lock. Several processes writing to the
     same file are not fully supported while a trim runs: the trim abandons itself if the
     file changed since it was read (the next write retries), but a record appended by
@@ -64,6 +68,7 @@ class JSONLLog:
         *,
         max_size: Optional[int] = DEFAULT_MAX_SIZE,
         lang: Optional[str] = None,
+        redact: Optional[Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]] = None,
     ) -> None:
         self.path = os.fspath(path)
         if max_size is not None and (
@@ -72,6 +77,9 @@ class JSONLLog:
             raise LLMConfigError(
                 t("invalid_log", lang, detail="max_size=%r" % (max_size,)), code="invalid_log"
             )
+        if redact is not None and not callable(redact):
+            raise LLMConfigError(t("invalid_log", lang, detail="redact"), code="invalid_log")
+        self.redact = redact
         self.max_size = max_size
         self._lock = threading.Lock()
         try:
@@ -85,7 +93,13 @@ class JSONLLog:
 
     def _open(self) -> Any:
         fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
-        return os.fdopen(fd, "a", encoding="utf-8")
+        try:
+            if os.name == "posix":
+                os.fchmod(fd, 0o600)
+            return os.fdopen(fd, "a", encoding="utf-8")
+        except BaseException:
+            os.close(fd)
+            raise
 
     def write(
         self,
@@ -107,6 +121,12 @@ class JSONLLog:
             "request": request,
             "response": response,
         }
+        if self.redact is not None:
+            record = self.redact(copy.deepcopy(record))
+            if record is None:
+                return
+            if not isinstance(record, dict):
+                raise TypeError("redact must return a dict or None")
         line = json.dumps(record, ensure_ascii=False, default=str)
         with self._lock, self._open() as f:
             f.write(line + "\n")
@@ -131,8 +151,15 @@ class JSONLLog:
                 return
             keep = lines[max(1, len(lines) // 3):]
             fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "wb") as f:
-                f.writelines(keep)
+            try:
+                if os.name == "posix":
+                    os.fchmod(fd, 0o600)
+                with os.fdopen(fd, "wb") as f:
+                    fd = -1
+                    f.writelines(keep)
+            finally:
+                if fd != -1:
+                    os.close(fd)
             after = os.stat(self.path)
             if (after.st_ino, after.st_size, after.st_mtime_ns) != (
                 before.st_ino, before.st_size, before.st_mtime_ns

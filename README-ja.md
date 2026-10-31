@@ -155,7 +155,7 @@ m = llm("openai:gpt-6-luna", log="other.jsonl")  # インスタンスごとの�
 m2 = llm("openai:gpt-6-luna", log=False)         # このインスタンスだけオフ
 ```
 
-環境変数 `LLM_AI_API_LOG_DIR` にディレクトリを指定すると、`<ディレクトリ>/llm.jsonl` でオンになります。1 行には `time`, `provider`, `model`, `stream`, `cached`, `request`, `response` が入ります。API キーは記録されません。ログは平文で、プロンプトと回答がそのまま入るので、取り扱いに注意してください。ストリーミングは最後まで読み切ったときだけ記録されます。ファイルサイズが `max_size`（既定 100 MB。`set_log(..., max_size=None)` で無制限）を超えると、古いほうから 1/3 の行が自動で削除されます。
+環境変数 `LLM_AI_API_LOG_DIR` にディレクトリを指定すると、`<ディレクトリ>/llm.jsonl` でオンになります。1 行には `time`, `provider`, `model`, `stream`, `cached`, `request`, `response` が入ります。API キーは記録されません。ログは平文で、プロンプトと回答がそのまま入るので、取り扱いに注意してください。`JSONLLog(..., redact=hook)` で記録を加工・省略できます。POSIX では書き込み前にファイル権限を `0600` にします。ストリーミングは最後まで読み切ったときだけ記録されます。ファイルサイズが `max_size`（既定 100 MB。`set_log(..., max_size=None)` で無制限）を超えると、古いほうから 1/3 の行が自動で削除されます。
 
 詳しくは、[こちら](docs/io_logs-ja.md) を参照してください。
 

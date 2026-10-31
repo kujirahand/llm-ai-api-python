@@ -1,11 +1,13 @@
+import asyncio
 import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from llm_ai_api import LLMConfigError, get_log, llm, set_cache, set_log
+from llm_ai_api import JSONLLog, LLMConfigError, get_log, llm, set_cache, set_log
 
-from .helpers import Recorder, json_response, sse_response
+from .helpers import FreshRecorder, Recorder, json_response, sse_response
 
 OPENAI_REPLY = {
     "choices": [{"message": {"content": "ポチ"}, "finish_reason": "stop"}],
@@ -156,3 +158,63 @@ class LogTest(unittest.TestCase):
         self.addCleanup(setattr, log_module, "_env_log", None)
         self.make(Recorder(json_response(OPENAI_REPLY))).ask("q")
         self.assertTrue(os.path.exists(os.path.join(d, "llm.jsonl")))
+
+
+class LogSecurityTest(unittest.TestCase):
+    def test_redact_sync_and_async_without_changing_results(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "log")
+
+            def redact(record):
+                record["request"].pop("messages")
+                record["response"].clear()
+                return record
+
+            log = JSONLLog(path, redact=redact)
+            m = llm("openai:gpt-x", api_key="k",
+                    transport=FreshRecorder(lambda: json_response(OPENAI_REPLY)).transport, log=log)
+            self.assertEqual(m.ask("secret"), "ポチ")
+            async def run_async():
+                try:
+                    return await m.aask("secret")
+                finally:
+                    await m.aclose()
+            self.assertEqual(asyncio.run(run_async()), "ポチ")
+            with open(path, encoding="utf-8") as f:
+                records = [json.loads(line) for line in f]
+            self.assertEqual(len(records), 2)
+            for record in records:
+                self.assertNotIn("messages", record["request"])
+                self.assertEqual(record["response"], {})
+
+    def test_redact_skip_and_failure_do_not_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "log")
+            log = JSONLLog(path, redact=lambda record: None)
+            log.write("openai", "m", {}, {})
+            def fail(record):
+                raise ValueError("failed")
+            log.redact = fail
+            m = llm("openai:gpt-x", api_key="k",
+                    transport=Recorder(json_response(OPENAI_REPLY)).transport, log=log)
+            self.assertEqual(m.ask("secret"), "ポチ")
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(f.read(), "")
+
+    @unittest.skipUnless(os.name == "posix", "POSIX permissions")
+    def test_existing_permissions_and_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "log")
+            with open(path, "w") as f:
+                f.write("old\n")
+            os.chmod(path, 0o644)
+            log = JSONLLog(path)
+            self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+            os.chmod(path, 0o644)
+            with patch("llm_ai_api.log.os.fchmod", side_effect=OSError("denied")):
+                with self.assertRaises(OSError):
+                    log.write("openai", "m", {}, {})
+            with open(path) as f:
+                self.assertEqual(f.read(), "old\n")
+            log.write("openai", "m", {}, {})
+            self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)

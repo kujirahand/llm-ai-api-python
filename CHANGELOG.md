@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Raise `APIStreamError` with code `stream_incomplete` and emit `stream_error` when a chat stream ends without its terminal event (#49).
+- Secure existing log file permissions on POSIX and support an optional record redaction hook (#49).
 
 - Limit decoded response bodies while reading, including HTTP error responses, in sync and async calls (#49).
 
