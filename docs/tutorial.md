@@ -229,6 +229,8 @@ It is fine to stop a stream early. When the stream object is discarded or closed
 
 If you forget to close an instance, resources are released at process exit or during garbage collection. However, a long-running process can keep connections and file descriptors open, so close instances explicitly. A closed `LLM` cannot be reused; create a new one instead. For example, create a new `llm()` for each `asyncio.run()` call.
 
+For production deployments where you need to change the number of concurrent connections, a proxy, or TLS settings, see "Connection settings" (`set_connection()` and `connection=`) in the README.
+
 ## 10. Next steps
 
 - [Local response cache](io_cache.md): repeat requests return the stored result without calling the API (off by default).
