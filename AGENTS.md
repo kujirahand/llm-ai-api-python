@@ -357,7 +357,7 @@ LLMError                      # 基底
 - 公開 API は `__init__.py` で明示的に re-export し、それ以外は内部扱い（`_` 始まり）とする。
 - ユーザーに見えるメッセージを追加・変更したら、`lang/en.py` と `lang/ja.py` を更新する。
 - 公開 API を変更したら README-ja.md、README.md とこのファイルを同時に更新する。
-- **README-ja.md（日本語）が元で、README.md（英語）はその翻訳**。README-ja.md を変更したら、同じコミットで README.md にも同じ内容を英語で反映する（片方だけの変更はしない）。見出しの順序・コード例・リンクを両者で揃える。PyPI に表示されるのは README.md。そのため README.md のリンクは、リポジトリ内の相対パスではなく GitHub の絶対 URL にする（PyPI のページでは相対リンクが開けない）。
+- **README-ja.md（日本語）が元で、README.md（英語）はその翻訳**。README-ja.md を変更したら、同じコミットで README.md にも同じ内容を英語で反映する（片方だけの変更はしない）。見出しの順序・コード例・リンクを両者で揃える。PyPI に表示されるのは README.md。そのため README.md 内のリポジトリ内ファイル・ディレクトリへのリンク（日本語 README、docs、examples など）は、PyPI からも開けるよう `https://github.com/kujirahand/llm-ai-api-python/blob/main/...` またはディレクトリ用の `.../tree/main/...` の絶対 URL にする。相対リンクは使わない。
 - フォーマットは PEP 8 に準拠（ツールは強制しない）。
 
 ## 11. 公式 API 仕様の参照先
