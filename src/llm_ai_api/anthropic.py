@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from ._http import BaseClient
 from .errors import APIStreamError
-from .types import ChatChunk, ChatResult, Usage
+from .types import ChatChunk, ChatResult, SSEEvent, Usage
 
 DEFAULT_MAX_TOKENS = 16000
 
@@ -31,6 +31,52 @@ def _split_system(messages: List[Dict[str, Any]]) -> Tuple[Any, List[Dict[str, A
         elif isinstance(p, list):
             blocks.extend(p)
     return blocks, rest
+
+
+def _parse_response(raw: Dict[str, Any]) -> ChatResult:
+    """Build a `ChatResult` from a Messages API response (shared by sync and async)."""
+    text = "".join(
+        b.get("text", "")
+        for b in raw.get("content") or []
+        if isinstance(b, dict) and b.get("type") == "text"
+    )
+    u = raw.get("usage")
+    usage = (
+        Usage(u.get("input_tokens"), u.get("output_tokens")) if isinstance(u, dict) else None
+    )
+    return ChatResult(
+        text=text,
+        model=raw.get("model"),
+        stop_reason=raw.get("stop_reason"),
+        usage=usage,
+        raw=raw,
+    )
+
+
+def _chunk_from_event(
+    ev: SSEEvent, stream_error_headline: str
+) -> Tuple[Optional[ChatChunk], bool]:
+    """Turn one SSE event into `(chunk, terminal)` (shared by sync and async).
+
+    `ping` gives `(None, False)` (skip), `message_stop` gives `(None, True)`, and an
+    `error` event raises `APIStreamError`.
+    """
+    raw = ev.json() if ev.data else {}
+    kind = raw.get("type") or ev.event
+    if kind == "ping":
+        return None, False
+    if kind == "error":
+        err = raw.get("error") or {}
+        detail = err.get("message") or raw  # not translated: comes from the API
+        raise APIStreamError("%s: %s" % (stream_error_headline, detail), body=raw)
+    if kind == "message_stop":
+        return None, True
+    text = ""
+    if kind == "content_block_delta":
+        delta = raw.get("delta") or {}
+        if delta.get("type") == "text_delta":
+            text = delta.get("text") or ""
+    return ChatChunk(text=text, raw=raw), False
 
 
 class AnthropicClient(BaseClient):
@@ -97,22 +143,7 @@ class AnthropicClient(BaseClient):
             self._log_call(body, cached.raw, cached=True)
             return cached
         raw = self.request("/v1/messages", body)
-        text = "".join(
-            b.get("text", "")
-            for b in raw.get("content") or []
-            if isinstance(b, dict) and b.get("type") == "text"
-        )
-        u = raw.get("usage")
-        usage = (
-            Usage(u.get("input_tokens"), u.get("output_tokens")) if isinstance(u, dict) else None
-        )
-        result = ChatResult(
-            text=text,
-            model=raw.get("model"),
-            stop_reason=raw.get("stop_reason"),
-            usage=usage,
-            raw=raw,
-        )
+        result = _parse_response(raw)
         self._cache_store(body, result)
         self._log_call(body, raw)
         return result
@@ -132,23 +163,10 @@ class AnthropicClient(BaseClient):
         return self._log_chunks(body, self._iter_chunks(events), cached)
 
     def _iter_chunks(self, events: Iterator[Any]) -> Iterator[ChatChunk]:
+        headline = self._t("stream_error", provider=self.provider)
         for ev in events:
-            raw = ev.json() if ev.data else {}
-            kind = raw.get("type") or ev.event
-            if kind == "ping":
-                continue
-            if kind == "error":
-                err = raw.get("error") or {}
-                detail = err.get("message") or raw  # API が返したメッセージは翻訳しない
-                raise APIStreamError(
-                    "%s: %s" % (self._t("stream_error", provider=self.provider), detail),
-                    body=raw,
-                )
-            if kind == "message_stop":
+            chunk, terminal = _chunk_from_event(ev, headline)
+            if terminal:
                 break
-            text = ""
-            if kind == "content_block_delta":
-                delta = raw.get("delta") or {}
-                if delta.get("type") == "text_delta":
-                    text = delta.get("text") or ""
-            yield ChatChunk(text=text, raw=raw)
+            if chunk is not None:
+                yield chunk

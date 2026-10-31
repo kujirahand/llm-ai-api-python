@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from ._http import BaseClient, error_message
 from .errors import APIStreamError
-from .types import ChatChunk, ChatResult, Usage
+from .types import ChatChunk, ChatResult, SSEEvent, Usage
 
 
 def _text_of(content: Any) -> str:
@@ -19,6 +19,45 @@ def _text_of(content: Any) -> str:
             p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"
         )
     return ""
+
+
+def _parse_response(raw: Dict[str, Any]) -> ChatResult:
+    """Build a `ChatResult` from a `/chat/completions` response (shared by sync and async)."""
+    choices = raw.get("choices") or [{}]
+    choice = choices[0] or {}
+    u = raw.get("usage")
+    usage = (
+        Usage(u.get("prompt_tokens"), u.get("completion_tokens"))
+        if isinstance(u, dict)
+        else None
+    )
+    return ChatResult(
+        text=_text_of((choice.get("message") or {}).get("content")),
+        model=raw.get("model"),
+        stop_reason=choice.get("finish_reason"),
+        usage=usage,
+        raw=raw,
+    )
+
+
+def _chunk_from_event(
+    ev: SSEEvent, stream_error_headline: str
+) -> Tuple[Optional[ChatChunk], bool]:
+    """Turn one SSE event into `(chunk, terminal)` (shared by sync and async).
+
+    `terminal` is True at `data: [DONE]`. An `error` field raises `APIStreamError`.
+    """
+    if ev.data.strip() == "[DONE]":
+        return None, True
+    raw = ev.json()
+    if raw.get("error"):
+        # An error in the middle of a stream (e.g. OpenRouter sends `data: {"error": ...}`).
+        # Without this it would look like an empty chunk and the stream would end "normally".
+        detail = error_message(raw) or raw["error"]  # not translated: comes from the API
+        raise APIStreamError("%s: %s" % (stream_error_headline, detail), body=raw)
+    choices = raw.get("choices") or []
+    delta = (choices[0].get("delta") if choices else None) or {}
+    return ChatChunk(text=_text_of(delta.get("content")), raw=raw), False
 
 
 class OpenAICompatClient(BaseClient):
@@ -68,21 +107,7 @@ class OpenAICompatClient(BaseClient):
             self._log_call(body, cached.raw, cached=True)
             return cached
         raw = self.request("/chat/completions", body)
-        choices = raw.get("choices") or [{}]
-        choice = choices[0] or {}
-        u = raw.get("usage")
-        usage = (
-            Usage(u.get("prompt_tokens"), u.get("completion_tokens"))
-            if isinstance(u, dict)
-            else None
-        )
-        result = ChatResult(
-            text=_text_of((choice.get("message") or {}).get("content")),
-            model=raw.get("model"),
-            stop_reason=choice.get("finish_reason"),
-            usage=usage,
-            raw=raw,
-        )
+        result = _parse_response(raw)
         self._cache_store(body, result)
         self._log_call(body, raw)
         return result
@@ -102,21 +127,13 @@ class OpenAICompatClient(BaseClient):
         return self._log_chunks(body, self._iter_chunks(events), cached)
 
     def _iter_chunks(self, events: Iterator[Any]) -> Iterator[ChatChunk]:
+        headline = self._t("stream_error", provider=self.provider)
         for ev in events:
-            if ev.data.strip() == "[DONE]":
+            chunk, terminal = _chunk_from_event(ev, headline)
+            if terminal:
                 break
-            raw = ev.json()
-            if raw.get("error"):
-                # An error in the middle of a stream (e.g. OpenRouter sends `data: {"error": ...}`).
-                # Without this it would look like an empty chunk and the stream would end "normally".
-                detail = error_message(raw) or raw["error"]  # not translated: comes from the API
-                raise APIStreamError(
-                    "%s: %s" % (self._t("stream_error", provider=self.provider), detail),
-                    body=raw,
-                )
-            choices = raw.get("choices") or []
-            delta = (choices[0].get("delta") if choices else None) or {}
-            yield ChatChunk(text=_text_of(delta.get("content")), raw=raw)
+            if chunk is not None:
+                yield chunk
 
 
 class OpenAIClient(OpenAICompatClient):

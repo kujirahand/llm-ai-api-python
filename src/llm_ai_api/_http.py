@@ -31,30 +31,53 @@ _RETRY_STATUS = {408, 409, 429}
 _MAX_RETRY_AFTER = 60.0
 
 
+class _SSEDecoder:
+    """Line-by-line SSE state machine, shared by the sync and async readers.
+
+    Lines starting with `:` (comments) are ignored; an empty line completes an event.
+    """
+
+    def __init__(self) -> None:
+        self._event: Optional[str] = None
+        self._data: list = []
+
+    def feed(self, line: str) -> Optional[SSEEvent]:
+        """Consume one line; return the event it completes, if any."""
+        if line == "":
+            return self.flush()
+        if line.startswith(":"):
+            return None
+        name, _, value = line.partition(":")
+        if value.startswith(" "):
+            value = value[1:]
+        if name == "event":
+            self._event = value
+        elif name == "data":
+            self._data.append(value)
+        return None
+
+    def flush(self) -> Optional[SSEEvent]:
+        """Return the pending event (if any) and reset the state."""
+        ev = None
+        if self._data or self._event is not None:
+            ev = SSEEvent(self._event, "\n".join(self._data))
+        self._event, self._data = None, []
+        return ev
+
+
 def iter_sse(lines: Iterable[str]) -> Iterator[SSEEvent]:
     """行のイテレータから SSE イベントを取り出す。
 
     `:` で始まる行（コメント）は無視し、空行でイベントを確定する。
     """
-    event: Optional[str] = None
-    data: list = []
+    decoder = _SSEDecoder()
     for line in lines:
-        if line == "":
-            if data or event is not None:
-                yield SSEEvent(event, "\n".join(data))
-            event, data = None, []
-            continue
-        if line.startswith(":"):
-            continue
-        name, _, value = line.partition(":")
-        if value.startswith(" "):
-            value = value[1:]
-        if name == "event":
-            event = value
-        elif name == "data":
-            data.append(value)
-    if data or event is not None:
-        yield SSEEvent(event, "\n".join(data))
+        ev = decoder.feed(line)
+        if ev is not None:
+            yield ev
+    ev = decoder.flush()
+    if ev is not None:
+        yield ev
 
 
 def _mask_url(url: str) -> str:

@@ -1,5 +1,6 @@
 """テスト用ヘルパー。ネットワークには出ず、httpx.MockTransport で応答を差し替える。"""
 
+import asyncio
 import json
 
 import httpx
@@ -46,3 +47,50 @@ class FailingStream(httpx.SyncByteStream):
     def __iter__(self):
         raise self.exc
         yield b""  # pragma: no cover  (makes this a generator)
+
+
+class FreshRecorder(Recorder):
+    """Recorder whose responses may be factories (called once per request).
+
+    httpx wraps a response's stream for the client that sent it, so one Response
+    object cannot be returned to both a sync and an async client. Tests that mix
+    both pass `lambda: json_response(...)` instead.
+    """
+
+    def __call__(self, request):
+        r = super().__call__(request)
+        return r() if callable(r) else r
+
+
+class AsyncFailingStream(httpx.AsyncByteStream):
+    """Async version of FailingStream: fails while the body is being read."""
+
+    def __init__(self, exc):
+        self.exc = exc
+
+    async def __aiter__(self):
+        raise self.exc
+        yield b""  # pragma: no cover  (makes this an async generator)
+
+
+class BlockingAsyncStream(httpx.AsyncByteStream):
+    """Yields `first` once, then waits forever (until cancelled). Records `aclose()`.
+
+    Create it inside the running test loop (Python 3.9 binds asyncio.Event to it).
+    """
+
+    def __init__(self, first=b""):
+        self.first = first
+        self.closed = False
+        self.started = asyncio.Event()
+        self._never = asyncio.Event()
+
+    async def __aiter__(self):
+        if self.first:
+            yield self.first
+        self.started.set()
+        await self._never.wait()
+        yield b""  # pragma: no cover
+
+    async def aclose(self):
+        self.closed = True
