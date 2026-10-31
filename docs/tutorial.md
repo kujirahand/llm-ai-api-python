@@ -99,6 +99,11 @@ print(result.model, result.stop_reason, result.usage)
 | `stop_reason` | Why generation stopped (the raw value from the API) |
 | `usage` | `input_tokens` and `output_tokens` (`None` if unavailable) |
 | `raw` | The whole JSON (dict) returned by the API |
+| `request_id` | `x-request-id` or `request-id` (`None` when absent) |
+| `latency` | Seconds from the start of the call until the body was read, including retry waits |
+| `retries` | How many retries ran before this response (0 when the first attempt succeeded) |
+
+`ask()` returns only the text. Use `chat()` to read `request_id`.
 
 ## 5. Streaming
 
@@ -109,7 +114,10 @@ from llm_ai_api import llm
 
 m = llm("openai:gpt-6-luna")
 
-for piece in m.stream("Write a short story"):
+stream = m.stream("Write a short story")
+print(stream.request_id)  # set when stream() returns
+
+for piece in stream:
     print(piece, end="", flush=True)
 print()
 ```
@@ -185,6 +193,20 @@ except LLMError as e:
 Every exception has a language-independent `code` attribute (e.g. `"missing_api_key"`). Check `code` rather than the message text, which changes with translation.
 
 Failed requests are retried automatically, up to `max_retries` times (2 by default). Only connection-stage failures (the request never reached the server) and HTTP 408 / 409 / 429 / 5xx are retried. Failures after the request was sent, such as read timeouts, are not retried (to avoid running and paying for the same generation twice). In latency-sensitive services, consider `llm(..., max_retries=0)` or a short `timeout`. See the [configuration reference](config.md) for details.
+
+Connection failures (`APIConnectionError` / `APITimeoutError`) and mid-stream errors (`APIStreamError`) also have `provider` and `request_id`. `request_id` is `None` when the failure happened before response headers. They also have `retries` and `latency` (seconds). HTTP errors (`APIStatusError`) have `retries` and `latency` too.
+
+Retries and failures are not written to the I/O log. Receive them with `add_event_listener`. A listener that raises does not fail the request.
+
+```python
+def on_event(event, payload):
+    print(event, payload.get("request_id"), payload.get("retries"))
+
+m.add_event_listener("retry", on_event)
+m.add_event_listener("connection_error", on_event)
+```
+
+Event names are `retry`, `connection_error`, `response`, `http_error`, `request_error`, `stream_error`, `stream_end`, and `cache_hit`. Pass `None` to receive every event. `remove_event_listener` takes the same event name and function you registered.
 
 ## 9. Reuse and cleanup
 

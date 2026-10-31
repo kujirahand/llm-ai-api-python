@@ -1,4 +1,4 @@
-"""戻り値の型。"""
+"""Return types."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .lang import t
 
 @dataclass
 class Usage:
-    """トークン使用量。"""
+    """Token usage."""
 
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
@@ -20,32 +20,51 @@ class Usage:
 
 @dataclass
 class ChatResult:
-    """チャットの結果。`raw` にレスポンス JSON 全体が入る。"""
+    """Result of one chat call. `raw` is the response JSON.
+
+    `request_id` comes from the `x-request-id` header (OpenAI-style) or the
+    `request-id` header (Anthropic), and is None when the response had neither.
+    `latency` is seconds from the start of the call until the body was read,
+    including time spent waiting to retry. `retries` is how many retries ran
+    before this response (0 when the first attempt succeeded).
+
+    A cache hit returns the `request_id`, `latency`, and `retries` stored with
+    the original response. Entries written before those fields existed load as
+    None, None, and 0.
+    """
 
     text: str
     model: Optional[str] = None
     stop_reason: Optional[str] = None
     usage: Optional[Usage] = None
     raw: Dict[str, Any] = field(default_factory=dict)
+    request_id: Optional[str] = None
+    latency: Optional[float] = None
+    retries: int = 0
 
 
 @dataclass
 class ChatChunk:
-    """ストリーミングの 1 イベント。`text` はテキスト差分（なければ空文字）。"""
+    """One streaming event. `text` is the text delta (empty when there is none).
+
+    `request_id` is the same value on every chunk of the call. It is None when
+    the response had no request id.
+    """
 
     text: str
     raw: Dict[str, Any] = field(default_factory=dict)
+    request_id: Optional[str] = None
 
 
 @dataclass
 class SSEEvent:
-    """Server-Sent Events の 1 イベント。`data` は生の文字列。"""
+    """One Server-Sent Event. `data` is the raw string."""
 
     event: Optional[str]
     data: str
 
     def json(self) -> Dict[str, Any]:
-        """`data` を JSON として解釈して返す。"""
+        """Parse `data` as a JSON object and return it."""
         try:
             value = json.loads(self.data)
         except ValueError as e:

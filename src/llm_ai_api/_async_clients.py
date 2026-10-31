@@ -15,6 +15,7 @@ from .anthropic import _parse_response as _anthropic_parse
 from .openai import OpenAICompatClient
 from .openai import _chunk_from_event as _openai_chunk
 from .openai import _parse_response as _openai_parse
+from ._events import apply_result_meta
 from .types import ChatResult
 
 
@@ -54,12 +55,12 @@ class _AsyncOpenAICompatClient(_AsyncBaseClient):
     ) -> ChatResult:
         """Call the chat once. Parameters that are not given are not sent."""
         body = self._build_body(model, messages, max_tokens, temperature, extra, False)
-        cached = await self._acache_lookup(body)
+        cached = await self._alookup_chat_cache(body)
         if cached is not None:
             await self._alog_call(body, cached.raw, cached=True)
             return cached
-        raw = await self.request("/chat/completions", body, timeout=timeout)
-        result = _openai_parse(raw)
+        raw, meta = await self._read_json("/chat/completions", body, timeout=timeout)
+        result = apply_result_meta(_openai_parse(raw), meta)
         await self._acache_store(body, result)
         await self._alog_call(body, raw)
         return result
@@ -78,7 +79,7 @@ class _AsyncOpenAICompatClient(_AsyncBaseClient):
         body = self._build_body(model, messages, max_tokens, temperature, extra, True)
         events, cached = await self._astream_events("/chat/completions", body, timeout=timeout)
         headline = self._t("stream_error", provider=self.provider)
-        chunks = _AsyncChunks(events, lambda ev: _openai_chunk(ev, headline))
+        chunks = _AsyncChunks(events, lambda ev: _openai_chunk(ev, headline), self)
         return self._alog_chunks(chunks, body, cached)
 
 
@@ -171,12 +172,12 @@ class _AsyncAnthropicClient(_AsyncBaseClient):
     ) -> ChatResult:
         """Call the chat once. Unspecified parameters other than `max_tokens` are not sent."""
         body = self._build_body(model, messages, max_tokens, temperature, extra, False)
-        cached = await self._acache_lookup(body)
+        cached = await self._alookup_chat_cache(body)
         if cached is not None:
             await self._alog_call(body, cached.raw, cached=True)
             return cached
-        raw = await self.request("/v1/messages", body, timeout=timeout)
-        result = _anthropic_parse(raw)
+        raw, meta = await self._read_json("/v1/messages", body, timeout=timeout)
+        result = apply_result_meta(_anthropic_parse(raw), meta)
         await self._acache_store(body, result)
         await self._alog_call(body, raw)
         return result
@@ -195,5 +196,5 @@ class _AsyncAnthropicClient(_AsyncBaseClient):
         body = self._build_body(model, messages, max_tokens, temperature, extra, True)
         events, cached = await self._astream_events("/v1/messages", body, timeout=timeout)
         headline = self._t("stream_error", provider=self.provider)
-        chunks = _AsyncChunks(events, lambda ev: _anthropic_chunk(ev, headline))
+        chunks = _AsyncChunks(events, lambda ev: _anthropic_chunk(ev, headline), self)
         return self._alog_chunks(chunks, body, cached)

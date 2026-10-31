@@ -15,12 +15,22 @@ import asyncio
 import json
 import os
 import random
+import time
 import warnings
 from typing import Any, AsyncIterable, AsyncIterator, Callable, Dict, List, Mapping, Optional, Tuple
 
 import httpx
 
 from . import _http
+from ._events import (
+    EventDispatcher,
+    _CallMeta,
+    cache_hit_payload,
+    note_request_error,
+    note_stream_error,
+    request_id_of,
+    retry_payload,
+)
 from ._http import (
     _DEFAULT_RETRY_AFTER_MAX,
     _RETRY_STATUS,
@@ -29,6 +39,7 @@ from ._http import (
     _mask_url,
     _is_terminal_event,
     _retry_after_delay,
+    _transport_reason,
     _SSEDecoder,
     _user_agent,
     error_message,
@@ -38,6 +49,7 @@ from .cache import CACHE_NOT_SET, SQLiteCache, cache_key, resolve_cache
 from .errors import (
     APIConnectionError,
     APIStatusError,
+    APIStreamError,
     APITimeoutError,
     LLMConfigError,
     LLMError,
@@ -105,6 +117,7 @@ class _AsyncBaseClient:
         """
         self.lang = lang
         _check_retry_after_max(retry_after_max, lang)
+        self._events = EventDispatcher()
         self.cache = resolve_cache(cache, lang=lang)
         self.log = resolve_log(log, lang=lang)
         key = api_key
@@ -136,6 +149,17 @@ class _AsyncBaseClient:
                 timeout=httpx.Timeout(timeout, connect=self._connect_timeout),
                 **build_httpx_kwargs(self.connection, lang=lang),
             )
+
+    def add_event_listener(self, event: Optional[str], listener: Any) -> None:
+        """Same contract as ``BaseClient.add_event_listener`` (internal client)."""
+        self._events.add(event, listener, self.lang)
+
+    def remove_event_listener(self, event: Optional[str], listener: Any) -> None:
+        """Same contract as ``BaseClient.remove_event_listener`` (internal client)."""
+        self._events.remove(event, listener, self.lang)
+
+    def _emit(self, event: str, payload: Dict[str, Any]) -> None:
+        self._events.emit(event, payload)
 
     def __repr__(self) -> str:
         return "%s(base_url=%r)" % (type(self).__name__, _mask_url(self.base_url))
@@ -220,18 +244,29 @@ class _AsyncBaseClient:
         """Pass chunks through and log the whole stream once it has been read to the end."""
         return _AsyncLoggedChunks(self, chunks, body, cached)
 
+    async def _alookup_chat_cache(self, body: Dict[str, Any]) -> Optional[ChatResult]:
+        """Return a cached chat result and emit ``cache_hit``, or None on a miss."""
+        cached = await self._acache_lookup(body)
+        if cached is None:
+            return None
+        self._emit("cache_hit", cache_hit_payload(self.provider, False, body.get("model"), cached))
+        return cached
+
     async def _astream_events(
         self, path: str, body: Dict[str, Any], timeout: Optional[float] = None
     ) -> Tuple[Any, bool]:
         """`request_stream()` with the response cache: replay a hit, record a miss.
 
         Returns the events (an async iterator with `aclose()`) and whether they were
-        replayed from the cache.
+        replayed from the cache. The iterator exposes `request_id` and `retries`.
         """
         cached = await self._acache_lookup(body)
         if cached is not None and isinstance(cached.raw.get("events"), list):
             replay = [SSEEvent(e.get("event"), e.get("data", "")) for e in cached.raw["events"]]
-            return _ReplayEvents(replay), True
+            self._emit(
+                "cache_hit", cache_hit_payload(self.provider, True, body.get("model"), cached)
+            )
+            return _ReplayEvents(replay, cached.request_id, cached.retries), True
         events = await self.request_stream(path, body, timeout=timeout)
         if self.cache is None:
             return events, False
@@ -254,24 +289,42 @@ class _AsyncBaseClient:
         timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Send JSON and return the response JSON (dict) as is."""
-        resp = await self._aopen(method, path, body, headers, timeout, stream=False)
+        value, _meta = await self._read_json(
+            path, body, method=method, headers=headers, timeout=timeout
+        )
+        return value
+
+    async def _read_json(
+        self,
+        path: str,
+        body: Optional[Dict[str, Any]] = None,
+        *,
+        method: str = "POST",
+        headers: Optional[Dict[str, str]] = None,
+        timeout: Optional[float] = None,
+    ) -> Tuple[Dict[str, Any], _CallMeta]:
+        """Like ``request()``, but also return call metadata for ``achat()``."""
+        resp, meta = await self._aopen(method, path, body, headers, timeout, stream=False)
         try:
             if len(resp.content) > _http._MAX_RESPONSE_BYTES:
+                self._emit_request_error(meta, "response_too_large")
                 raise _http._too_large(_http._MAX_RESPONSE_BYTES, self.lang)
             try:
                 value = resp.json()
             except ValueError as e:
+                self._emit_request_error(meta, "invalid_json_response")
                 raise LLMError(
                     self._t("invalid_json_response", preview=resp.text[:200]),
                     code="invalid_json_response",
                 ) from e
             if not isinstance(value, dict):
                 # Valid JSON but not an object (array, scalar, null).
+                self._emit_request_error(meta, "invalid_json_response")
                 raise LLMError(
                     self._t("invalid_json_response", preview=resp.text[:200]),
                     code="invalid_json_response",
                 )
-            return value
+            return value, meta
         finally:
             await resp.aclose()
 
@@ -283,9 +336,12 @@ class _AsyncBaseClient:
         headers: Optional[Dict[str, str]] = None,
         timeout: Optional[float] = None,
     ) -> "_AsyncEventStream":
-        """Send JSON and return the SSE events. HTTP errors are raised by this call."""
-        resp = await self._aopen("POST", path, body, headers, timeout, stream=True)
-        return _AsyncEventStream(self, resp)
+        """Send JSON and return the SSE events. HTTP errors are raised by this call.
+
+        The returned stream has ``request_id`` and ``retries`` as soon as this returns.
+        """
+        resp, meta = await self._aopen("POST", path, body, headers, timeout, stream=True)
+        return _AsyncEventStream(self, resp, meta)
 
     # --- internals -------------------------------------------------------------
 
@@ -313,11 +369,107 @@ class _AsyncBaseClient:
     async def _sleep(self, seconds: float) -> None:
         await asyncio.sleep(seconds)
 
-    async def _backoff(self, attempt: int, retry_after: Optional[str]) -> None:
+    def _retry_delay(self, attempt: int, retry_after: Optional[str]) -> float:
         delay = _retry_after_delay(retry_after, self.retry_after_max)
         if delay is None:
             delay = min(8.0, 0.5 * (2 ** attempt)) * (0.75 + random.random() / 2)
+        return delay
+
+    async def _emit_retry(
+        self,
+        method: str,
+        path: str,
+        stream: bool,
+        attempt: int,
+        reason: str,
+        status_code: Optional[int],
+        request_id: Optional[str],
+        retry_after: Optional[str] = None,
+    ) -> None:
+        delay = self._retry_delay(attempt, retry_after)
+        self._emit(
+            "retry",
+            retry_payload(
+                self.provider,
+                method,
+                path,
+                stream,
+                attempt,
+                self.max_retries,
+                delay,
+                reason,
+                status_code,
+                request_id,
+            ),
+        )
         await self._sleep(delay)
+
+    def _call_meta(
+        self,
+        method: str,
+        path: str,
+        stream: bool,
+        started: float,
+        attempt: int,
+        resp: Optional[httpx.Response],
+    ) -> _CallMeta:
+        return _CallMeta(
+            method=method,
+            path=path,
+            stream=stream,
+            started=started,
+            request_id=None if resp is None else request_id_of(resp.headers),
+            retries=attempt,
+            status_code=None if resp is None else resp.status_code,
+            latency=time.monotonic() - started,
+        )
+
+    def _emit_request_error(self, meta: _CallMeta, code: str) -> None:
+        self._emit(
+            "request_error",
+            {
+                "provider": self.provider,
+                "method": meta.method,
+                "path": meta.path,
+                "stream": meta.stream,
+                "attempt": meta.retries,
+                "retries": meta.retries,
+                "status_code": meta.status_code,
+                "request_id": meta.request_id,
+                "latency": meta.latency,
+                "code": code,
+            },
+        )
+
+    def _emit_connection_error(
+        self,
+        exc: BaseException,
+        *,
+        method: str,
+        path: str,
+        stream: bool,
+        attempt: int,
+        request_id: Optional[str],
+        status_code: Optional[int],
+        latency: float,
+        code: str,
+    ) -> None:
+        self._emit(
+            "connection_error",
+            {
+                "provider": self.provider,
+                "method": method,
+                "path": path,
+                "stream": stream,
+                "attempt": attempt,
+                "retries": attempt,
+                "status_code": status_code,
+                "request_id": request_id,
+                "latency": latency,
+                "code": code,
+                "reason": _transport_reason(exc),
+            },
+        )
 
     async def _aopen(
         self,
@@ -327,7 +479,7 @@ class _AsyncBaseClient:
         headers: Optional[Dict[str, str]],
         timeout: Optional[float],
         stream: bool,
-    ) -> httpx.Response:
+    ) -> Tuple[httpx.Response, _CallMeta]:
         url = self.base_url + "/" + path.lstrip("/")
         content = (
             None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -335,6 +487,7 @@ class _AsyncBaseClient:
         kwargs: Dict[str, Any] = {}
         if timeout is not None:
             kwargs["timeout"] = httpx.Timeout(timeout, connect=self._connect_timeout)
+        started = time.monotonic()
         attempt = 0
         while True:
             try:
@@ -356,23 +509,58 @@ class _AsyncBaseClient:
                     await resp.aread()
                 elif not stream:
                     if _http._declared_too_large(resp):
+                        meta = self._call_meta(method, path, stream, started, attempt, resp)
                         await resp.aclose()
+                        self._emit_request_error(meta, "response_too_large")
                         raise _http._too_large(_http._MAX_RESPONSE_BYTES, self.lang)
                     await resp.aread()
+                    if len(resp.content) > _http._MAX_RESPONSE_BYTES:
+                        meta = self._call_meta(method, path, stream, started, attempt, resp)
+                        await resp.aclose()
+                        self._emit_request_error(meta, "response_too_large")
+                        raise _http._too_large(_http._MAX_RESPONSE_BYTES, self.lang)
             except httpx.RequestError as e:
                 if resp is not None:
                     await resp.aclose()
                 if attempt < self.max_retries and _is_retryable_transport_error(
                     e, self.retry_read_timeout
                 ):
-                    await self._backoff(attempt, None)
+                    await self._emit_retry(
+                        method, path, stream, attempt, _transport_reason(e), None, None
+                    )
                     attempt += 1
                     continue
+                latency = time.monotonic() - started
                 if isinstance(e, httpx.TimeoutException):
-                    raise APITimeoutError(self._t("timeout"), code="timeout") from e
-                raise APIConnectionError(
-                    self._t("connection_error", detail=e), code="connection_error"
-                ) from e
+                    err: APIConnectionError = APITimeoutError(
+                        self._t("timeout"),
+                        code="timeout",
+                        provider=self.provider,
+                        request_id=None,
+                        retries=attempt,
+                        latency=latency,
+                    )
+                else:
+                    err = APIConnectionError(
+                        self._t("connection_error", detail=e),
+                        code="connection_error",
+                        provider=self.provider,
+                        request_id=None,
+                        retries=attempt,
+                        latency=latency,
+                    )
+                self._emit_connection_error(
+                    e,
+                    method=method,
+                    path=path,
+                    stream=stream,
+                    attempt=attempt,
+                    request_id=None,
+                    status_code=None,
+                    latency=latency,
+                    code=err.code or "connection_error",
+                )
+                raise err from e
             except BaseException:
                 # e.g. asyncio.CancelledError: release the response, never convert it.
                 if resp is not None:
@@ -380,17 +568,54 @@ class _AsyncBaseClient:
                 raise
 
             if resp.status_code < 400:
-                return resp
+                meta = self._call_meta(method, path, stream, started, attempt, resp)
+                self._emit(
+                    "response",
+                    {
+                        "provider": self.provider,
+                        "method": method,
+                        "path": path,
+                        "stream": stream,
+                        "attempt": attempt,
+                        "retries": attempt,
+                        "status_code": resp.status_code,
+                        "request_id": meta.request_id,
+                        "latency": meta.latency,
+                        "cached": False,
+                    },
+                )
+                return resp, meta
             if (
                 resp.status_code in _RETRY_STATUS or resp.status_code >= 500
             ) and attempt < self.max_retries:
                 retry_after = resp.headers.get("retry-after")
+                status_code = resp.status_code
+                request_id = request_id_of(resp.headers)
                 await resp.aclose()
-                await self._backoff(attempt, retry_after)
+                await self._emit_retry(
+                    method, path, stream, attempt, "status", status_code, request_id, retry_after
+                )
                 attempt += 1
                 continue
             try:
-                raise self._make_error(resp)
+                err_status = self._make_error(resp)
+                err_status.retries = attempt
+                err_status.latency = time.monotonic() - started
+                self._emit(
+                    "http_error",
+                    {
+                        "provider": self.provider,
+                        "method": method,
+                        "path": path,
+                        "stream": stream,
+                        "attempt": attempt,
+                        "retries": attempt,
+                        "status_code": resp.status_code,
+                        "request_id": err_status.request_id,
+                        "latency": err_status.latency,
+                    },
+                )
+                raise err_status
             finally:
                 await resp.aclose()
 
@@ -406,13 +631,12 @@ class _AsyncBaseClient:
         hint = self._hint(resp.status_code)
         if hint:
             message += "\n" + hint
-        request_id = resp.headers.get("x-request-id") or resp.headers.get("request-id")
         return status_error_class(resp.status_code)(
             message,
             status_code=resp.status_code,
             body=body,
             provider=self.provider,
-            request_id=request_id,
+            request_id=request_id_of(resp.headers),
             headers=dict(resp.headers),
         )
 
@@ -442,14 +666,28 @@ class _AsyncEventStream:
     Callers should `aclose()` a stream they stop early. As a last resort, a stream
     garbage-collected while still open schedules `resp.aclose()` on the event loop it
     was created on, or emits a `ResourceWarning` if that loop is gone.
+
+    `request_id` and `retries` are available as soon as the stream is returned.
+    `aclose()` after a terminal SSE event emits `stream_end`. The garbage-collection
+    path only closes the response; it does not emit (it cannot await listeners).
     """
 
-    def __init__(self, client: _AsyncBaseClient, resp: httpx.Response) -> None:
+    def __init__(self, client: _AsyncBaseClient, resp: httpx.Response, meta: _CallMeta) -> None:
         self._client = client
         self._resp = resp
         self._lines = resp.aiter_lines()
         self._events = aiter_sse(self._lines, client.lang)
+        self._meta = meta
+        self.request_id = meta.request_id
+        self.retries = meta.retries
+        self.started = meta.started
+        self.method = meta.method
+        self.path = meta.path
+        self.status_code = meta.status_code
         self._closed = False
+        self._terminal = False
+        self._errored = False
+        self._end_emitted = False
         try:
             self._loop: Optional[asyncio.AbstractEventLoop] = asyncio.get_running_loop()
         except RuntimeError:
@@ -462,25 +700,66 @@ class _AsyncEventStream:
         if self._closed:
             raise StopAsyncIteration
         try:
-            return await self._events.__anext__()
+            ev = await self._events.__anext__()
         except StopAsyncIteration:
             await self.aclose()
             raise
-        except httpx.TimeoutException as e:
-            await self.aclose()
-            raise APITimeoutError(self._client._t("stream_timeout"), code="timeout") from e
         except httpx.RequestError as e:
+            await self._fail_read(e)
+        except LLMError as e:
+            self._errored = True
             await self.aclose()
-            raise APIConnectionError(
-                self._client._t("stream_connection_error", detail=e), code="connection_error"
-            ) from e
+            note_request_error(self._client, self, e.code)
+            raise
         except BaseException:
             # Includes asyncio.CancelledError: close the response, then propagate.
+            self._errored = True
             await self.aclose()
             raise
+        if _is_terminal_event(ev):
+            self._terminal = True
+        return ev
+
+    async def _fail_read(self, exc: httpx.RequestError) -> None:
+        self._errored = True
+        latency = time.monotonic() - self.started
+        await self.aclose()
+        if isinstance(exc, httpx.TimeoutException):
+            err: APIConnectionError = APITimeoutError(
+                self._client._t("stream_timeout"),
+                code="timeout",
+                provider=self._client.provider,
+                request_id=self.request_id,
+                retries=self.retries,
+                latency=latency,
+            )
+        else:
+            err = APIConnectionError(
+                self._client._t("stream_connection_error", detail=exc),
+                code="connection_error",
+                provider=self._client.provider,
+                request_id=self.request_id,
+                retries=self.retries,
+                latency=latency,
+            )
+        self._client._emit_connection_error(
+            exc,
+            method=self.method,
+            path=self.path,
+            stream=True,
+            attempt=self.retries,
+            request_id=self.request_id,
+            status_code=self.status_code,
+            latency=latency,
+            code=err.code or "connection_error",
+        )
+        raise err from exc
 
     async def aclose(self) -> None:
-        """Close the stream and the response. Safe to call more than once."""
+        """Close the stream and the response. Safe to call more than once.
+
+        After a terminal SSE event, the first close emits `stream_end`.
+        """
         if self._closed:
             return
         self._closed = True
@@ -493,6 +772,19 @@ class _AsyncEventStream:
                 await _close_quietly(self._lines)
             finally:
                 await _close_quietly(self._resp)
+        if self._terminal and not self._errored and not self._end_emitted:
+            self._end_emitted = True
+            self._client._emit(
+                "stream_end",
+                {
+                    "provider": self._client.provider,
+                    "request_id": self.request_id,
+                    "retries": self.retries,
+                    "latency": time.monotonic() - self.started,
+                    "stream": True,
+                    "complete": True,
+                },
+            )
 
     def __del__(self) -> None:
         # Safety net for a stream dropped without aclose(). Never raise from here.
@@ -515,10 +807,16 @@ class _AsyncEventStream:
 
 
 class _ReplayEvents:
-    """Events replayed from the cache."""
+    """Events replayed from the cache. Exposes the stored call metadata."""
 
-    def __init__(self, events: List[SSEEvent]) -> None:
+    def __init__(self, events: List[SSEEvent], request_id: Optional[str], retries: int) -> None:
         self._it = iter(events)
+        self.request_id = request_id
+        self.retries = retries
+        self.started = None
+        self.method = None
+        self.path = None
+        self.status_code = None
 
     def __aiter__(self) -> "_ReplayEvents":
         return self
@@ -547,6 +845,12 @@ class _AsyncRecordedEvents:
         self._body = body
         self._recorded: List[Dict[str, Any]] = []
         self._stored = False
+        self.request_id = getattr(events, "request_id", None)
+        self.retries = getattr(events, "retries", 0) or 0
+        self.started = getattr(events, "started", None)
+        self.method = getattr(events, "method", None)
+        self.path = getattr(events, "path", None)
+        self.status_code = getattr(events, "status_code", None)
 
     def __aiter__(self) -> "_AsyncRecordedEvents":
         return self
@@ -555,9 +859,11 @@ class _AsyncRecordedEvents:
         if self._stored:
             return
         self._stored = True
-        await self._client._acache_store(
-            self._body, ChatResult("", None, None, None, {"events": self._recorded})
-        )
+        stored = ChatResult("", None, None, None, {"events": self._recorded})
+        stored.request_id = self.request_id
+        stored.retries = self.retries
+        stored.latency = None if self.started is None else time.monotonic() - self.started
+        await self._client._acache_store(self._body, stored)
 
     async def __anext__(self) -> SSEEvent:
         try:
@@ -580,11 +886,17 @@ class _AsyncChunks:
     """Turn events into `ChatChunk`s with `parse(ev) -> (chunk or None, terminal)`."""
 
     def __init__(
-        self, events: Any, parse: Callable[[SSEEvent], Tuple[Optional[ChatChunk], bool]]
+        self,
+        events: Any,
+        parse: Callable[[SSEEvent], Tuple[Optional[ChatChunk], bool]],
+        client: _AsyncBaseClient,
     ) -> None:
         self._events = events
         self._parse = parse
+        self._client = client
         self._done = False
+        self.request_id = getattr(events, "request_id", None)
+        self.retries = getattr(events, "retries", 0) or 0
 
     def __aiter__(self) -> "_AsyncChunks":
         return self
@@ -595,9 +907,25 @@ class _AsyncChunks:
                 raise StopAsyncIteration
             try:
                 ev = await self._events.__anext__()
-                chunk, terminal = self._parse(ev)
             except StopAsyncIteration:
                 self._done = True
+                raise
+            except BaseException:
+                # Transport errors and size limits are already reported by the event stream.
+                self._done = True
+                await _close_quietly(self._events)
+                raise
+            try:
+                chunk, terminal = self._parse(ev)
+            except APIStreamError as e:
+                self._done = True
+                note_stream_error(self._client, e, self._events)
+                await _close_quietly(self._events)
+                raise
+            except LLMError as e:
+                self._done = True
+                note_request_error(self._client, self._events, e.code)
+                await _close_quietly(self._events)
                 raise
             except BaseException:
                 self._done = True
@@ -608,6 +936,7 @@ class _AsyncChunks:
                 await _close_quietly(self._events)
                 raise StopAsyncIteration
             if chunk is not None:
+                chunk.request_id = self.request_id
                 return chunk
 
     async def aclose(self) -> None:
@@ -631,6 +960,8 @@ class _AsyncLoggedChunks:
         self._texts: List[str] = []
         self._raws: List[Any] = []
         self._done = False
+        self.request_id = getattr(chunks, "request_id", None)
+        self.retries = getattr(chunks, "retries", 0) or 0
 
     def __aiter__(self) -> "_AsyncLoggedChunks":
         return self

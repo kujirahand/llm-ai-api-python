@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.5.0
+
+- Call metadata on success: `ChatResult.request_id`, `latency` (seconds), and `retries`. The same fields are on `APIConnectionError`, `APITimeoutError`, `APIStatusError`, and `APIStreamError`. Streaming exposes `request_id` on each `ChatChunk` and on the iterators from `stream()` / `stream_chat()` / `request_stream()` (#30).
+- `add_event_listener` / `remove_event_listener` on `LLM` and provider clients. Events: `retry`, `connection_error`, `response`, `http_error`, `request_error`, `stream_error`, `stream_end`, `cache_hit`. A listener that raises `Exception` does not fail the request. Sync and async calls share one listener list.
+
 ## 0.3.1
 
 - Optional encrypted SQLite response cache for chat and streaming (`set_cache()`, `cache=`, `LLM_AI_API_CACHE_DIR`) and `clear_cache(days)`, see `docs/io_cache.md`.

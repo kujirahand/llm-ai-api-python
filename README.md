@@ -31,7 +31,7 @@ for piece in luna.stream("Write a short story"):
     print(piece, end="", flush=True)
 
 # Using a chat history
-result = luna.chat([{"role": "user", "content": "hi"}])  # ChatResult: text, stop_reason, usage, raw
+result = luna.chat([{"role": "user", "content": "hi"}])  # ChatResult: text, stop_reason, usage, raw, request_id, latency, retries
 ```
 
 A stream closes its connection by itself when it is read to the end or dropped (for async streams, only while the event loop that created the stream is still running). To stop early, call `close()` (`await stream.aclose()` in async code) to release the connection right away.
@@ -67,6 +67,52 @@ m.set_config(max_retries=0)  # change after creation (only the given arguments; 
 ```
 
 By default, only connection-stage failures (the request never reached the server) and HTTP 408 / 409 / 429 / 5xx are retried. Failures after the request was sent, such as read timeouts, are not retried, to avoid double billing (`retry_read_timeout=True` retries read timeouts too). `retry_after_max` caps how many seconds to wait when following a `retry-after` header. For the full list of settings and production recommendations, see the [configuration reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/config.md).
+
+### Call results and events
+
+`ChatResult` from `chat()` / `achat()` carries the following in addition to the response body (`raw`):
+
+| Field | Contents |
+|---|---|
+| `request_id` | `x-request-id` (OpenAI-style) or `request-id` (Anthropic). `None` when neither was sent |
+| `latency` | Seconds from the start of the call until the body was read, including time spent waiting to retry |
+| `retries` | How many retries ran before this response (0 when the first attempt succeeded) |
+
+`ask()` still returns only the text. Use `chat()` when you need `request_id`.
+
+```python
+result = luna.chat([{"role": "user", "content": "hi"}])
+print(result.request_id, result.retries, result.latency)
+```
+
+For a stream, the iterator returned by `stream()` already has `request_id` and `retries` when the call returns. On `astream()` those attributes are set after the first iteration receives the response headers, before the first text delta. Each `ChatChunk` from `stream_chat()` also has `request_id`.
+
+Retries and connection failures are not written to the I/O log (the log records successful calls only). Observe them with `add_event_listener`.
+
+```python
+def on_event(event, payload):
+    # payload does not include the API key or the prompt
+    print(event, payload.get("request_id"), payload.get("retries"))
+
+luna.add_event_listener("retry", on_event)     # this event only
+luna.add_event_listener(None, on_event)        # every event
+luna.remove_event_listener("retry", on_event)  # drop one registration of the same function
+```
+
+A listener is `listener(event, payload)`. If it raises `Exception`, the request continues and later listeners still run (`KeyboardInterrupt` and cancellation are not caught). On the async path the listener is still called synchronously on the event loop, so it should not block. An unknown event name raises `LLMConfigError` (`code="invalid_event"`).
+
+| Event | When |
+|---|---|
+| `retry` | Just before a retry. `delay` (seconds to wait), `reason` (`status` / `connect` / `timeout` / `read_timeout` / `transport`), `request_id`, `status_code` |
+| `connection_error` | A transport failure that will not be retried. `code` is `timeout` or `connection_error` |
+| `response` | HTTP success (status below 400). `latency` is time-to-headers for a stream, and time until the body is read otherwise |
+| `http_error` | An HTTP error that will not be retried |
+| `request_error` | The body was too large or was not JSON (`code` says which) |
+| `stream_error` | An error event in the middle of a stream |
+| `stream_end` | A live stream was closed after its terminal event |
+| `cache_hit` | Served from the cache (no `response` event; `request_id` is the stored value) |
+
+`payload` is a plain dict with keys such as `provider`, `request_id`, `retries`, and `latency` (seconds). `request()` still returns only the body dict; read `request_id` from the `response` event.
 
 ### Async
 

@@ -99,6 +99,11 @@ print(result.model, result.stop_reason, result.usage)
 | `stop_reason` | 終了理由（API が返した値のまま） |
 | `usage` | `input_tokens` と `output_tokens`（取得できなければ `None`） |
 | `raw` | API が返した JSON（dict）全体 |
+| `request_id` | `x-request-id` または `request-id`（無ければ `None`） |
+| `latency` | 呼び出し開始からボディ読了までの秒（リトライの待ちを含む） |
+| `retries` | その応答の前に行ったリトライ回数（最初で成功すれば 0） |
+
+`ask()` の戻り値はテキストだけです。`request_id` を見るときは `chat()` を使います。
 
 ## 5. ストリーミング
 
@@ -109,7 +114,10 @@ from llm_ai_api import llm
 
 m = llm("openai:gpt-6-luna")
 
-for piece in m.stream("短い物語を書いて"):
+stream = m.stream("短い物語を書いて")
+print(stream.request_id)  # 呼び出しが返った時点で入っている
+
+for piece in stream:
     print(piece, end="", flush=True)
 print()
 ```
@@ -185,6 +193,20 @@ except LLMError as e:
 すべての例外は、言語に依存しない `code` 属性（例: `"missing_api_key"`）を持っています。エラーの判定には、翻訳で変わるメッセージの文面ではなく `code` を使ってください。
 
 失敗したリクエストは、最大 `max_retries` 回（既定 2 回）自動でリトライされます。対象は、接続段階の失敗（サーバーに届いていないもの）と、HTTP 408 / 409 / 429 / 5xx だけです。読み取りタイムアウトなど、送信した後の失敗はリトライしません（生成が二重に行われ、二重に課金されるのを防ぐため）。応答の速さが大事なサービスでは、`llm(..., max_retries=0)` や短い `timeout` を検討してください。詳しくは [設定リファレンス](config-ja.md) を参照してください。
+
+接続失敗（`APIConnectionError` / `APITimeoutError`）とストリーム途中のエラー（`APIStreamError`）にも、`provider` と `request_id` があります。ヘッダーが届く前の接続失敗では `request_id` は `None` です。`retries` と `latency`（秒）も付きます。HTTP エラー（`APIStatusError`）にも `retries` と `latency` が付きます。
+
+リトライや失敗は入出力ログには残りません。`add_event_listener` で受け取ります。リスナーが例外を出しても、そのリクエストは続行します。
+
+```python
+def on_event(event, payload):
+    print(event, payload.get("request_id"), payload.get("retries"))
+
+m.add_event_listener("retry", on_event)
+m.add_event_listener("connection_error", on_event)
+```
+
+イベント名は `retry`、`connection_error`、`response`、`http_error`、`request_error`、`stream_error`、`stream_end`、`cache_hit` です。`None` を渡すとすべてを受け取ります。外すときは `remove_event_listener` に、登録したときと同じイベント名と関数を渡します。
 
 ## 9. 使い回しと後片付け
 

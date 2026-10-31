@@ -48,7 +48,7 @@ There are provider-specific settings too: Anthropic takes `anthropic_version` (d
 | Read timeout | not retried | retried |
 | Other transport errors (disconnect while sending or receiving, protocol errors, etc.) | not retried | not retried |
 
-A transport error that is not retried is raised right away as `APITimeoutError` (timeouts) or `APIConnectionError`. The wait between attempts uses exponential backoff (from 0.5 seconds, up to 8 seconds).
+A transport error that is not retried is raised right away as `APITimeoutError` (timeouts) or `APIConnectionError`. The wait between attempts uses exponential backoff (from 0.5 seconds, up to 8 seconds). A `retry` event is emitted just before each retry, and a `connection_error` or `http_error` event when a failure will not be retried (see “Call results and events” in the README).
 
 A request that failed at the connection stage never reached the server, so sending it again is safe. Generation requests, however, are not idempotent. After the request has been sent, the server may already be processing it, and a retry can run the same generation twice. That is why only connection-stage failures are retried by default.
 

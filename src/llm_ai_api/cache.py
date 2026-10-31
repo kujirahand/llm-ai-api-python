@@ -98,6 +98,25 @@ class _Unset:
 CACHE_NOT_SET: Any = _Unset()
 
 
+def _cached_request_id(value: Any) -> Optional[str]:
+    """Request id stored with a cache row. Missing or non-string values become None."""
+    return value if isinstance(value, str) and value else None
+
+
+def _cached_latency(value: Any) -> Optional[float]:
+    """Latency in seconds. Missing or non-numeric values (including bool) become None."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def _cached_retries(value: Any) -> int:
+    """Retry count. Missing or invalid values become 0 so older rows still load."""
+    if type(value) is int and value >= 0:
+        return value
+    return 0
+
+
 def cache_key(
     provider: str,
     body: Dict[str, Any],
@@ -258,6 +277,9 @@ class SQLiteCache:
                 stop_reason=data.get("stop_reason"),
                 usage=usage,
                 raw=data["raw"],
+                request_id=_cached_request_id(data.get("request_id")),
+                latency=_cached_latency(data.get("latency")),
+                retries=_cached_retries(data.get("retries")),
             )
         except (ValueError, TypeError, KeyError):
             with self._lock, self._connect() as conn:
@@ -283,6 +305,9 @@ class SQLiteCache:
                 "stop_reason": result.stop_reason,
                 "usage": usage,
                 "raw": result.raw,
+                "request_id": result.request_id,
+                "latency": result.latency,
+                "retries": result.retries,
             },
             ensure_ascii=False,
         ).encode("utf-8")

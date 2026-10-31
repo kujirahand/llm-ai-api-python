@@ -84,6 +84,6 @@ m = llm("openai:gpt-6-luna", log=JSONLLog("./llm_log.jsonl", max_size=10_000_000
 
 - The API key and auth headers are never recorded.
 - The log is **plain text** and contains your prompts and the answers as they are. Keep the file private. It is created with permissions `0600` (best effort), and a new parent directory with `0700`.
-- A stream is recorded only after it has been read to the end. Streams that are stopped early and calls that fail are not recorded.
+- A stream is recorded only after it has been read to the end. Streams that are stopped early and calls that fail are not recorded. To observe retries and failures, use `add_event_listener` rather than the log (see “Call results and events” in the README).
 - A failure while writing the log is ignored, so a response you already paid for is never lost. An invalid setting (a wrong value or an unwritable path) raises `LLMConfigError` with `code="invalid_log"` when the client is created.
 - You can pass your own object instead of a path. It needs `write(provider, model, request, response, *, stream, cached)`.

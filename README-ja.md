@@ -31,7 +31,7 @@ for piece in luna.stream("短い物語を書いて"):
     print(piece, end="", flush=True)
 
 # 会話履歴の利用
-result = luna.chat([{"role": "user", "content": "こんにちは"}])  # ChatResult: text, stop_reason, usage, raw
+result = luna.chat([{"role": "user", "content": "こんにちは"}])  # ChatResult: text, stop_reason, usage, raw, request_id, latency, retries
 ```
 
 ストリームは、最後まで読むか、捨てられたときに自動で接続を閉じます（非同期では、ストリームを作ったイベントループがまだ動いている場合に限ります）。途中でやめるときは `close()`（非同期では `await stream.aclose()`）を呼ぶと、すぐに接続を解放できます。
@@ -67,6 +67,52 @@ m.set_config(max_retries=0)  # 生成後に変更する（渡した引数だけ�
 ```
 
 既定では、接続段階の失敗（サーバーに届いていないもの）と HTTP 408 / 409 / 429 / 5xx だけをリトライします。読み取りタイムアウトなど送信後の失敗は、二重課金を避けるためリトライしません（`retry_read_timeout=True` で読み取りタイムアウトもリトライします）。`retry_after_max` は `retry-after` ヘッダーに従って待つ秒数の上限です。設定の一覧と本番環境での推奨は、[設定リファレンス](docs/config-ja.md) を参照してください。
+
+### 呼び出しの結果とイベント
+
+`chat()` / `achat()` の `ChatResult` には、応答ボディ（`raw`）とは別に次が入ります。
+
+| フィールド | 内容 |
+|---|---|
+| `request_id` | `x-request-id`（OpenAI 系）または `request-id`（Anthropic）。無ければ `None` |
+| `latency` | 呼び出し開始からボディを読み終わるまでの秒（リトライの待ちを含む） |
+| `retries` | その応答の前に行ったリトライ回数（最初の試行で成功すれば 0） |
+
+`ask()` はテキストだけを返します。`request_id` が必要なときは `chat()` を使ってください。
+
+```python
+result = luna.chat([{"role": "user", "content": "こんにちは"}])
+print(result.request_id, result.retries, result.latency)
+```
+
+ストリームでは、同期の `stream()` が返したイテレータに、返った時点で `request_id` と `retries` が入っています。`astream()` では、最初の反復が応答ヘッダーを受け取ったあと（最初のテキストを返す前）に同じ属性が入ります。`stream_chat()` の各 `ChatChunk` にも `request_id` が入ります。
+
+リトライや接続失敗は、入出力ログには残りません（ログは成功した呼び出しだけです）。`add_event_listener` で受け取ります。
+
+```python
+def on_event(event, payload):
+    # payload に API キーやプロンプトは入らない
+    print(event, payload.get("request_id"), payload.get("retries"))
+
+luna.add_event_listener("retry", on_event)     # このイベントだけ
+luna.add_event_listener(None, on_event)        # すべて
+luna.remove_event_listener("retry", on_event)  # 同じ関数を 1 件外す
+```
+
+リスナーは `listener(event, payload)` です。`Exception` を出してもそのリクエストは続き、ほかのリスナーも呼ばれます（`KeyboardInterrupt` やキャンセルは止めません）。非同期の呼び出しでも、リスナー自体はイベントループ上で同期的に呼ばれるので、長くブロックしないでください。未知のイベント名は `LLMConfigError`（`code="invalid_event"`）です。
+
+| イベント | とき |
+|---|---|
+| `retry` | リトライする直前。`delay`（待つ秒）、`reason`（`status` / `connect` / `timeout` / `read_timeout` / `transport`）、`request_id`、`status_code` |
+| `connection_error` | もうリトライしない通信失敗。`code` は `timeout` または `connection_error` |
+| `response` | HTTP 成功（400 未満）。ストリームではヘッダーまで、それ以外はボディ読了までの `latency` |
+| `http_error` | もうリトライしない HTTP エラー |
+| `request_error` | 応答が大きすぎる、または JSON でない（`code` で区別） |
+| `stream_error` | ストリーム途中の error イベント |
+| `stream_end` | 終端イベントのあとでライブのストリームを閉じたとき |
+| `cache_hit` | キャッシュから返したとき（`response` は出ません。`request_id` は保存してあった値） |
+
+`payload` は普通の dict です。`provider`、`request_id`、`retries`、`latency`（秒）などが入ります。`request()` の戻り値はこれまでどおりボディの dict だけで、`request_id` は `response` イベントで取ります。
 
 ### 非同期（async）
 
