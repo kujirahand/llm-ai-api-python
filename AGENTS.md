@@ -105,6 +105,7 @@ llm-ai-api-python/
 │   ├── test_log.py
 │   ├── test_cache_crypto.py
 │   ├── test_stream_close.py  # ストリームの閉じ忘れ（#25）
+│   ├── test_hardening.py     # キャッシュのファイル権限・WAL・サイズ上限・一括 XOR（#33）
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
 ├── docs/
 │   ├── publish.md       # PyPI への公開手順
@@ -298,7 +299,9 @@ class ChatChunk:
 - **キー**: `sha256("{provider}:{model}@{api_key}>>>{input}")`。`input` は、リクエストボディと、応答に影響するクライアント設定（`base_url`、追加ヘッダー、Anthropic の `anthropic_version`）の正規化 JSON（`sort_keys=True`）。ストリームかどうかはボディの `stream` で区別される。API キーはハッシュと暗号鍵の導出にだけ使い、平文では保存しない。API キーが違うクライアント同士はキャッシュを共有しない。
 - **値**: `ChatResult`（text / model / stop_reason / usage / raw）を JSON にして、API キーから導出した鍵で暗号化し、SQLite のテーブル `llm_cache` に入れる。ストリームは `raw["events"]` に SSE イベントの一覧を入れた `ChatResult` として保存する。
 - **暗号**: 標準ライブラリだけで組む（`scrypt` による鍵導出、HMAC-SHA256 のカウンターモード、HMAC による改ざん検出）。平文のまま置かないための保護で、API キーの管理に代わるものではない。鍵は API キーから作るので、API キーを持つ人はキャッシュを読める。MAC にはキャッシュキーも含め（別の行への暗号文の差し替えを検出する）、`secret` を渡して読むときは暗号化形式以外（平文の値）を受け付けない。`SQLiteCache.get/put` に `secret` を渡さなければ暗号化しない（クライアント経由では常に渡す）。
-- キャッシュファイルは新規作成時に権限 `0600`（親ディレクトリを作る場合は `0700`）にする（権限を設定できないファイルシステムではベストエフォート）。
+- キャッシュファイルは、自分で `os.open(..., O_CREAT | O_EXCL, 0o600)` して作ってから SQLite に開かせる（作成の瞬間から `0600`。umask が緩くても一時的に他人が読める状態を作らない。親ディレクトリを作る場合は `0700`）。既存のファイルの権限は変更しない。
+- 接続を開くたびに `PRAGMA journal_mode=WAL` を設定する（複数プロセスでの書き込みロックの待ちを減らすため）。失敗したとき（読み取り専用、NFS など）は黙って既定のモードのまま続ける。`-wal` / `-shm` ファイルの権限は SQLite が本体ファイルから引き継ぐ。
+- 暗号・復号の XOR は整数演算で一括して行う（`int.from_bytes` の XOR）。保存形式（nonce + 暗号文 + MAC）は変えない。
 - 接続は操作ごとに開閉し、書き込みはロックで保護する。壊れた行・改ざんされた行はミスとして扱い、読み取り時に削除する。
 - **削除**: `clear_cache(days, cache_dir=None)` は `days` 日より古いエントリを消して件数を返す（`days=0` で全削除）。ディレクトリは `cache_dir`、環境変数、グローバルキャッシュの順に探し、なければ `LLMConfigError`（`code="cache_dir_not_set"`）。`SQLiteCache.clear(days=None)` も同じ動き。
 - 有効にしている間、同じリクエストには常に同じ保存済み応答が返る。新しい応答が欲しい場合はキャッシュを空にするかオフにする。
@@ -330,6 +333,9 @@ class ChatChunk:
   - 既定 2 回。指数バックオフ（0.5 秒起点、上限 8 秒、ジッターあり）。
   - `retry-after` ヘッダーがあれば優先（上限 60 秒）。
   - ストリーミングは、レスポンスを読み始めた後はリトライしない。
+- サイズの安全弁: 非ストリームの `request()`（同期・非同期）は、読み取ったボディが `_MAX_RESPONSE_BYTES`（64 MiB）を超えたら `LLMError`（`code="response_too_large"`）を送出する。SSE の 1 行が `_MAX_SSE_LINE_BYTES`（16 MiB）を超えたときも同じ（`_SSEDecoder` で検査するので同期・非同期で共通）。ストリーム全体の長さには上限を設けない。
+  - 非ストリームは、`Content-Length` が上限を超えているとボディを読まずにレスポンスを閉じて同じエラーにする（読み取り後の検査も残す）。SSE の 1 行の上限は文字数ではなく UTF-8 のバイト数で数える。
+  - 残る限界: 上限は、大きすぎるレスポンス／イベントをきれいなエラーで拒否するためのもの。`Content-Length` のない（チャンク形式の）ボディでは、読み取り中のピークメモリは上限で抑えられない。
 - ストリーミングでは、HTTP エラー応答のボディ読み取り（`resp.read()`）もヘッダー受信と同じ例外変換・リトライの対象にする。ここで httpx の例外を外に漏らしてはならない。
 - パッケージ内の `llm` は関数（`llm_ai_api.llm`）で、同名のモジュール `llm.py` を隠す。モジュールを直接参照するときは `sys.modules["llm_ai_api.llm"]` を使う。
 - エラー時はレスポンスボディを読み、JSON として解釈できれば dict、できなければ文字列として例外に格納する。
@@ -379,6 +385,7 @@ LLMError                      # 基底
   | `invalid_log` | `LLMConfigError`（ログ設定の誤り） |
   | `invalid_url` | `LLMConfigError`（ベース URL / パスが URL として不正） |
   | `invalid_json_response` | `LLMError` |
+  | `response_too_large` | `LLMError`（レスポンス本体または SSE の 1 行がサイズ上限を超えた） |
 
 ## 7.1 多言語化（`lang/`）
 

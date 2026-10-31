@@ -20,6 +20,7 @@ from typing import Any, AsyncIterable, AsyncIterator, Callable, Dict, List, Opti
 
 import httpx
 
+from . import _http
 from ._http import (
     _MAX_RETRY_AFTER,
     _RETRY_STATUS,
@@ -43,9 +44,11 @@ from .log import LOG_NOT_SET, resolve_log
 from .types import ChatChunk, ChatResult, SSEEvent
 
 
-async def aiter_sse(lines: AsyncIterable[str]) -> AsyncIterator[SSEEvent]:
+async def aiter_sse(
+    lines: AsyncIterable[str], lang: Optional[str] = None
+) -> AsyncIterator[SSEEvent]:
     """Async version of `iter_sse()`: yield SSE events from an async iterable of lines."""
-    decoder = _SSEDecoder()
+    decoder = _SSEDecoder(lang)
     async for line in lines:
         ev = decoder.feed(line)
         if ev is not None:
@@ -228,6 +231,8 @@ class _AsyncBaseClient:
         """Send JSON and return the response JSON (dict) as is."""
         resp = await self._aopen(method, path, body, headers, timeout, stream=False)
         try:
+            if len(resp.content) > _http._MAX_RESPONSE_BYTES:
+                raise _http._too_large(_http._MAX_RESPONSE_BYTES, self.lang)
             return resp.json()
         except ValueError as e:
             raise LLMError(
@@ -314,10 +319,17 @@ class _AsyncBaseClient:
                 ) from e
             resp = None
             try:
-                resp = await self._client.send(req, stream=stream)
+                # Always send with stream=True so Content-Length can be checked before
+                # a non-stream body is read.
+                resp = await self._client.send(req, stream=True)
                 if resp.status_code >= 400:
-                    # With stream=True the error body has not been read yet, and reading
+                    # The error body has not been read yet, and reading
                     # it can fail too, so it has to be inside this try (conversion + retry).
+                    await resp.aread()
+                elif not stream:
+                    if _http._declared_too_large(resp):
+                        await resp.aclose()
+                        raise _http._too_large(_http._MAX_RESPONSE_BYTES, self.lang)
                     await resp.aread()
             except httpx.TimeoutException as e:
                 if resp is not None:
@@ -412,7 +424,7 @@ class _AsyncEventStream:
         self._client = client
         self._resp = resp
         self._lines = resp.aiter_lines()
-        self._events = aiter_sse(self._lines)
+        self._events = aiter_sse(self._lines, client.lang)
         self._closed = False
         try:
             self._loop: Optional[asyncio.AbstractEventLoop] = asyncio.get_running_loop()
