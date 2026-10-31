@@ -50,6 +50,50 @@ class LLMTest(unittest.TestCase):
         b = rec.body()
         self.assertEqual((b["system"], b["max_tokens"], b["a"], b["b"]), ("別", 5, 1, 2))
 
+    def test_explicit_none_turns_off_a_default_for_one_call(self):
+        rec = Recorder(json_response(OPENAI_REPLY))
+        m = llm("openai:m", api_key="k", system="S", max_tokens=5, temperature=0.4,
+                extra={"a": 1}, transport=rec.transport)
+
+        m.ask("q")  # not passed: the defaults apply
+        b = rec.body()
+        self.assertEqual((b["messages"][0], b["max_completion_tokens"], b["temperature"], b["a"]),
+                         ({"role": "system", "content": "S"}, 5, 0.4, 1))
+
+        m.ask("q", system=None, max_tokens=None, temperature=None, extra=None)
+        self.assertEqual(rec.body(), {"model": "m", "messages": [{"role": "user", "content": "q"}]})
+
+        # each argument is independent
+        m.ask("q", temperature=None)
+        b = rec.body()
+        self.assertNotIn("temperature", b)
+        self.assertEqual((b["max_completion_tokens"], b["a"], len(b["messages"])), (5, 1, 2))
+        m.ask("q", extra=None)
+        self.assertNotIn("a", rec.body())
+        self.assertEqual(rec.body()["temperature"], 0.4)
+        m.ask("q", system=None)
+        self.assertEqual(len(rec.body()["messages"]), 1)
+
+    def test_explicit_none_applies_to_chat_and_stream_too(self):
+        rec = Recorder(json_response(OPENAI_REPLY))
+        m = llm("openai:m", api_key="k", temperature=0.4, transport=rec.transport)
+        m.chat([{"role": "user", "content": "q"}], temperature=None)
+        self.assertNotIn("temperature", rec.body())
+        rec = Recorder(sse_response("data: [DONE]\n\n"))
+        m = llm("openai:m", api_key="k", temperature=0.4, transport=rec.transport)
+        list(m.stream("q", temperature=None))
+        self.assertNotIn("temperature", rec.body())
+        list(m.stream("q"))
+        self.assertEqual(rec.body()["temperature"], 0.4)
+
+    def test_explicit_none_on_claude_keeps_required_max_tokens(self):
+        rec = Recorder(json_response(CLAUDE_REPLY))
+        m = llm("claude:m", api_key="k", max_tokens=100, system="S", transport=rec.transport)
+        m.ask("q", max_tokens=None, system=None)
+        b = rec.body()
+        self.assertEqual(b["max_tokens"], 16000)  # Claude requires it: the library's own default
+        self.assertNotIn("system", b)
+
     def test_stream(self):
         rec = Recorder(sse_response(
             'data: {"choices":[{"delta":{"content":"ポ"}}]}\n\n'

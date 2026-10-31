@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, TypeVar, Union
 
 from ._http import BaseClient
 from .anthropic import AnthropicClient
@@ -20,6 +20,33 @@ _PROVIDERS = {
     "anthropic": AnthropicClient,
     "claude": AnthropicClient,
 }
+
+
+class _Unset:
+    """Type of `UNSET`: "this argument was not passed" (as opposed to an explicit `None`)."""
+
+    _instance: "Optional[_Unset]" = None
+
+    def __new__(cls) -> "_Unset":
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return "UNSET"
+
+    def __bool__(self) -> bool:
+        return False
+
+
+UNSET = _Unset()
+
+_T = TypeVar("_T")
+
+
+def _pick(value: Union[_T, _Unset], default: _T) -> _T:
+    """Return `default` only when `value` was not passed; an explicit `None` is kept."""
+    return default if isinstance(value, _Unset) else value
 
 
 def parse_model_spec(spec: str, lang: Optional[str] = None) -> "tuple[str, str]":
@@ -75,24 +102,28 @@ class LLM:
     def _prepare(
         self,
         messages: List[Dict[str, Any]],
-        system: Optional[str],
-        max_tokens: Optional[int],
-        temperature: Optional[float],
-        extra: Optional[Dict[str, Any]],
+        system: Union[Optional[str], _Unset],
+        max_tokens: Union[Optional[int], _Unset],
+        temperature: Union[Optional[float], _Unset],
+        extra: Union[Optional[Dict[str, Any]], _Unset],
     ) -> Dict[str, Any]:
-        system = system if system is not None else self.system
+        # Per-call arguments override the defaults given to llm(). An explicit None turns
+        # the default off for this call; UNSET (not passed) keeps it.
+        system = _pick(system, self.system)
         merged: Optional[Dict[str, Any]] = None
-        if self.extra or extra:
+        if isinstance(extra, _Unset):
+            merged = dict(self.extra) if self.extra else None
+        elif extra is not None:  # shallow merge on top of the defaults
             merged = dict(self.extra or {})
-            merged.update(extra or {})
+            merged.update(extra)
         msgs = list(messages)
         if system is not None:
             msgs.insert(0, {"role": "system", "content": system})
         return {
             "model": self.model,
             "messages": msgs,
-            "max_tokens": max_tokens if max_tokens is not None else self.max_tokens,
-            "temperature": temperature if temperature is not None else self.temperature,
+            "max_tokens": _pick(max_tokens, self.max_tokens),
+            "temperature": _pick(temperature, self.temperature),
             "extra": merged,
         }
 
@@ -100,10 +131,10 @@ class LLM:
         self,
         messages: List[Dict[str, Any]],
         *,
-        system: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        extra: Optional[Dict[str, Any]] = None,
+        system: Union[Optional[str], _Unset] = UNSET,
+        max_tokens: Union[Optional[int], _Unset] = UNSET,
+        temperature: Union[Optional[float], _Unset] = UNSET,
+        extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
     ) -> ChatResult:
         """messages を渡して `ChatResult`（stop_reason や raw を含む）を受け取る。"""
         kw = self._prepare(messages, system, max_tokens, temperature, extra)
@@ -113,10 +144,10 @@ class LLM:
         self,
         prompt: str,
         *,
-        system: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        extra: Optional[Dict[str, Any]] = None,
+        system: Union[Optional[str], _Unset] = UNSET,
+        max_tokens: Union[Optional[int], _Unset] = UNSET,
+        temperature: Union[Optional[float], _Unset] = UNSET,
+        extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
     ) -> str:
         """1 つの質問を送り、回答のテキストだけを返す。"""
         msgs = [{"role": "user", "content": prompt}]
@@ -128,10 +159,10 @@ class LLM:
         self,
         prompt: str,
         *,
-        system: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        extra: Optional[Dict[str, Any]] = None,
+        system: Union[Optional[str], _Unset] = UNSET,
+        max_tokens: Union[Optional[int], _Unset] = UNSET,
+        temperature: Union[Optional[float], _Unset] = UNSET,
+        extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
     ) -> Iterator[str]:
         """1 つの質問を送り、回答のテキスト差分を順に返す。"""
         msgs = [{"role": "user", "content": prompt}]
