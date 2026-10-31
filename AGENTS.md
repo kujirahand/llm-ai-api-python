@@ -104,7 +104,7 @@ llm-ai-api-python/
 │   ├── test_cache.py
 │   ├── test_log.py
 │   ├── test_cache_crypto.py
-│   ├── test_cache_crypto.py
+│   ├── test_stream_close.py  # ストリームの閉じ忘れ（#25）
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
 ├── docs/
 │   ├── publish.md       # PyPI への公開手順
@@ -177,7 +177,7 @@ async with llm("openai:gpt-6-luna") as m:
 - `aask()` / `achat()` / `astream()` は同期版と同じ引数・意味（`UNSET` と `None` の区別、`extra` のマージ、キャッシュ・ログ）。新しい公開名は増やさない（`__all__` は変えない）。
 - 非同期クライアントは最初の `a*` 呼び出しで内部に作る（`llm()` の時点では作らない）。キャッシュとログのファイル操作は `asyncio.to_thread()` で行う。同期版とキャッシュを共有する（キーと形式が同じ）。このため、カスタムのキャッシュ／ログオブジェクトは非同期経路ではワーカースレッドから呼ばれる（スレッドセーフであること）。非同期クライアントは同期クライアントが生成時に解決した設定（API キー、ベース URL、キャッシュ／ログのオブジェクト）をそのまま使う（生のオプションを再解決しない）。
 - 閉じるには `async with` か `await m.aclose()`。`aclose()` は非同期・同期の両クライアントを閉じ、何度呼んでもよい。`close()` は同期クライアントだけを閉じる（従来どおり）。閉じた `LLM` は再利用しない。
-- `astream()` は最初の反復で通信を始めるので、接続エラーや HTTP エラーも最初の反復で出る（同期版 `stream()` は呼び出し時）。途中でやめるときは `await stream.aclose()` を呼ぶ。キャンセルされたストリームはレスポンスを閉じ、キャッシュ・ログに残さない。
+- `astream()` は最初の反復で通信を始めるので、接続エラーや HTTP エラーも最初の反復で出る（同期版 `stream()` は呼び出し時）。途中でやめるときは `await stream.aclose()` を呼ぶ。キャンセルされたストリームはレスポンスを閉じ、キャッシュ・ログに残さない。閉じずに捨てられた `_AsyncEventStream` は、最後の手段として `__del__` から生成時のイベントループに `resp.aclose()` を予約する（ループがなければ `ResourceWarning`）。
 - イベントループをまたいで使わない。`asyncio.run()` ごとに新しい `llm()` を作る。
 - 実装は `_async_http.py` / `_async_clients.py`（内部専用）。ボディ生成とパースは同期版の関数を共用する。ストリームは async generator ではなく `__anext__` / `aclose` を持つ通常のクラスで組む（generator の `finally` で `await` しないため）。Python 3.9 互換のため `anext()` / `contextlib.aclosing` / `asyncio.TaskGroup` / `asyncio.timeout` は使わない。
 
@@ -323,6 +323,7 @@ class ChatChunk:
 - JSON は `json.dumps(body, ensure_ascii=False).encode("utf-8")` で自前でシリアライズして `content=` に渡す（httpx の `json=` の挙動差に依存しない）。
 - タイムアウト既定値は 600 秒（長い生成に対応するため）。接続タイムアウトは 10 秒。
 - ストリーミングは `client.stream("POST", ...)` と `response.iter_lines()` を使い、SSE パースは自前で行う。
+- `request_stream()` は `httpx.Response` を所有する `_EventStream`（`close()` を持つイテレータ）を返す。最後まで読んだとき・エラー時・`close()` でレスポンスを閉じ、一度も読まずに捨てられた場合も `__del__` で閉じる（素の generator では `finally` が動かず、接続プールが枯渇するため。#25）。
 - 例外の変換: `httpx.TimeoutException` → `APITimeoutError`、その他の `httpx.RequestError`（`TransportError` や `DecodingError` など）→ `APIConnectionError`（リトライ対象）。リクエスト組み立て時の `httpx.InvalidURL` → `LLMConfigError`（`code="invalid_url"`、URL は `_mask_url()` でマスクして表示）。httpx の例外をそのまま外に出さない。
 - リトライ（自前で実装する）:
   - 対象: 408, 409, 429, 500 以上、および接続エラー・タイムアウト。

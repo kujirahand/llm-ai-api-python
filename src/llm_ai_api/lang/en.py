@@ -19,6 +19,7 @@ MESSAGES = {
     "connection_error": "Could not connect to the API: {detail}",
     "stream_timeout": "Reading the stream timed out.",
     "stream_connection_error": "Reading the stream failed: {detail}",
+    "unclosed_stream": "A stream was garbage-collected without being closed; call aclose() when you stop early.",
     "invalid_json_response": "The response was not valid JSON: {preview!r}",
     # API エラー
     "api_error": "{provider} API error (HTTP {status})",

@@ -34,6 +34,8 @@ for piece in luna.stream("Write a short story"):
 result = luna.chat([{"role": "user", "content": "hi"}])  # ChatResult: text, stop_reason, usage, raw
 ```
 
+A stream closes its connection by itself when it is read to the end or dropped (for async streams, only while the event loop that created the stream is still running). To stop early, call `close()` (`await stream.aclose()` in async code) to release the connection right away.
+
 Parameters you do not pass are never sent (newer models reject even default values such as `temperature`).
 Anything else can go through `extra={...}`, or the raw layer: `luna.client.request(path, body)`.
 

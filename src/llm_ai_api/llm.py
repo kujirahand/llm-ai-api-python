@@ -184,7 +184,10 @@ class LLM:
         temperature: Union[Optional[float], _Unset] = UNSET,
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
     ) -> Iterator[str]:
-        """1 つの質問を送り、回答のテキスト差分を順に返す。"""
+        """1 つの質問を送り、回答のテキスト差分を順に返す。
+
+        最後まで読むか捨てると接続を閉じる。途中でやめるときは `close()` を呼ぶ。
+        """
         msgs = [{"role": "user", "content": prompt}]
         kw = self._prepare(msgs, system, max_tokens, temperature, extra)
         chunks = self.client.stream_chat(**kw)  # type: ignore[attr-defined]
