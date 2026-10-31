@@ -4,6 +4,7 @@ test:
 
 # Run only the OpenAI live tests with the low-cost GPT-6 Luna model.
 # Responses are cached between runs; the JSONL log records cache hits as well.
+# Remove .cache/llm-ai-api/test-openai to make fresh API requests.
 test-openai:
     @if [ -z "${OPENAI_API_KEY:-}" ]; then echo "OPENAI_API_KEY is required"; exit 1; fi
     @LLM_AI_API_LIVE=1 LIVE_OPENAI_MODEL=gpt-6-luna LLM_AI_API_CACHE_DIR=.cache/llm-ai-api/test-openai/cache LLM_AI_API_LOG_DIR=.cache/llm-ai-api/test-openai/log PYTHONPATH=src python -m unittest tests.test_live.LiveTest.test_openai
