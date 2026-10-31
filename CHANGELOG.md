@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add a main-methods table to the README and a full API reference at `docs/api.md` / `docs/api-ja.md` (#61).
+
 - Rename `LLM.stream()` / `astream()` to `ask_stream()` / `aask_stream()`, and add `chat_stream()` / `achat_stream()`, which take `messages` like `chat()` (#62).
 - The old names `stream()` / `astream()` remain as deprecated aliases (no warning is emitted).
 
