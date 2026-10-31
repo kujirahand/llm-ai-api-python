@@ -1,5 +1,7 @@
 # llm-ai-api
 
+[![PyPI](https://img.shields.io/pypi/v/llm-ai-api)](https://pypi.org/project/llm-ai-api/)
+
 A thin, stable HTTP wrapper for the OpenAI, OpenRouter, Claude (Anthropic), and Google APIs. It does not use the official SDKs; the only dependency is `httpx`.
 
 [日本語版 (Japanese)](https://github.com/kujirahand/llm-ai-api-python/blob/main/README-ja.md)
