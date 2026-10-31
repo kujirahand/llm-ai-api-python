@@ -47,6 +47,7 @@ print(luna.ask(question))  # ポチ
 - 共通インターフェイス `llm()` によるテキストの一問一答・ストリーミング
 - テキストチャット（非ストリーミング / ストリーミング）
 - 任意パス・任意ボディを送る生リクエスト（上記以外のエンドポイントも呼べる）
+- 任意の API 応答キャッシュ（SQLite。既定はオフ。5.7 を参照）
 
 ### v1 では対応しない（必要になったら別途検討）
 
@@ -72,12 +73,12 @@ llm-ai-api-python/
 │       ├── _http.py         # httpx による送受信、SSE パーサー、リトライ
 │       ├── errors.py        # 例外クラス
 │       ├── types.py         # ChatResult などの dataclass
+│       ├── cache.py         # SQLite による応答キャッシュ（暗号化、既定はオフ）、set_cache() / clear_cache()
 │       ├── openai.py        # OpenAIClient
 │       ├── openrouter.py    # OpenRouterClient（OpenAI 互換部分を共有）
 │       ├── google.py        # GoogleClient（OpenAI 互換部分を共有）
 │       ├── anthropic.py     # AnthropicClient
-│       ├── cache.py         # 応答のローカルキャッシュ（SQLite + 暗号化）、clear_cache()
-│       ├── llm.py           # 共通インターフェイス llm() / LLM
+││       ├── llm.py           # 共通インターフェイス llm() / LLM
 │       ├── models.py        # 代表的なモデルの定数（"provider:model" 形式の文字列）
 │       └── lang/            # エラーメッセージの多言語化
 │           ├── __init__.py  # 言語判定、フォールバック、t()
@@ -94,6 +95,9 @@ llm-ai-api-python/
 │   ├── test_llm.py
 │   ├── test_models.py
 │   ├── test_lang.py
+│   ├── test_cache.py
+│   ├── test_cache_crypto.py
+│   ├── test_cache_crypto.py
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
 ├── docs/
 │   ├── publish.md       # PyPI への公開手順
@@ -146,7 +150,6 @@ m.client    # 下位の OpenAIClient など（生レイヤーにアクセスで�
 - モデル指定文字列は **最初の `:` で分割** する。OpenRouter のモデル名は `/` や `:` を含むため（例: `"openrouter:meta-llama/llama-4:free"` → provider `openrouter`、model `meta-llama/llama-4:free`）。
 - プロバイダー名は小文字に正規化する。`claude` は `anthropic` の別名。未知のプロバイダーや `:` がない文字列は `LLMConfigError`。
 - `ask()` / `stream()` / `chat()` は、キーワード引数（`system`, `max_tokens`, `temperature`, `extra`）で `llm()` の既定値を呼び出しごとに上書きできる。引数を渡さなければ既定値を使い、**`None` を明示すると、その呼び出しだけ既定値を無効にして送らない**（`llm(..., temperature=0.4).ask("q", temperature=None)` は `temperature` を送らない）。両者を区別するため、これらの引数の既定値は内部のセンチネル `UNSET` で、`None` ではない。`extra` は dict を渡すと既定値と浅くマージし、`None` で既定の `extra` を無効にする。ただし Claude の `max_tokens` は API の必須項目なので、`None` を指定してもライブラリ既定の 16000 が使われる。`llm()` 自体の引数では `None` は「既定値なし」の意味。
-- 応答のローカルキャッシュ（`cache.py`）: `LLM_AI_API_CACHE_DIR` または `cache_dir=`（クライアント／`llm()`）で有効になる。保存先は `<dir>/cache.db`（SQLite 1 ファイル）。キーは `sha256("{provider}:{model}@{api_key}>>>{input}")`（`input` はメソッド・パス・ストリームかどうか・ボディの JSON）、値は応答全体を API キーから導出した鍵で暗号化したもの。暗号は標準ライブラリだけで組む（scrypt + HMAC-SHA256 カウンターモード + HMAC）。成功した応答だけ保存し、ストリームは最後まで読み切ったときだけ保存する。`clear_cache(days, cache_dir=None)` で古いエントリを削除する。
 - `ask()` / `stream()` は **状態を持たない**（会話履歴を保持しない）。会話を続けたい場合は `chat()` に messages を渡してもらう。
 - `ask()` は `ChatResult.text` をそのまま返す。`stop_reason` が `"refusal"` や `"max_tokens"` でも例外にしない（必要なら `chat()` を使って確認してもらう）。
 - `LLM` は `close()` とコンテキストマネージャ（`with llm(...) as m:`）に対応する。
@@ -178,13 +181,14 @@ client = AnthropicClient(
     timeout=600.0,         # 秒
     max_retries=2,
     headers=None,          # 追加ヘッダー（dict）
+    cache=CACHE_NOT_SET,   # 応答キャッシュ（未指定ならグローバル設定。5.7 を参照）
     anthropic_version="2026-10-21",  # AnthropicClient のみ
 )
 ```
 
 - `OpenRouterClient` は追加で `app_url`（→ `HTTP-Referer`）、`app_name`（→ `X-Title`）を受け取れる。
 - API キーが見つからない場合は、リクエスト時ではなく **クライアント生成時** に `LLMConfigError` を送出する。
-- API キーを `repr()` やログ、例外メッセージに含めない。
+- API キーを `repr()` やログ、例外メッセージに含めない。`repr()` に出す `base_url` は、userinfo（`user:pass@`）を `***` に置き換え、クエリ文字列とフラグメントを除いてマスクする。
 - クライアントは内部に `httpx.Client` を 1 つ持って再利用する。`close()` とコンテキストマネージャに対応する。
 
 環境変数:
@@ -258,6 +262,22 @@ class ChatChunk:
 - `stop_reason` は正規化しない（生の値を返す）。Claude の `"refusal"` なども例外にせず、そのまま返す。
 - `usage` の対応: OpenAI 系は `prompt_tokens` → `input_tokens`、`completion_tokens` → `output_tokens`。
 
+### 5.7 キャッシュ（`cache.py`）
+
+- **既定はオフ**。有効にすると、同じリクエストへの 2 回目以降は API を呼ばず、保存済みの結果を返す。
+- グローバル設定: `set_cache(cache)` / `get_cache()`。`set_cache(None)` でオフに戻す（環境変数より優先）。環境変数 `LLM_AI_API_CACHE_DIR` にディレクトリを指定すると、`set_cache()` を呼ばなくても `<dir>/cache.db` でオンになる。
+- インスタンスごとの設定: `llm(..., cache=...)` と各クライアントの `cache=...`。値は `True`（既定ファイル `llm_ai_api_cache.db`）、パス（`str` / `os.PathLike`）、`SQLiteCache`（同等のオブジェクトも可。インターフェイスは `get(key) -> ChatResult | None` と `put(key, provider, result)`）、`False` / `None`（このインスタンスだけオフ）。引数を渡さなければグローバル設定に従う（内部のセンチネル `CACHE_NOT_SET`）。
+- **キー**: `sha256("{provider}:{model}@{api_key}>>>{input}")`。`input` は、リクエストボディと、応答に影響するクライアント設定（`base_url`、追加ヘッダー、Anthropic の `anthropic_version`）の正規化 JSON（`sort_keys=True`）。ストリームかどうかはボディの `stream` で区別される。API キーはハッシュと暗号鍵の導出にだけ使い、平文では保存しない。API キーが違うクライアント同士はキャッシュを共有しない。
+- **値**: `ChatResult`（text / model / stop_reason / usage / raw）を JSON にして、API キーから導出した鍵で暗号化し、SQLite のテーブル `llm_cache` に入れる。ストリームは `raw["events"]` に SSE イベントの一覧を入れた `ChatResult` として保存する。
+- **暗号**: 標準ライブラリだけで組む（`scrypt` による鍵導出、HMAC-SHA256 のカウンターモード、HMAC による改ざん検出）。平文のまま置かないための保護で、API キーの管理に代わるものではない。鍵は API キーから作るので、API キーを持つ人はキャッシュを読める。`SQLiteCache.get/put` に `secret` を渡さなければ暗号化しない（クライアント経由では常に渡す）。
+- キャッシュファイルは新規作成時に権限 `0600`（親ディレクトリを作る場合は `0700`）にする（権限を設定できないファイルシステムではベストエフォート）。
+- 接続は操作ごとに開閉し、書き込みはロックで保護する。壊れた行・改ざんされた行はミスとして扱い、読み取り時に削除する。
+- **削除**: `clear_cache(days, cache_dir=None)` は `days` 日より古いエントリを消して件数を返す（`days=0` で全削除）。ディレクトリは `cache_dir`、環境変数、グローバルキャッシュの順に探し、なければ `LLMConfigError`（`code="cache_dir_not_set"`）。`SQLiteCache.clear(days=None)` も同じ動き。
+- 有効にしている間、同じリクエストには常に同じ保存済み応答が返る。新しい応答が欲しい場合はキャッシュを空にするかオフにする。
+- 対象は `chat()` / `ask()` と `stream_chat()` / `stream()`。ストリームは、最後まで（または終端イベントまで）読み切ったときだけ保存し、途中で止めたもの・エラーになったものは保存しない。生レイヤー（`request()` / `request_stream()`）は対象外。
+- 実行時のキャッシュの失敗はベストエフォート（読み取りはミス扱い、書き込みは無視）にして、料金を払って得た応答を失わない。設定の誤り（不正な値、使えないパス）は生成時に `LLMConfigError`（`code="invalid_cache"`）を送出する。
+- `close()` は渡されたキャッシュを閉じない（グローバルと共有されうるため）。
+
 ## 6. HTTP 層の仕様（`_http.py`）
 
 - `httpx.Client` を使う。プロキシは httpx の環境変数対応（`trust_env=True`、`HTTPS_PROXY` 等）に任せる。
@@ -281,6 +301,7 @@ class ChatChunk:
 - `:` で始まる行はコメントとして無視する（OpenRouter は `: OPENROUTER PROCESSING` を送ってくる）。
 - OpenAI 系は `data: [DONE]` で終了。ストリームの途中で `error` フィールドを持つイベント（OpenRouter など）を受け取ったら、空のチャンクとして扱わず `APIStreamError` を送出する（本文は `body` に保持する）。部分的な回答を完成したものと誤認させないため。
 - Anthropic は `ping` を無視し、`error` イベントを受け取ったら `APIStreamError` を送出する。`message_stop` で終了。
+- `data` が有効な JSON でない場合は、`json.JSONDecodeError` ではなく `LLMError`（`code="invalid_json_response"`）に変換して送出する（`SSEEvent.json()`）。
 - テキスト差分の取り出し:
   - OpenAI 系: `choices[0].delta.content`
   - Anthropic: `content_block_delta` のうち `delta.type == "text_delta"` の `delta.text`
@@ -315,6 +336,7 @@ LLMError                      # 基底
   | `api_error` | `APIStatusError` とそのサブクラス（HTTP ステータスは `status_code`） |
   | `stream_error` | `APIStreamError` |
   | `cache_dir_not_set` | `LLMConfigError`（`clear_cache()` でディレクトリ未指定） |
+  | `invalid_cache` | `LLMConfigError`（キャッシュ設定の誤り） |
   | `invalid_json_response` | `LLMError` |
 
 ## 7.1 多言語化（`lang/`）

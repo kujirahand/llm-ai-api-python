@@ -1,154 +1,302 @@
 import os
-import sqlite3
 import tempfile
 import unittest
 from unittest import mock
 
-from llm_ai_api import LLMConfigError, OpenAIClient, clear_cache
-from llm_ai_api.cache import decrypt, encrypt
+from llm_ai_api import ChatResult, LLMConfigError, SQLiteCache, Usage, get_cache, llm, set_cache
+from llm_ai_api import cache as cache_module
+from llm_ai_api.cache import cache_key
 
-from helpers import Recorder, json_response, sse_response
+from .helpers import Recorder, json_response, sse_response
 
-REPLY = {"choices": [{"message": {"content": "hi"}, "finish_reason": "stop"}]}
-MSGS = [{"role": "user", "content": "q"}]
-STREAM = (
-    'data: {"choices":[{"delta":{"content":"he"}}]}\n\n'
-    'data: {"choices":[{"delta":{"content":"llo"}}]}\n\n'
+OPENAI_REPLY = {
+    "choices": [{"message": {"content": "ポチ"}, "finish_reason": "stop"}],
+    "model": "gpt-x",
+    "usage": {"prompt_tokens": 3, "completion_tokens": 4},
+}
+CLAUDE_REPLY = {"content": [{"type": "text", "text": "ポチ"}]}
+OPENAI_STREAM = (
+    'data: {"choices":[{"delta":{"content":"ポ"}}]}\n\n'
+    'data: {"choices":[{"delta":{"content":"チ"}}]}\n\n'
     "data: [DONE]\n\n"
 )
 
 
-class CacheTest(unittest.TestCase):
+class CacheTestBase(unittest.TestCase):
     def setUp(self):
+        set_cache(None)
+        self.addCleanup(set_cache, None)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.dir = tmp.name
+        self.db = os.path.join(self.dir, "cache.db")
 
-    def client(self, rec, **kw):
-        return OpenAIClient(api_key="k", transport=rec.transport, **kw)
 
-    def test_disabled_by_default(self):
-        rec = Recorder(json_response(REPLY))
-        with mock.patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("LLM_AI_API_CACHE_DIR", None)
-            c = self.client(rec)
-            c.chat("m", MSGS)
-            c.chat("m", MSGS)
+class CacheKeyTest(unittest.TestCase):
+    def test_same_for_different_dict_order(self):
+        a = {"model": "m", "messages": [{"role": "user", "content": "q"}], "temperature": 0.5}
+        b = {"temperature": 0.5, "messages": [{"content": "q", "role": "user"}], "model": "m"}
+        self.assertEqual(cache_key("openai", a), cache_key("openai", b))
+
+    def test_differs_by_input(self):
+        base = {"model": "m", "messages": [{"role": "user", "content": "q"}]}
+        key = cache_key("openai", base)
+        self.assertNotEqual(key, cache_key("anthropic", base))
+        self.assertNotEqual(key, cache_key("openai", dict(base, model="n")))
+        self.assertNotEqual(
+            key, cache_key("openai", dict(base, messages=[{"role": "user", "content": "r"}]))
+        )
+        self.assertNotEqual(key, cache_key("openai", dict(base, temperature=0.1)))
+
+    def test_differs_by_context(self):
+        base = {"model": "m", "messages": [{"role": "user", "content": "q"}]}
+        key = cache_key("openai", base, {"base_url": "https://a.example/v1"})
+        self.assertNotEqual(key, cache_key("openai", base))
+        self.assertNotEqual(key, cache_key("openai", base, {"base_url": "https://b.example/v1"}))
+        self.assertNotEqual(
+            key, cache_key("openai", base, {"base_url": "https://a.example/v1", "headers": {"x": "y"}})
+        )
+        self.assertEqual(key, cache_key("openai", base, {"base_url": "https://a.example/v1"}))
+
+
+class SQLiteCacheTest(CacheTestBase):
+    def make_result(self):
+        return ChatResult(
+            text="ポチ",
+            model="gpt-x",
+            stop_reason="stop",
+            usage=Usage(3, 4),
+            raw={"a": [1, 2], "b": "日本語"},
+        )
+
+    def test_roundtrip_and_persistence(self):
+        c = SQLiteCache(self.db)
+        self.assertIsNone(c.get("k"))
+        c.put("k", "openai", self.make_result())
+        got = c.get("k")
+        self.assertEqual(got.text, "ポチ")
+        self.assertEqual(got.model, "gpt-x")
+        self.assertEqual(got.stop_reason, "stop")
+        self.assertEqual(got.usage, Usage(3, 4))
+        self.assertEqual(got.raw, {"a": [1, 2], "b": "日本語"})
+        self.assertEqual(len(c), 1)
+        # A second instance on the same file sees the entry.
+        self.assertEqual(SQLiteCache(self.db).get("k").text, "ポチ")
+
+    def test_no_usage_and_clear(self):
+        c = SQLiteCache(self.db)
+        c.put("k", "openai", ChatResult("x", None, None, None, {}))
+        self.assertIsNone(c.get("k").usage)
+        c.clear()
+        self.assertEqual(len(c), 0)
+        self.assertIsNone(c.get("k"))
+
+    def test_context_manager_and_parent_dirs(self):
+        path = os.path.join(self.dir, "sub", "dir", "c.db")
+        with SQLiteCache(path) as c:
+            c.put("k", "openai", self.make_result())
+        self.assertTrue(os.path.exists(path))
+
+    def test_corrupted_row_is_a_miss_and_deleted(self):
+        import sqlite3
+
+        c = SQLiteCache(self.db)
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "INSERT INTO llm_cache (key, provider, model, response, created_at)"
+            " VALUES ('bad', 'openai', NULL, 'not json', 0)"
+        )
+        conn.execute(
+            "INSERT INTO llm_cache (key, provider, model, response, created_at)"
+            " VALUES ('bad2', 'openai', NULL, '[1, 2]', 0)"
+        )
+        conn.commit()
+        conn.close()
+        self.assertIsNone(c.get("bad"))
+        self.assertIsNone(c.get("bad2"))
+        self.assertEqual(len(c), 0)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX file permissions only")
+    def test_new_file_is_owner_only(self):
+        SQLiteCache(self.db)
+        self.assertEqual(os.stat(self.db).st_mode & 0o777, 0o600)
+
+    def test_unusable_path(self):
+        blocker = os.path.join(self.dir, "file")
+        with open(blocker, "w") as f:
+            f.write("x")
+        with self.assertRaises(LLMConfigError) as cm:
+            SQLiteCache(os.path.join(blocker, "c.db"), lang="en")
+        self.assertEqual(cm.exception.code, "invalid_cache")
+
+
+class ChatCacheTest(CacheTestBase):
+    def make(self, rec, **kw):
+        return llm("openai:gpt-6-luna", api_key="k", transport=rec.transport, **kw)
+
+    def test_instance_cache_path(self):
+        rec = Recorder(json_response(OPENAI_REPLY))
+        m = self.make(rec, cache=self.db)
+        first = m.chat([{"role": "user", "content": "q"}])
+        second = m.chat([{"role": "user", "content": "q"}])
+        self.assertEqual(len(rec.requests), 1)
+        self.assertEqual(first.text, second.text)
+        self.assertEqual(second.usage, Usage(3, 4))
+        self.assertEqual(second.raw, first.raw)
+        m.chat([{"role": "user", "content": "another"}])
         self.assertEqual(len(rec.requests), 2)
 
-    def test_second_call_is_served_from_cache(self):
-        rec = Recorder(json_response(REPLY))
-        c = self.client(rec, cache_dir=self.dir)
-        self.assertEqual(c.chat("m", MSGS).text, "hi")
-        self.assertEqual(c.chat("m", MSGS).text, "hi")
+    def test_ask_cached(self):
+        rec = Recorder(json_response(OPENAI_REPLY))
+        m = self.make(rec, cache=self.db)
+        self.assertEqual(m.ask("q"), "ポチ")
+        self.assertEqual(m.ask("q"), "ポチ")
+        self.assertEqual(len(rec.requests), 1)
+        m.ask("different")
+        self.assertEqual(len(rec.requests), 2)
+
+    def test_default_off(self):
+        rec = Recorder(json_response(OPENAI_REPLY))
+        m = self.make(rec)
+        m.ask("q")
+        m.ask("q")
+        self.assertEqual(len(rec.requests), 2)
+
+    def test_global_and_override(self):
+        set_cache(self.db)
+        self.assertIsInstance(get_cache(), SQLiteCache)
+        rec = Recorder(json_response(OPENAI_REPLY))
+        m = self.make(rec)
+        m.ask("q")
+        m.ask("q")
         self.assertEqual(len(rec.requests), 1)
 
-    def test_env_var(self):
-        rec = Recorder(json_response(REPLY))
-        with mock.patch.dict(os.environ, {"LLM_AI_API_CACHE_DIR": self.dir}):
-            c = self.client(rec)
-            c.chat("m", MSGS)
-            c.chat("m", MSGS)
+        rec2 = Recorder(json_response(OPENAI_REPLY))
+        off = self.make(rec2, cache=False)
+        off.ask("q")
+        off.ask("q")
+        self.assertEqual(len(rec2.requests), 2)
+
+        set_cache(None)
+        self.assertIsNone(get_cache())
+        rec3 = Recorder(json_response(OPENAI_REPLY))
+        m3 = self.make(rec3)
+        m3.ask("q")
+        m3.ask("q")
+        self.assertEqual(len(rec3.requests), 2)
+
+    def test_cache_object(self):
+        c = SQLiteCache(self.db)
+        rec = Recorder(json_response(OPENAI_REPLY))
+        m = self.make(rec, cache=c)
+        m.ask("q")
+        m.ask("q")
+        self.assertEqual(len(rec.requests), 1)
+        self.assertEqual(len(c), 1)
+        m.close()  # must not break the shared cache
+        self.assertEqual(len(c), 1)
+
+    def test_cache_true_uses_default_path(self):
+        default = os.path.join(self.dir, "default.db")
+        with mock.patch.object(cache_module, "DEFAULT_CACHE_PATH", default):
+            rec = Recorder(json_response(OPENAI_REPLY))
+            m = self.make(rec, cache=True)
+        m.ask("q")
+        m.ask("q")
+        self.assertEqual(len(rec.requests), 1)
+        self.assertTrue(os.path.exists(default))
+
+    def test_base_url_separates_entries(self):
+        rec_a = Recorder(json_response(OPENAI_REPLY))
+        a = llm("openai:m", api_key="k", base_url="https://a.example/v1",
+                transport=rec_a.transport, cache=self.db)
+        rec_b = Recorder(json_response(OPENAI_REPLY))
+        b = llm("openai:m", api_key="k", base_url="https://b.example/v1",
+                transport=rec_b.transport, cache=self.db)
+        a.ask("q")
+        b.ask("q")  # same provider/model/prompt, different endpoint: no cache hit
+        self.assertEqual((len(rec_a.requests), len(rec_b.requests)), (1, 1))
+        a.ask("q")
+        self.assertEqual(len(rec_a.requests), 1)
+
+    def test_api_key_separates_entries(self):
+        rec_a = Recorder(json_response(OPENAI_REPLY))
+        a = llm("openai:m", api_key="key-a", transport=rec_a.transport, cache=self.db)
+        rec_b = Recorder(json_response(OPENAI_REPLY))
+        b = llm("openai:m", api_key="key-b", transport=rec_b.transport, cache=self.db)
+        a.ask("q")
+        b.ask("q")  # same prompt, different API key: no cache hit
+        self.assertEqual((len(rec_a.requests), len(rec_b.requests)), (1, 1))
+        rec_c = Recorder(json_response(OPENAI_REPLY))
+        c = llm("openai:m", api_key="key-a", transport=rec_c.transport, cache=self.db)
+        c.ask("q")  # reuses the first key: served from the cache
+        self.assertEqual(len(rec_c.requests), 0)
+
+    def test_extra_changes_the_key(self):
+        rec = Recorder(json_response(OPENAI_REPLY))
+        m = self.make(rec, cache=self.db)
+        m.ask("q")
+        m.ask("q", extra={"seed_hint": 1})
+        self.assertEqual(len(rec.requests), 2)
+        m.ask("q", extra={"seed_hint": 1})
+        self.assertEqual(len(rec.requests), 2)
+
+    def test_openrouter(self):
+        rec = Recorder(json_response(OPENAI_REPLY))
+        m = llm("openrouter:openai/gpt-x", api_key="k", transport=rec.transport, cache=self.db)
+        m.ask("q")
+        m.ask("q")
         self.assertEqual(len(rec.requests), 1)
 
-    def test_different_request_misses(self):
-        rec = Recorder(json_response(REPLY))
-        c = self.client(rec, cache_dir=self.dir)
-        c.chat("m", MSGS)
-        c.chat("m", [{"role": "user", "content": "other"}])
-        c.chat("m2", MSGS)
-        self.assertEqual(len(rec.requests), 3)
-
-    def test_errors_are_not_cached(self):
-        rec = Recorder(json_response({"error": {"message": "x"}}, status=400), json_response(REPLY))
-        c = self.client(rec, cache_dir=self.dir)
-        with self.assertRaises(Exception):
-            c.chat("m", MSGS)
-        self.assertEqual(c.chat("m", MSGS).text, "hi")
-
-    def test_corrupt_db_is_a_miss(self):
-        rec = Recorder(json_response(REPLY))
-        c = self.client(rec, cache_dir=self.dir)
-        c.chat("m", MSGS)
-        with open(os.path.join(self.dir, "cache.db"), "wb") as f:
-            f.write(b"not a database")
-        self.assertEqual(c.chat("m", MSGS).text, "hi")
-        self.assertEqual(len(rec.requests), 2)
-
-    def test_tampered_value_is_a_miss(self):
-        rec = Recorder(json_response(REPLY))
-        c = self.client(rec, cache_dir=self.dir)
-        c.chat("m", MSGS)
-        db = sqlite3.connect(os.path.join(self.dir, "cache.db"))
-        blob = bytearray(db.execute("SELECT value FROM cache").fetchone()[0])
-        blob[20] ^= 1
-        db.execute("UPDATE cache SET value = ?", (bytes(blob),))
-        db.commit()
-        db.close()
-        c.chat("m", MSGS)
-        self.assertEqual(len(rec.requests), 2)
-
-    def test_params_are_part_of_the_key(self):
-        rec = Recorder(json_response(REPLY))
-        c = self.client(rec, cache_dir=self.dir)
-        c.chat("m", MSGS)
-        c.chat("m", MSGS, temperature=0.5)
-        self.assertEqual(len(rec.requests), 2)
-
-    def test_stored_data_is_encrypted(self):
-        rec = Recorder(json_response(REPLY))
-        self.client(rec, cache_dir=self.dir).chat("m", MSGS)
-        with open(os.path.join(self.dir, "cache.db"), "rb") as f:
-            raw = f.read()
-        self.assertNotIn(b"finish_reason", raw)
-        self.assertNotIn(b"stop", raw.replace(b"stop_", b""))
-
-    def test_clear_cache(self):
-        rec = Recorder(json_response(REPLY))
-        c = self.client(rec, cache_dir=self.dir)
-        c.chat("m", MSGS)
-        self.assertEqual(clear_cache(1, self.dir), 0)  # younger than 1 day
-        c.chat("m", MSGS)
+    def test_anthropic(self):
+        rec = Recorder(json_response(CLAUDE_REPLY))
+        m = llm("claude:claude-opus-5-5", api_key="k", transport=rec.transport, cache=self.db)
+        self.assertEqual(m.ask("q"), "ポチ")
+        self.assertEqual(m.ask("q"), "ポチ")
         self.assertEqual(len(rec.requests), 1)
-        self.assertEqual(clear_cache(0, self.dir), 1)
-        c.chat("m", MSGS)
-        self.assertEqual(len(rec.requests), 2)
 
-    def test_clear_cache_needs_dir(self):
-        with mock.patch.dict(os.environ, {}):
-            os.environ.pop("LLM_AI_API_CACHE_DIR", None)
-            with self.assertRaises(LLMConfigError) as cm:
-                clear_cache(1, lang="en")
-        self.assertEqual(cm.exception.code, "cache_dir_not_set")
-
-    def test_stream_is_cached_after_full_read(self):
-        rec = Recorder(sse_response(STREAM))
-        c = self.client(rec, cache_dir=self.dir)
-        first = "".join(ch.text for ch in c.stream_chat("m", MSGS))
-        second = "".join(ch.text for ch in c.stream_chat("m", MSGS))
-        self.assertEqual((first, second), ("hello", "hello"))
+    def test_streaming_is_cached(self):
+        rec = Recorder(sse_response(OPENAI_STREAM))
+        m = self.make(rec, cache=self.db)
+        self.assertEqual("".join(m.stream("q")), "ポチ")
+        self.assertEqual("".join(m.stream("q")), "ポチ")
         self.assertEqual(len(rec.requests), 1)
 
     def test_partial_stream_is_not_cached(self):
-        rec = Recorder(sse_response(STREAM))
-        c = self.client(rec, cache_dir=self.dir)
-        it = c.stream_chat("m", MSGS)
+        rec = Recorder(sse_response(OPENAI_STREAM))
+        m = self.make(rec, cache=self.db)
+        it = m.stream("q")
         next(it)
         it.close()
-        list(c.stream_chat("m", MSGS))
+        self.assertEqual("".join(m.stream("q")), "ポチ")
         self.assertEqual(len(rec.requests), 2)
 
-    def test_other_api_key_does_not_share_entries(self):
-        rec = Recorder(json_response(REPLY))
-        self.client(rec, cache_dir=self.dir).chat("m", MSGS)
-        rec2 = Recorder(json_response(REPLY))
-        OpenAIClient(api_key="other", transport=rec2.transport, cache_dir=self.dir).chat("m", MSGS)
-        self.assertEqual(len(rec2.requests), 1)
+    def test_stream_and_chat_do_not_share_entries(self):
+        rec = Recorder(sse_response(OPENAI_STREAM), json_response(OPENAI_REPLY))
+        m = self.make(rec, cache=self.db)
+        list(m.stream("q"))
+        m.ask("q")
+        self.assertEqual(len(rec.requests), 2)
 
-    def test_cipher_roundtrip(self):
-        blob = encrypt(b"e" * 32, b"m" * 32, b"hello" * 100)
-        self.assertEqual(decrypt(b"e" * 32, b"m" * 32, blob), b"hello" * 100)
-        self.assertIsNone(decrypt(b"e" * 32, b"x" * 32, blob))
+    def test_broken_cache_is_best_effort(self):
+        class Broken:
+            def get(self, key):
+                raise RuntimeError("boom")
+
+            def put(self, key, provider, result):
+                raise RuntimeError("boom")
+
+        rec = Recorder(json_response(OPENAI_REPLY))
+        m = self.make(rec, cache=Broken())
+        self.assertEqual(m.ask("q"), "ポチ")
+        self.assertEqual(len(rec.requests), 1)
+
+    def test_invalid_cache_setting(self):
+        with self.assertRaises(LLMConfigError) as cm:
+            llm("openai:m", api_key="k", cache=123, lang="en")
+        self.assertEqual(cm.exception.code, "invalid_cache")
+        with self.assertRaises(LLMConfigError):
+            set_cache(123)
 
 
 if __name__ == "__main__":

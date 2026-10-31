@@ -2,51 +2,58 @@
 
 日本語: [io_cache-ja.md](io_cache-ja.md)
 
-Skips the API call for a request that was already made and returns the previous response from SQLite. Use it in tests and debugging to save cost and waiting time. Responses are stored encrypted.
+Skips the API call for a request that was already made and returns the previous response from SQLite. Use it in tests and debugging to save cost and waiting time. Responses are stored encrypted. Off by default.
 
 This is a local response cache in the library. It is separate from the providers' prompt caching ([cache.md](cache.md)).
 
 ## Enabling
 
-Set a directory with an environment variable:
+There are three ways.
 
 ```sh
+# 1. Environment variable (uses <dir>/cache.db)
 export LLM_AI_API_CACHE_DIR=./.llm_cache
 ```
 
-Or in code (this takes precedence over the environment variable):
-
 ```python
-from llm_ai_api import llm
+from llm_ai_api import llm, set_cache
 
-m = llm("openai:gpt-6-luna", cache_dir="./.llm_cache")
+# 2. Process-wide (takes precedence over the env var; set_cache(None) turns it off explicitly)
+set_cache("./cache.db")
+
+# 3. Per instance (takes precedence over the global setting)
+m = llm("openai:gpt-6-luna", cache="./cache.db")   # True uses the default llm_ai_api_cache.db
+off = llm("openai:gpt-6-luna", cache=False)         # off for this instance only
+
 print(m.ask("Suggest a cute name for a dog"))  # calls the API and stores the response
 print(m.ask("Suggest a cute name for a dog"))  # served from the cache (no API call)
 ```
 
-Without either, the cache is off. The directory is created if missing. Everything is stored in one file, `<dir>/cache.db`.
+A `SQLiteCache` object can also be passed to `cache=` or `set_cache()`. Directories and files are created if missing.
 
 ## Deleting old entries
 
 ```python
 from llm_ai_api import clear_cache
 
-n = clear_cache(7)                         # delete entries older than 7 days (directory from the env var)
-n = clear_cache(30, "./.llm_cache")        # explicit directory
-n = clear_cache(0)                         # delete everything
+n = clear_cache(7)                    # delete entries older than 7 days (directory from the env var)
+n = clear_cache(30, "./.llm_cache")   # explicit directory
+n = clear_cache(0)                    # delete everything
 print(n, "entries deleted")
 ```
 
-It deletes entries stored more than `days` days ago and returns how many were deleted. If no directory is given anywhere, it raises `LLMConfigError` (`code="cache_dir_not_set"`).
+It deletes entries stored more than `days` days ago and returns how many were deleted. The directory is looked up in the argument, then the env var, then the cache set with `set_cache()`. If none is found it raises `LLMConfigError` (`code="cache_dir_not_set"`). `SQLiteCache.clear(days=None)` behaves the same.
 
 ## Behavior
 
-- **Key**: hex `sha256("{provider}:{model}@{api_key}>>>{input}")`. `{input}` is the method, path, stream flag and request body (`messages`, `temperature`, `max_tokens`, anything added with `extra`, ...) as JSON with sorted keys.
-- **Value**: the whole response, encrypted. The response JSON for normal calls, the list of SSE events for streams.
+- **Scope**: `chat()` / `ask()` and `stream_chat()` / `stream()` (streaming). The raw layer (`request()`) is not cached.
+- **Key**: hex `sha256("{provider}:{model}@{api_key}>>>{input}")`. `{input}` is the request body (`messages`, `temperature`, `max_tokens`, anything added with `extra`, `stream`, ...) plus the client settings that can change a response (`base_url`, extra headers, Anthropic's `anthropic_version`) as JSON with sorted keys.
+- **Value**: the whole response (`ChatResult`), encrypted. A stream is stored as the list of its SSE events and replayed from the cache.
 - **A different API key means a separate cache.** The API key is used only to build the key hash and to derive the encryption key; it is never stored in plain text.
 - **Encryption**: built from the standard library only (a key derived from the API key with `scrypt`, HMAC-SHA256 in counter mode for encryption, and an HMAC to detect tampering). It keeps cached responses from sitting in plain text; it does not replace protecting your API key. The encryption key comes from the API key, so anyone holding the API key can read the cache.
 - Only successful responses are stored. HTTP errors are not.
-- A stream is stored only when it was read to the end. Streams stopped early or failed are not stored.
-- A corrupt file or a tampered value is treated as a miss and the API is called. A failed write never fails the call.
-- Entries do not expire by themselves. Even without `temperature` the same response keeps coming back; use `clear_cache()` or delete the file to get a fresh one.
+- A stream is stored only when it was read to the end (up to its terminal event). Streams stopped early or failed are not stored.
+- A corrupt row or a tampered value is treated as a miss (and that row is deleted) and the API is called. A cache read/write failure at run time never fails the call.
+- A newly created cache file is owner-only (0600).
+- Entries do not expire by themselves. The same request keeps returning the same response; use `clear_cache()` or turn the cache off to get a fresh one.
 - Do not commit the cache file to a repository.

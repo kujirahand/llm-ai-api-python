@@ -9,11 +9,12 @@ import json
 import os
 import random
 import time
+import urllib.parse
 from typing import Any, Dict, Iterable, Iterator, Optional, Tuple
 
 import httpx
 
-from .cache import ResponseCache
+from .cache import CACHE_NOT_SET, SQLiteCache, cache_key, resolve_cache
 from .errors import (
     APIConnectionError,
     APITimeoutError,
@@ -23,7 +24,7 @@ from .errors import (
     status_error_class,
 )
 from .lang import t
-from .types import SSEEvent
+from .types import ChatResult, SSEEvent
 
 _RETRY_STATUS = {408, 409, 429}
 _MAX_RETRY_AFTER = 60.0
@@ -53,6 +54,22 @@ def iter_sse(lines: Iterable[str]) -> Iterator[SSEEvent]:
             data.append(value)
     if data or event is not None:
         yield SSEEvent(event, "\n".join(data))
+
+
+def _mask_url(url: str) -> str:
+    """Return `url` safe for display: userinfo becomes `***`, query and fragment are dropped.
+
+    The API key is never part of the URL; this protects credentials a user may have
+    embedded in a custom base URL. If the URL cannot be parsed, returns `"***"`.
+    """
+    try:
+        parts = urllib.parse.urlsplit(url)
+        netloc = parts.netloc
+        if "@" in netloc:
+            netloc = "***@" + netloc.rpartition("@")[2]
+        return urllib.parse.urlunsplit((parts.scheme, netloc, parts.path, "", ""))
+    except ValueError:
+        return "***"
 
 
 def _user_agent() -> str:
@@ -96,17 +113,18 @@ class BaseClient:
         headers: Optional[Dict[str, str]] = None,
         *,
         lang: Optional[str] = None,
-        cache_dir: Optional[str] = None,
+        cache: Any = CACHE_NOT_SET,
         transport: Optional[httpx.BaseTransport] = None,
     ) -> None:
         """`lang` はエラーメッセージの言語（`"ja"` / `"en"`）。None なら環境から判定する。
 
-        `cache_dir` enables the response cache (default: env `LLM_AI_API_CACHE_DIR`).
+        `cache` は chat() の応答キャッシュ（True / パス / SQLiteCache / False / None。
+        未指定なら `set_cache()` のグローバル設定に従う）。
 
         `transport` はテスト用（`httpx.MockTransport` を渡す）。
         """
         self.lang = lang
-        self.cache_dir = cache_dir or os.environ.get("LLM_AI_API_CACHE_DIR") or None
+        self.cache = resolve_cache(cache, lang=lang)
         key = api_key
         for name in (self.api_key_env,) + self.api_key_env_fallbacks:
             key = key or os.environ.get(name)
@@ -116,9 +134,6 @@ class BaseClient:
                 code="missing_api_key",
             )
         self._api_key = key
-        self._cache = (
-            ResponseCache(self.cache_dir, self.provider, key) if self.cache_dir else None
-        )
         self.base_url = (
             base_url or os.environ.get(self.base_url_env) or self.default_base_url
         ).rstrip("/")
@@ -130,11 +145,83 @@ class BaseClient:
         )
 
     def __repr__(self) -> str:
-        return "%s(base_url=%r)" % (type(self).__name__, self.base_url)
+        return "%s(base_url=%r)" % (type(self).__name__, _mask_url(self.base_url))
 
     def close(self) -> None:
         """内部の HTTP クライアントを閉じる。"""
         self._client.close()
+
+    def _cache_context(self) -> Dict[str, Any]:
+        """Return the client settings that can change a response for the same body.
+
+        Part of the cache key, so cached entries are not shared across different
+        endpoints, API keys or header configurations. Providers add their own settings.
+        The API key is mixed into the key hash separately (see `cache_key`) and is never
+        stored.
+        """
+        return {
+            "base_url": self.base_url,
+            "headers": dict(self._extra_headers),
+        }
+
+    def _cache_lookup(self, body: Dict[str, Any]) -> Optional[ChatResult]:
+        """Return the cached result for this request body, or None (miss or cache failure)."""
+        if self.cache is None:
+            return None
+        try:
+            key = cache_key(self.provider, body, self._cache_context(), self._api_key)
+            if isinstance(self.cache, SQLiteCache):
+                return self.cache.get(key, secret=self._api_key)
+            return self.cache.get(key)
+        except Exception:
+            # The cache is best-effort at runtime: treat any failure as a miss.
+            return None
+
+    def _cache_store(self, body: Dict[str, Any], result: ChatResult) -> None:
+        """Store a result in the cache, ignoring cache failures."""
+        if self.cache is None:
+            return
+        try:
+            key = cache_key(self.provider, body, self._cache_context(), self._api_key)
+            if isinstance(self.cache, SQLiteCache):
+                self.cache.put(key, self.provider, result, secret=self._api_key)
+            else:
+                self.cache.put(key, self.provider, result)
+        except Exception:
+            # A cache failure must not lose an API response the caller already paid for.
+            pass
+
+    def _stream_events(self, path: str, body: Dict[str, Any]) -> Iterator[SSEEvent]:
+        """`request_stream()` with the response cache: replay a hit, record a miss.
+
+        A stream is stored only when it was read to the end (or up to its terminal event),
+        as a `ChatResult` whose `raw["events"]` holds the SSE events.
+        """
+        cached = self._cache_lookup(body)
+        if cached is not None and isinstance(cached.raw.get("events"), list):
+            return iter(
+                [SSEEvent(e.get("event"), e.get("data", "")) for e in cached.raw["events"]]
+            )
+        events = self.request_stream(path, body)
+        if self.cache is None:
+            return events
+        return self._record_events(events, body)
+
+    def _record_events(self, events: Iterator[SSEEvent], body: Dict[str, Any]) -> Iterator[SSEEvent]:
+        # Parsers stop at the terminal event and close this generator early, so a
+        # terminal event counts as complete too. Errors and early stops are not stored.
+        recorded: list = []
+        complete = False
+        try:
+            for ev in events:
+                recorded.append({"event": ev.event, "data": ev.data})
+                if ev.data == "[DONE]" or ev.event == "message_stop":
+                    complete = True
+                yield ev
+            complete = True
+        finally:
+            if complete:
+                self._cache_store(body, ChatResult("", None, None, None, {"events": recorded}))
 
     def __enter__(self) -> "BaseClient":
         return self
@@ -159,16 +246,9 @@ class BaseClient:
         timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
         """JSON を送り、レスポンス JSON（dict）をそのまま返す。"""
-        cache_key = self._cache.key(method, path, body, False) if self._cache else None
-        cached = self._cache.load(cache_key) if self._cache else None
-        if cached is not None:
-            return cached
         resp = self._open(method, path, body, headers, timeout, stream=False)
         try:
-            data = resp.json()
-            if self._cache:
-                self._cache.store(cache_key, data)
-            return data
+            return resp.json()
         except ValueError as e:
             raise LLMError(
                 self._t("invalid_json_response", preview=resp.text[:200]),
@@ -186,32 +266,10 @@ class BaseClient:
         timeout: Optional[float] = None,
     ) -> Iterator[SSEEvent]:
         """JSON を送り、SSE イベントを順に返す。HTTP エラーはこの呼び出しで送出される。"""
-        cache_key = self._cache.key("POST", path, body, True) if self._cache else None
-        cached = self._cache.load(cache_key) if self._cache else None
-        if cached is not None:
-            return iter([SSEEvent(e.get("event"), e.get("data", "")) for e in cached["events"]])
         resp = self._open("POST", path, body, headers, timeout, stream=True)
-        if cache_key is None:
-            return self._iter_events(resp)
-        return self._iter_events_cached(resp, cache_key)
+        return self._iter_events(resp)
 
     # --- 内部 -----------------------------------------------------------------
-
-    def _iter_events_cached(self, resp: httpx.Response, cache_key: str) -> Iterator[SSEEvent]:
-        # Store only a complete stream. Parsers stop at the terminal event and close this
-        # generator early, so a terminal event counts as complete too.
-        events: list = []
-        complete = False
-        try:
-            for ev in self._iter_events(resp):
-                events.append({"event": ev.event, "data": ev.data})
-                if ev.data == "[DONE]" or ev.event == "message_stop":
-                    complete = True
-                yield ev
-            complete = True
-        finally:
-            if complete:
-                self._cache.store(cache_key, {"events": events})
 
     def _iter_events(self, resp: httpx.Response) -> Iterator[SSEEvent]:
         try:
