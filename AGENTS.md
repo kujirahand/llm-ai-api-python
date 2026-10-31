@@ -323,7 +323,7 @@ class ChatChunk:
 - JSON は `json.dumps(body, ensure_ascii=False).encode("utf-8")` で自前でシリアライズして `content=` に渡す（httpx の `json=` の挙動差に依存しない）。
 - タイムアウト既定値は 600 秒（長い生成に対応するため）。接続タイムアウトは 10 秒。
 - ストリーミングは `client.stream("POST", ...)` と `response.iter_lines()` を使い、SSE パースは自前で行う。
-- 例外の変換: `httpx.TimeoutException` → `APITimeoutError`、その他の `httpx.TransportError` → `APIConnectionError`。httpx の例外をそのまま外に出さない。
+- 例外の変換: `httpx.TimeoutException` → `APITimeoutError`、その他の `httpx.RequestError`（`TransportError` や `DecodingError` など）→ `APIConnectionError`（リトライ対象）。リクエスト組み立て時の `httpx.InvalidURL` → `LLMConfigError`（`code="invalid_url"`、URL は `_mask_url()` でマスクして表示）。httpx の例外をそのまま外に出さない。
 - リトライ（自前で実装する）:
   - 対象: 408, 409, 429, 500 以上、および接続エラー・タイムアウト。
   - 既定 2 回。指数バックオフ（0.5 秒起点、上限 8 秒、ジッターあり）。
@@ -376,6 +376,7 @@ LLMError                      # 基底
   | `cache_dir_not_set` | `LLMConfigError`（`clear_cache()` でディレクトリ未指定） |
   | `invalid_cache` | `LLMConfigError`（キャッシュ設定の誤り） |
   | `invalid_log` | `LLMConfigError`（ログ設定の誤り） |
+  | `invalid_url` | `LLMConfigError`（ベース URL / パスが URL として不正） |
   | `invalid_json_response` | `LLMError` |
 
 ## 7.1 多言語化（`lang/`）

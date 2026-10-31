@@ -11,6 +11,7 @@ MESSAGES = {
     ),
     "invalid_log": "ログの設定が正しくありません: {detail}",
     "invalid_cache": "キャッシュの設定が正しくありません: {detail}",
+    "invalid_url": "URL が正しくありません: {url}",
     "unknown_provider": "未知のプロバイダーです: {provider!r}（対応: {supported}）",
     "cache_dir_not_set": "cache_dir=... か環境変数 LLM_AI_API_CACHE_DIR で、キャッシュのディレクトリを指定してください。",
     # 通信
