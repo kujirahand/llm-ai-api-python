@@ -59,6 +59,15 @@ m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 
 The constants are examples. Any other model works as a plain string, e.g. `llm("openai:some-new-model")`.
 
+### Timeouts and retries
+
+```python
+m = llm("openai:gpt-6-luna", timeout=60, max_retries=2, retry_read_timeout=False, retry_after_max=60)
+m.set_config(max_retries=0)  # change after creation (only the given arguments; async too)
+```
+
+By default, only connection-stage failures (the request never reached the server) and HTTP 408 / 409 / 429 / 5xx are retried. Failures after the request was sent, such as read timeouts, are not retried, to avoid double billing (`retry_read_timeout=True` retries read timeouts too). `retry_after_max` caps how many seconds to wait when following a `retry-after` header. For the full list of settings and production recommendations, see the [configuration reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/config.md).
+
 ### Async
 
 The same `llm()` works with asyncio: add an `a` to the method name (`aask()`, `achat()`, `astream()`).

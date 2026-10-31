@@ -136,6 +136,12 @@ class HttpTest(unittest.TestCase):
         c = make(rec, max_retries=1)
         with self.assertRaises(APITimeoutError):
             c.request_stream("/x", {})
+        self.assertEqual(len(rec.requests), 1)  # read timeouts are not retried by default
+
+        rec = Recorder(self.failing(httpx.ReadTimeout("slow")), self.failing(httpx.ReadTimeout("slow")))
+        c = make(rec, max_retries=1, retry_read_timeout=True)
+        with self.assertRaises(APITimeoutError):
+            c.request_stream("/x", {})
         self.assertEqual(len(rec.requests), 2)  # retried once
 
     def test_stream_error_body_disconnect_is_converted(self):
@@ -147,7 +153,7 @@ class HttpTest(unittest.TestCase):
         from .helpers import sse_response
 
         rec = Recorder(self.failing(httpx.ReadTimeout("slow")), sse_response("data: ok\n\n"))
-        c = make(rec)
+        c = make(rec, retry_read_timeout=True)
         self.assertEqual([e.data for e in c.request_stream("/x", {})], ["ok"])
         self.assertEqual(len(c.sleeps), 1)
 

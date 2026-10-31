@@ -22,10 +22,13 @@ import httpx
 
 from . import _http
 from ._http import (
-    _MAX_RETRY_AFTER,
+    _DEFAULT_RETRY_AFTER_MAX,
     _RETRY_STATUS,
+    _check_retry_after_max,
+    _is_retryable_transport_error,
     _mask_url,
     _is_terminal_event,
+    _retry_after_delay,
     _SSEDecoder,
     _user_agent,
     error_message,
@@ -87,6 +90,8 @@ class _AsyncBaseClient:
         max_retries: int = 2,
         headers: Optional[Dict[str, str]] = None,
         *,
+        retry_read_timeout: bool = False,
+        retry_after_max: float = _DEFAULT_RETRY_AFTER_MAX,
         lang: Optional[str] = None,
         cache: Any = CACHE_NOT_SET,
         log: Any = LOG_NOT_SET,
@@ -99,6 +104,7 @@ class _AsyncBaseClient:
         and is validated but not applied to httpx when `transport` is specified.
         """
         self.lang = lang
+        _check_retry_after_max(retry_after_max, lang)
         self.cache = resolve_cache(cache, lang=lang)
         self.log = resolve_log(log, lang=lang)
         key = api_key
@@ -115,6 +121,8 @@ class _AsyncBaseClient:
         ).rstrip("/")
         self.timeout = timeout
         self.max_retries = max_retries
+        self.retry_read_timeout = retry_read_timeout
+        self.retry_after_max = retry_after_max
         self.connection = resolve_connection(connection, lang=lang)
         self._connect_timeout = self.connection["connect_timeout"]
         self._extra_headers = dict(headers or {})
@@ -306,12 +314,7 @@ class _AsyncBaseClient:
         await asyncio.sleep(seconds)
 
     async def _backoff(self, attempt: int, retry_after: Optional[str]) -> None:
-        delay = None
-        if retry_after:
-            try:
-                delay = min(max(float(retry_after), 0.0), _MAX_RETRY_AFTER)
-            except ValueError:
-                delay = None
+        delay = _retry_after_delay(retry_after, self.retry_after_max)
         if delay is None:
             delay = min(8.0, 0.5 * (2 ** attempt)) * (0.75 + random.random() / 2)
         await self._sleep(delay)
@@ -331,9 +334,7 @@ class _AsyncBaseClient:
         )
         kwargs: Dict[str, Any] = {}
         if timeout is not None:
-            kwargs["timeout"] = httpx.Timeout(
-            timeout, connect=self._connect_timeout
-        )
+            kwargs["timeout"] = httpx.Timeout(timeout, connect=self._connect_timeout)
         attempt = 0
         while True:
             try:
@@ -358,21 +359,17 @@ class _AsyncBaseClient:
                         await resp.aclose()
                         raise _http._too_large(_http._MAX_RESPONSE_BYTES, self.lang)
                     await resp.aread()
-            except httpx.TimeoutException as e:
-                if resp is not None:
-                    await resp.aclose()
-                if attempt < self.max_retries:
-                    await self._backoff(attempt, None)
-                    attempt += 1
-                    continue
-                raise APITimeoutError(self._t("timeout"), code="timeout") from e
             except httpx.RequestError as e:
                 if resp is not None:
                     await resp.aclose()
-                if attempt < self.max_retries:
+                if attempt < self.max_retries and _is_retryable_transport_error(
+                    e, self.retry_read_timeout
+                ):
                     await self._backoff(attempt, None)
                     attempt += 1
                     continue
+                if isinstance(e, httpx.TimeoutException):
+                    raise APITimeoutError(self._t("timeout"), code="timeout") from e
                 raise APIConnectionError(
                     self._t("connection_error", detail=e), code="connection_error"
                 ) from e

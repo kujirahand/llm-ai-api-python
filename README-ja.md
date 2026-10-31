@@ -59,6 +59,15 @@ m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 
 定数は例です。載っていないモデルも `llm("openai:新しいモデル名")` のように文字列でそのまま使えます。
 
+### タイムアウトとリトライ
+
+```python
+m = llm("openai:gpt-6-luna", timeout=60, max_retries=2, retry_read_timeout=False, retry_after_max=60)
+m.set_config(max_retries=0)  # 生成後に変更する（渡した引数だけが変わる。非同期にも反映）
+```
+
+既定では、接続段階の失敗（サーバーに届いていないもの）と HTTP 408 / 409 / 429 / 5xx だけをリトライします。読み取りタイムアウトなど送信後の失敗は、二重課金を避けるためリトライしません（`retry_read_timeout=True` で読み取りタイムアウトもリトライします）。`retry_after_max` は `retry-after` ヘッダーに従って待つ秒数の上限です。設定の一覧と本番環境での推奨は、[設定リファレンス](docs/config-ja.md) を参照してください。
+
 ### 非同期（async）
 
 同じ `llm()` で、メソッド名の先頭に `a` を付けると非同期で使えます（`aask()` / `achat()` / `astream()`）。
