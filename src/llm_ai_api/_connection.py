@@ -1,11 +1,12 @@
-from __future__ import annotations
-
 """接続設定の解決と httpx 用設定の生成を行う内部モジュール。"""
 
+from __future__ import annotations
+
+import math
 import os
 import ssl
-from typing import Any, Dict, Mapping
-from urllib.parse import urlsplit, urlunsplit
+from typing import Any, Dict, Mapping, Optional, Union
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -26,7 +27,7 @@ DEFAULT_CONNECTION: Dict[str, Any] = {
 _global_overrides: Dict[str, Any] = {}
 
 
-def _error(lang: str | None, detail: str) -> LLMConfigError:
+def _error(lang: Optional[str], detail: str) -> LLMConfigError:
     """接続設定エラーを作成する。"""
     return LLMConfigError(
         t("invalid_connection", lang, detail=detail),
@@ -36,20 +37,12 @@ def _error(lang: str | None, detail: str) -> LLMConfigError:
 
 def _mask_proxy(value: str) -> str:
     """プロキシ URL の userinfo を伏せる。"""
-    parts = urlsplit(value)
-    if parts.username is None:
-        return value
-
-    host = parts.hostname or ""
-    if ":" in host and not host.startswith("["):
-        host = "[%s]" % host
-    if parts.port is not None:
-        host = "%s:%s" % (host, parts.port)
-
-    return urlunsplit((parts.scheme, "***@" + host, parts.path, parts.query, parts.fragment))
+    if "@" in value:
+        return "***@" + value.rsplit("@", 1)[1]
+    return value
 
 
-def _validate(effective: Mapping[str, Any], lang: str | None) -> None:
+def _validate(effective: Mapping[str, Any], lang: Optional[str]) -> None:
     """有効な接続設定を検証する。"""
     unknown = set(effective) - set(DEFAULT_CONNECTION)
     if unknown:
@@ -79,7 +72,11 @@ def _validate(effective: Mapping[str, Any], lang: str | None) -> None:
         ("connect_timeout", 0, False),
     ):
         value = effective[key]
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        ):
             raise _error(lang, "%s must be a number" % key)
         if value < minimum or (not inclusive and value == minimum):
             comparison = "greater than or equal to" if inclusive else "greater than"
@@ -93,13 +90,13 @@ def _validate(effective: Mapping[str, Any], lang: str | None) -> None:
     cert = effective["cert"]
     if cert is not None:
         if isinstance(cert, str):
-            if not os.path.exists(cert):
+            if not os.path.isfile(cert):
                 raise _error(lang, "cert path does not exist: %s" % cert)
         elif (
             isinstance(cert, (tuple, list))
             and len(cert) == 2
             and all(isinstance(path, str) for path in cert)
-            and all(os.path.exists(path) for path in cert)
+            and all(os.path.isfile(path) for path in cert)
         ):
             pass
         else:
@@ -109,8 +106,21 @@ def _validate(effective: Mapping[str, Any], lang: str | None) -> None:
     if proxy is not None:
         if not isinstance(proxy, str):
             raise _error(lang, "proxy must be an http or https URL")
-        parts = urlsplit(proxy)
-        if parts.scheme not in ("http", "https") or not parts.netloc:
+        try:
+            parts = urlsplit(proxy)
+            port = parts.port
+            valid = (
+                parts.scheme in ("http", "https")
+                and bool(parts.netloc)
+                and bool(parts.hostname)
+            )
+        except ValueError:
+            raise _error(
+                lang,
+                "proxy must be an http or https URL: %s" % _mask_proxy(proxy),
+            )
+
+        if not valid:
             raise _error(
                 lang,
                 "proxy must be an http or https URL: %s" % _mask_proxy(proxy),
@@ -122,19 +132,21 @@ def _normalize(effective: Dict[str, Any]) -> Dict[str, Any]:
     result = dict(effective)
     result["keepalive_expiry"] = float(result["keepalive_expiry"])
     result["connect_timeout"] = float(result["connect_timeout"])
+    if isinstance(result["cert"], list):
+        result["cert"] = tuple(result["cert"])
     return result
 
 
 def set_connection(
     *,
-    max_connections: int | None = None,
-    max_keepalive_connections: int | None = None,
-    keepalive_expiry: float | None = None,
-    connect_timeout: float | None = None,
-    verify: bool | str | None = None,
+    max_connections: Optional[int] = None,
+    max_keepalive_connections: Optional[int] = None,
+    keepalive_expiry: Optional[float] = None,
+    connect_timeout: Optional[float] = None,
+    verify: Optional[Union[bool, str]] = None,
     cert: Any = None,
-    proxy: str | None = None,
-    lang: str | None = None,
+    proxy: Optional[str] = None,
+    lang: Optional[str] = None,
 ) -> Dict[str, Any]:
     """グローバル接続設定を置き換える。引数なしでは既定値へ戻す。"""
     overrides = {
@@ -156,9 +168,7 @@ def set_connection(
     normalized = _normalize(effective)
 
     _global_overrides.clear()
-    _global_overrides.update(
-        {key: normalized[key] for key in overrides}
-    )
+    _global_overrides.update({key: normalized[key] for key in overrides})
     return get_connection()
 
 
@@ -170,8 +180,8 @@ def get_connection() -> Dict[str, Any]:
 
 
 def resolve_connection(
-    value: Mapping[str, Any] | None,
-    lang: str | None = None,
+    value: Optional[Mapping[str, Any]],
+    lang: Optional[str] = None,
 ) -> Dict[str, Any]:
     """インスタンス設定を含む有効な接続設定を解決する。"""
     if value is not None and not isinstance(value, Mapping):
@@ -192,7 +202,7 @@ def resolve_connection(
 
 def build_httpx_kwargs(
     resolved: Mapping[str, Any],
-    lang: str | None = None,
+    lang: Optional[str] = None,
 ) -> Dict[str, Any]:
     """解決済み設定から httpx クライアント用の引数を作る。"""
     effective = dict(resolved)

@@ -238,6 +238,48 @@ class ConnectionSettingsTestCase(unittest.TestCase):
         self.assertEqual(context.verify_mode, ssl.CERT_NONE)
         self.assertFalse(context.check_hostname)
 
+    def test_scheme_less_proxy_password_is_masked(self):
+        with self.assertRaises(LLMConfigError) as context:
+            resolve_connection({"proxy": "user:secretpw@proxy.example:8080"})
+
+        self.assertNotIn("secretpw", str(context.exception))
+
+    def test_proxy_without_hostname_raises_config_error(self):
+        with self.assertRaises(LLMConfigError):
+            resolve_connection({"proxy": "http://user:secretpw@"})
+
+    def test_proxy_bad_port_raises_config_error(self):
+        with self.assertRaises(LLMConfigError):
+            resolve_connection({"proxy": "http://proxy.example:badport"})
+
+    def test_proxy_invalid_ipv6_raises_config_error(self):
+        with self.assertRaises(LLMConfigError):
+            resolve_connection({"proxy": "http://[::1"})
+
+    def test_nan_connect_timeout_raises_config_error(self):
+        with self.assertRaises(LLMConfigError):
+            resolve_connection({"connect_timeout": float("nan")})
+
+    def test_infinite_keepalive_expiry_raises_config_error(self):
+        with self.assertRaises(LLMConfigError):
+            resolve_connection({"keepalive_expiry": float("inf")})
+
+    def test_cert_directory_raises_config_error(self):
+        import shutil
+        import tempfile
+
+        directory = tempfile.mkdtemp()
+        try:
+            with self.assertRaises(LLMConfigError):
+                resolve_connection({"cert": directory})
+        finally:
+            shutil.rmtree(directory)
+
+    def test_cert_list_is_normalized_to_tuple(self):
+        resolved = resolve_connection({"cert": [__file__, __file__]})
+
+        self.assertEqual(resolved["cert"], (__file__, __file__))
+        self.assertIsInstance(resolved["cert"], tuple)
 
 class AsyncConnectionSettingsTestCase(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
