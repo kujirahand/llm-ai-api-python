@@ -556,3 +556,8 @@ LLMError                      # 基底
 - Anthropic API バージョン: https://platform.claude.com/docs/en/api/versioning
 
 ストリームのキャッシュとログはそれぞれ独立した 16 MiB の上限で蓄積する。サイズは各項目の JSON エンコード後の UTF-8 バイト数で数える。超過時は蓄積を解放し、キャッシュ保存を省略する。ログは正常終了時に `response` を `{"text": null, "chunks": null, "truncated": true}` として記録する。配信は最後まで続ける。ファイルの `max_size` とは別で、同期・非同期共通。
+
+
+### キャッシュ・ログの実行時障害通知（#49）
+
+キャッシュ検索・保存およびログ書き込みの実行時例外は処理を続行し、`llm_ai_api` ロガーの警告と `cache_error` / `log_error` イベントで通知する。payload は `provider`, `operation`, `error_type`, `message` を含み、機密保護のため例外メッセージは出さず `message` は固定文とする。標準 `SQLiteCache` / `JSONLLog` はクライアント経由の失敗をスレッドセーフな読み取り専用 `failure_count` で数える。カスタムオブジェクトには属性を要求しない。非同期イベントはイベントループ上で通知する。詳細は docs/events.md と docs/events-ja.md。

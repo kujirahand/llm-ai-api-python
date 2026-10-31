@@ -192,60 +192,46 @@ class _AsyncBaseClient:
             "headers": dict(self._extra_headers),
         }
 
-    def _cache_lookup(self, body: Dict[str, Any]) -> Optional[ChatResult]:
+    async def _acache_lookup(self, body: Dict[str, Any]) -> Optional[ChatResult]:
         if self.cache is None:
             return None
-        try:
+        def lookup() -> Optional[ChatResult]:
             key = cache_key(self.provider, body, self._cache_context(), self._api_key)
             if isinstance(self.cache, SQLiteCache):
                 return self.cache.get(key, secret=self._api_key)
             return self.cache.get(key)
-        except Exception:
-            # The cache is best-effort at runtime: treat any failure as a miss.
+        try:
+            return await asyncio.to_thread(lookup)
+        except Exception as exc:
+            _http.report_io_error(self, self.cache, "cache", "lookup", exc)
             return None
 
-    def _cache_store(self, body: Dict[str, Any], result: ChatResult) -> None:
+    async def _acache_store(self, body: Dict[str, Any], result: ChatResult) -> None:
         if self.cache is None:
             return
-        try:
+        def store() -> None:
             key = cache_key(self.provider, body, self._cache_context(), self._api_key)
             if isinstance(self.cache, SQLiteCache):
                 self.cache.put(key, self.provider, result, secret=self._api_key)
             else:
                 self.cache.put(key, self.provider, result)
-        except Exception:
-            # A cache failure must not lose an API response the caller already paid for.
-            pass
-
-    def _log_call(
-        self, body: Dict[str, Any], response: Any, *, stream: bool = False, cached: bool = False
-    ) -> None:
-        if self.log is None:
-            return
         try:
-            self.log.write(
-                self.provider, body.get("model"), body, response, stream=stream, cached=cached
-            )
-        except Exception:
-            # A log failure must not lose an API response the caller already paid for.
-            pass
-
-    async def _acache_lookup(self, body: Dict[str, Any]) -> Optional[ChatResult]:
-        if self.cache is None:
-            return None
-        return await asyncio.to_thread(self._cache_lookup, body)
-
-    async def _acache_store(self, body: Dict[str, Any], result: ChatResult) -> None:
-        if self.cache is None:
-            return
-        await asyncio.to_thread(self._cache_store, body, result)
+            await asyncio.to_thread(store)
+        except Exception as exc:
+            _http.report_io_error(self, self.cache, "cache", "store", exc)
 
     async def _alog_call(
         self, body: Dict[str, Any], response: Any, *, stream: bool = False, cached: bool = False
     ) -> None:
         if self.log is None:
             return
-        await asyncio.to_thread(self._log_call, body, response, stream=stream, cached=cached)
+        try:
+            await asyncio.to_thread(
+                self.log.write, self.provider, body.get("model"), body, response,
+                stream=stream, cached=cached
+            )
+        except Exception as exc:
+            _http.report_io_error(self, self.log, "log", "write", exc)
 
     def _alog_chunks(
         self, chunks: Any, body: Dict[str, Any], cached: bool

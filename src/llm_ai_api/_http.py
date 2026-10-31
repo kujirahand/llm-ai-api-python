@@ -26,6 +26,7 @@ from ._events import (
     request_id_of,
     retry_payload,
 )
+from ._io_errors import report_io_error
 from .log import LOG_NOT_SET, resolve_log
 from .errors import (
     APIConnectionError,
@@ -521,8 +522,8 @@ class BaseClient:
             if isinstance(self.cache, SQLiteCache):
                 return self.cache.get(key, secret=self._api_key)
             return self.cache.get(key)
-        except Exception:
-            # The cache is best-effort at runtime: treat any failure as a miss.
+        except Exception as exc:
+            report_io_error(self, self.cache, "cache", "lookup", exc)
             return None
 
     def _cache_store(self, body: Dict[str, Any], result: ChatResult) -> None:
@@ -535,9 +536,8 @@ class BaseClient:
                 self.cache.put(key, self.provider, result, secret=self._api_key)
             else:
                 self.cache.put(key, self.provider, result)
-        except Exception:
-            # A cache failure must not lose an API response the caller already paid for.
-            pass
+        except Exception as exc:
+            report_io_error(self, self.cache, "cache", "store", exc)
 
     def _lookup_chat_cache(self, body: Dict[str, Any]) -> Optional[ChatResult]:
         """Return a cached chat result and emit ``cache_hit``, or None on a miss."""
@@ -557,9 +557,8 @@ class BaseClient:
             self.log.write(
                 self.provider, body.get("model"), body, response, stream=stream, cached=cached
             )
-        except Exception:
-            # A log failure must not lose an API response the caller already paid for.
-            pass
+        except Exception as exc:
+            report_io_error(self, self.log, "log", "write", exc)
 
     def _log_chunks(
         self, body: Dict[str, Any], chunks: Iterator[ChatChunk], cached: bool

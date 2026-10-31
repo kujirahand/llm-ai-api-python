@@ -141,7 +141,9 @@ def cache_key(
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-class SQLiteCache:
+from ._io_errors import FailureCounter
+
+class SQLiteCache(FailureCounter):
     """Stores ChatResult objects in an SQLite file, keyed by `cache_key()`.
 
     `max_size` (bytes) caps the file: when a `put()` leaves the file larger than that, the
@@ -161,6 +163,7 @@ class SQLiteCache:
         An unusable path or a `max_size` that is not a positive int (or None) raises
         LLMConfigError.
         """
+        self._init_failure_counter()
         self.path = str(path)
         if max_size is not None and (
             isinstance(max_size, bool) or not isinstance(max_size, int) or max_size <= 0

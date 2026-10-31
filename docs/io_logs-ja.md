@@ -106,3 +106,5 @@ m = llm("openai:gpt-6-luna", log=JSONLLog("./llm_log.jsonl", max_size=10_000_000
 - パスの代わりに自作のオブジェクトを渡せます。`write(provider, model, request, response, *, stream, cached)` を持っていれば使えます。
 
 ストリームのログ用蓄積には、1 ストリームあたり固定の 16 MiB の上限があります（各チャンクとテキストを JSON エンコードした UTF-8 バイト数の合計）。超過すると蓄積を解放し、正常終了時に `response` を `{"text": null, "chunks": null, "truncated": true}` として記録します。配信は続きます。この上限はファイルの `max_size` とは別です。
+
+実行時の書き込み失敗は警告と `log_error` イベントで通知し、`log.failure_count` でクライアント経由の失敗数を確認できます。[イベント](events-ja.md#cache_error--log_error)を参照してください。

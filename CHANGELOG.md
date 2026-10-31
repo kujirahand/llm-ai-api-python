@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Report runtime cache and log failures via warnings, events, and built-in object failure counters (#49).
+
 - Coalesce concurrent cache misses for non-streaming chats within one process.
 
 - Serialize writes and trims across log instances targeting the same normalized path, and use unique trim files.

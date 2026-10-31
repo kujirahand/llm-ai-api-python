@@ -106,3 +106,5 @@ m = llm("openai:gpt-6-luna", log=JSONLLog("./llm_log.jsonl", max_size=10_000_000
 - You can pass your own object instead of a path. It needs `write(provider, model, request, response, *, stream, cached)`.
 
 Stream log buffering has a fixed 16 MiB budget per stream (the sum of each chunk and text’s JSON-encoded UTF-8 byte size). If exceeded, buffered details are released and, on successful completion, the response is logged as `{"text": null, "chunks": null, "truncated": true}`; delivery continues. This budget is independent of file `max_size`.
+
+Runtime write failures emit warnings and `log_error` events; `log.failure_count` counts failures observed through clients. See [Events](events.md#cache_error--log_error).

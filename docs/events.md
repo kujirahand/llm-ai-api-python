@@ -4,7 +4,7 @@
 
 Listeners on an `LLM` or a provider client (`OpenAIClient` and the others) are told when a call retries, fails, or receives response headers. The I/O log records successful chats only. Use listeners to see retries and failures.
 
-`latency` in every payload below is **seconds** (`float`), measured before listeners run. It includes time spent waiting to retry. `None` means the value was not measured (for example a cache replay of a stream error).
+`latency`, when present in a payload below is **seconds** (`float`), measured before listeners run. It includes time spent waiting to retry. `None` means the value was not measured (for example a cache replay of a stream error).
 
 ## Register a listener
 
@@ -67,6 +67,7 @@ A cache hit returns the `request_id`, `latency`, and `retries` stored with the o
 | `request_error` | This library rejected the body (`response_too_large` or `invalid_json_response`) |
 | `stream_error` | An error event or EOF without a terminal event in a chat stream. `APIStreamError` is raised after the listeners return |
 | `stream_end` | A live stream was closed after a terminal SSE event (`[DONE]` or `message_stop`) |
+| `cache_error` / `log_error` | A cache lookup/store or log write failed; the chat continues |
 | `cache_hit` | `chat` / `stream_chat` (and the async twins) returned a stored response. No `response` event |
 
 ### `retry`
@@ -199,3 +200,9 @@ for piece in stream:
 ```
 
 Chat streams that reach EOF without a terminal event raise `APIStreamError` with code `stream_incomplete` after any received chunks and emit `stream_error`. This also applies to incomplete cache replays; raw `request_stream()` remains an unmodified SSE iterator.
+
+### `cache_error` / `log_error`
+
+A failed cache lookup or store, or log write, emits an event and a warning through the `llm_ai_api` logger. The chat continues: lookup failures are misses, and store/write failures do not discard the response. The payload contains `provider`, `operation` (`lookup`, `store`, or `write`), `error_type` (exception class name), and `message` (always `Details omitted`). Exception messages are omitted because they may contain secrets. Async listeners run on the event-loop thread.
+
+Built-in `SQLiteCache` and `JSONLLog` objects expose a thread-safe, read-only `failure_count`, counting failures observed through clients since object creation, across sync and async calls. Direct calls to the objects are not counted. Custom objects need not implement this property; their failures still produce warnings and events.

@@ -59,7 +59,9 @@ class _Unset:
 LOG_NOT_SET = _Unset()
 
 
-class JSONLLog:
+from ._io_errors import FailureCounter
+
+class JSONLLog(FailureCounter):
     """Append-only JSON Lines log file.
 
     `max_size` (bytes) caps the file: when a `write()` leaves the file larger than that,
@@ -85,6 +87,7 @@ class JSONLLog:
         lang: Optional[str] = None,
         redact: Optional[Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]] = None,
     ) -> None:
+        self._init_failure_counter()
         self.path = os.fspath(path)
         if max_size is not None and (
             isinstance(max_size, bool) or not isinstance(max_size, int) or max_size <= 0

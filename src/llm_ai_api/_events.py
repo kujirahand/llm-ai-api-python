@@ -31,6 +31,8 @@ EVENTS: Tuple[str, ...] = (
     "stream_error",
     "stream_end",
     "cache_hit",
+    "cache_error",
+    "log_error",
 )
 _EVENT_SET = frozenset(EVENTS)
 
