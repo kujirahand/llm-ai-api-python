@@ -120,6 +120,8 @@ llm-ai-api-python/
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
 ├── docs/
 │   ├── publish.md       # PyPI への公開手順
+│   ├── api.md           # 公開 API の一覧（英語）
+│   ├── api-ja.md        # 同（日本語）
 │   ├── events.md        # イベントリスナーと request_id の参照先（英語）
 │   ├── events-ja.md     # 同（日本語）
 │   ├── config.md        # 設定リファレンスとリトライの方針（英語）

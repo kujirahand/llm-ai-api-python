@@ -36,6 +36,17 @@ The model is always `"<provider>:<model>"` (providers: `openai`, `openrouter`, `
 Google Gemini is called through Google's OpenAI-compatible endpoint.
 For step-by-step setup, including how to configure an API key, see the [Tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md).
 
+### Main methods
+
+| Method | Method (async) | Description |
+|---|---|---|
+| `ask(prompt)` | `aask(prompt)` | Get a text response from the LLM |
+| `ask_stream(prompt)` | `aask_stream(prompt)` | Get the LLM response as a stream |
+| `chat(messages)` | `achat(messages)` | Give the LLM a conversation and get a response |
+| `chat_stream(messages)` | `achat_stream(messages)` | Give the LLM a conversation and get the response as a stream |
+
+For the full list of methods, see the [API Reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/api.md).
+
 ### Streaming and chat
 
 ```python

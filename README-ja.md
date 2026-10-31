@@ -36,6 +36,17 @@ API キーは環境変数（`OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC
 Google Gemini は、Google の OpenAI 互換エンドポイント経由で呼び出します。
 API キーの設定方法など、最初から順に試す手順は[チュートリアル](docs/tutorial-ja.md)を参照してください。
 
+### 主なメソッド
+
+| メソッド | メソッド(async) | 説明 |
+|---|---|---|
+| `ask(質問)` | `aask(質問)` | LLMからテキストの応答を得る |
+| `ask_stream(質問)` | `aask_stream(質問)` | LLMからの応答をストリームで得る |
+| `chat(会話履歴)` | `achat(会話履歴)` | LLMに会話を与えて応答を得る |
+| `chat_stream(会話履歴)` | `achat_stream(会話履歴)` | LLMに会話を与えて応答をストリームで得る |
+
+全メソッドの一覧は [API リファレンス](docs/api-ja.md) を参照してください。
+
 ### ストリーミングとチャット
 
 ```python
