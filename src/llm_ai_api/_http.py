@@ -40,6 +40,17 @@ from .types import ChatChunk, ChatResult, SSEEvent
 
 _RETRY_STATUS = {408, 409, 429}
 _DEFAULT_RETRY_AFTER_MAX = 60.0
+# Independent budgets for cache events and log chunks.
+_STREAM_BUFFER_LIMIT = 16 * 1024 * 1024
+
+
+def _stream_item_size(value: Any) -> int:
+    try:
+        return len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
+    except UnicodeEncodeError:
+        return len(json.dumps(value, ensure_ascii=True).encode("utf-8"))
+
+
 _MAX_RESPONSE_BYTES = 64 * 1024 * 1024  # largest non-stream response body that is accepted
 _MAX_SSE_LINE_BYTES = 16 * 1024 * 1024  # longest single SSE line that is accepted
 
@@ -501,11 +512,22 @@ class BaseClient:
             return
         texts: list = []
         raws: list = []
+        size = 0
+        recording = True
         for chunk in chunks:
-            texts.append(chunk.text or "")
-            raws.append(chunk.raw)
+            if recording:
+                size += _stream_item_size([chunk.text or "", chunk.raw])
+                if size > _STREAM_BUFFER_LIMIT:
+                    texts.clear()
+                    raws.clear()
+                    recording = False
+                else:
+                    texts.append(chunk.text or "")
+                    raws.append(chunk.raw)
             yield chunk
-        self._log_call(body, {"text": "".join(texts), "chunks": raws}, stream=True, cached=cached)
+        response = ({"text": "".join(texts), "chunks": raws} if recording else
+                    {"text": None, "chunks": None, "truncated": True})
+        self._log_call(body, response, stream=True, cached=cached)
 
     def _stream_events(
         self, path: str, body: Dict[str, Any], timeout: Optional[float] = None
@@ -547,9 +569,18 @@ class BaseClient:
         # stream), errors and early stops are not stored.
         recorded: list = []
         complete = False
+        size = 0
+        recording = True
         try:
             for ev in events:
-                recorded.append({"event": ev.event, "data": ev.data})
+                if recording:
+                    item = {"event": ev.event, "data": ev.data}
+                    size += _stream_item_size(item)
+                    if size > _STREAM_BUFFER_LIMIT:
+                        recorded.clear()
+                        recording = False
+                    else:
+                        recorded.append(item)
                 if _is_terminal_event(ev):
                     complete = True
                 yield ev
@@ -560,7 +591,7 @@ class BaseClient:
             close = getattr(events, "close", None)
             if close is not None:
                 close()
-            if complete:
+            if complete and recording:
                 stored = ChatResult("", None, None, None, {"events": recorded})
                 stored.request_id = events.request_id
                 stored.retries = events.retries

@@ -104,3 +104,5 @@ m = llm("openai:gpt-6-luna", log=JSONLLog("./llm_log.jsonl", max_size=10_000_000
 - A stream is recorded only after it has been read to the end. Streams that are stopped early and calls that fail are not recorded. To observe retries and failures, use `add_event_listener` rather than the log (see [Events](events.md)).
 - A failure while writing the log is ignored, so a response you already paid for is never lost. An invalid setting (a wrong value or an unwritable path) raises `LLMConfigError` with `code="invalid_log"` when the client is created.
 - You can pass your own object instead of a path. It needs `write(provider, model, request, response, *, stream, cached)`.
+
+Stream log buffering has a fixed 16 MiB budget per stream (the sum of each chunk and text’s JSON-encoded UTF-8 byte size). If exceeded, buffered details are released and, on successful completion, the response is logged as `{"text": null, "chunks": null, "truncated": true}`; delivery continues. This budget is independent of file `max_size`.

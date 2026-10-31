@@ -848,6 +848,8 @@ class _AsyncRecordedEvents:
         self.method = getattr(events, "method", None)
         self.path = getattr(events, "path", None)
         self.status_code = getattr(events, "status_code", None)
+        self._size = 0
+        self._recording = True
 
     def __aiter__(self) -> "_AsyncRecordedEvents":
         return self
@@ -870,8 +872,15 @@ class _AsyncRecordedEvents:
         except BaseException:
             await _close_quietly(self._events)
             raise
-        self._recorded.append({"event": ev.event, "data": ev.data})
-        if _is_terminal_event(ev):
+        if self._recording:
+            item = {"event": ev.event, "data": ev.data}
+            self._size += _http._stream_item_size(item)
+            if self._size > _http._STREAM_BUFFER_LIMIT:
+                self._recorded.clear()
+                self._recording = False
+            else:
+                self._recorded.append(item)
+        if self._recording and _is_terminal_event(ev):
             await self._store()
         return ev
 
@@ -965,6 +974,8 @@ class _AsyncLoggedChunks:
         self._done = False
         self.request_id = getattr(chunks, "request_id", None)
         self.retries = getattr(chunks, "retries", 0) or 0
+        self._size = 0
+        self._recording = True
 
     def __aiter__(self) -> "_AsyncLoggedChunks":
         return self
@@ -976,20 +987,28 @@ class _AsyncLoggedChunks:
             chunk = await self._chunks.__anext__()
         except StopAsyncIteration:
             self._done = True
+            response = (
+                {"text": "".join(self._texts), "chunks": self._raws}
+                if self._recording else
+                {"text": None, "chunks": None, "truncated": True}
+            )
             await self._client._alog_call(
-                self._body,
-                {"text": "".join(self._texts), "chunks": self._raws},
-                stream=True,
-                cached=self._cached,
+                self._body, response, stream=True, cached=self._cached,
             )
             raise
         except BaseException:
             self._done = True
             await _close_quietly(self._chunks)
             raise
-        if self._client.log is not None:
-            self._texts.append(chunk.text or "")
-            self._raws.append(chunk.raw)
+        if self._client.log is not None and self._recording:
+            self._size += _http._stream_item_size([chunk.text or "", chunk.raw])
+            if self._size > _http._STREAM_BUFFER_LIMIT:
+                self._texts.clear()
+                self._raws.clear()
+                self._recording = False
+            else:
+                self._texts.append(chunk.text or "")
+                self._raws.append(chunk.raw)
         return chunk
 
     async def aclose(self) -> None:

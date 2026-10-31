@@ -551,3 +551,5 @@ LLMError                      # 基底
 - OpenRouter: https://openrouter.ai/docs/api-reference/overview
 - Anthropic Messages: https://docs.claude.com/en/api/messages
 - Anthropic API バージョン: https://platform.claude.com/docs/en/api/versioning
+
+ストリームのキャッシュとログはそれぞれ独立した 16 MiB の上限で蓄積する。サイズは各項目の JSON エンコード後の UTF-8 バイト数で数える。超過時は蓄積を解放し、キャッシュ保存を省略する。ログは正常終了時に `response` を `{"text": null, "chunks": null, "truncated": true}` として記録する。配信は最後まで続ける。ファイルの `max_size` とは別で、同期・非同期共通。

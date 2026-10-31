@@ -74,3 +74,5 @@ m = llm("openai:gpt-6-luna", cache=SQLiteCache("./cache.db", max_size=10_000_000
 - The cache file uses SQLite's WAL journal mode (falls back to the default where WAL is unavailable), so several processes can share one file. You may see `-wal` / `-shm` files next to it; they get the same permissions as the main file.
 - Entries do not expire by themselves. The same request keeps returning the same response; use `clear_cache()` or turn the cache off to get a fresh one.
 - Do not commit the cache file to a repository.
+
+Stream cache buffering has a fixed 16 MiB budget per stream (the sum of each event’s JSON-encoded UTF-8 byte size). If exceeded, buffered events are released and the stream is not cached; delivery continues. This budget is independent of file `max_size`.
