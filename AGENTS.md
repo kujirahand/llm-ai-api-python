@@ -28,7 +28,7 @@ print(luna.ask(question))  # ポチ
 3. **指定されていないパラメータは送らない**: `temperature`, `top_p`, `max_tokens` などは利用者が明示した場合のみ送信する。
    - 理由: 新しいモデルや API バージョンでは、デフォルト値であっても送るだけで 400 になるパラメータがある（例: Claude の API バージョン `2026-10-21` では `temperature` / `top_p` / `top_k` が全モデルで拒否される。OpenAI の推論系モデルも `temperature` を拒否する）。
    - 例外: API 仕様上必須のもの（Claude の `max_tokens`）のみ、デフォルト値を補う。
-4. **モデル名をハードコードしない**: ライブラリ本体にデフォルトモデルを持たない。`model` は常に呼び出し側が指定する。モデル名はサンプルコード・README・ライブテストにのみ書く。
+4. **デフォルトモデルを持たない**: `model` は常に呼び出し側が指定する。ライブラリの処理が特定のモデル名に依存してはならない（分岐しない）。モデル名を書いてよいのは `models.py`（便利な定数）、サンプルコード、README、ライブテストだけ。`models.py` の定数は例にすぎず、載っていないモデルも文字列でそのまま指定できること。
 5. **API バージョン・URL は差し替え可能にする**: ベース URL、`anthropic-version` ヘッダー、追加ヘッダーはすべて引数または環境変数で上書きできるようにする。
 6. **エスケープハッチを常に用意する**: 共通インターフェイスが対応していない機能（ツール呼び出し、画像入力、構造化出力など）も、生レイヤー（`request()`）や `extra` 引数で必ず使えるようにする。
 7. **小さく保つ**: 1 プロバイダーあたり 1 ファイル、数百行程度を目安にする。
@@ -41,6 +41,7 @@ print(luna.ask(question))  # ポチ
 |---|---|---|---|
 | OpenAI | `openai` | `POST https://api.openai.com/v1/chat/completions` | `Authorization: Bearer $OPENAI_API_KEY` |
 | OpenRouter | `openrouter` | `POST https://openrouter.ai/api/v1/chat/completions` | `Authorization: Bearer $OPENROUTER_API_KEY`（任意で `HTTP-Referer`, `X-Title`） |
+| Google Gemini | `google` | `POST https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`（OpenAI 互換エンドポイント。Google 自身が「ベータ」と明記している） | `Authorization: Bearer $GEMINI_API_KEY`（なければ `GOOGLE_API_KEY`） |
 | Anthropic | `anthropic`（別名 `claude`） | `POST https://api.anthropic.com/v1/messages` | `x-api-key: $ANTHROPIC_API_KEY` + `anthropic-version: 2026-10-21` |
 
 - 共通インターフェイス `llm()` によるテキストの一問一答・ストリーミング
@@ -73,17 +74,29 @@ llm-ai-api-python/
 │       ├── types.py         # ChatResult などの dataclass
 │       ├── openai.py        # OpenAIClient
 │       ├── openrouter.py    # OpenRouterClient（OpenAI 互換部分を共有）
+│       ├── google.py        # GoogleClient（OpenAI 互換部分を共有）
 │       ├── anthropic.py     # AnthropicClient
-│       └── llm.py           # 共通インターフェイス llm() / LLM
+│       ├── llm.py           # 共通インターフェイス llm() / LLM
+│       ├── models.py        # 代表的なモデルの定数（"provider:model" 形式の文字列）
+│       └── lang/            # エラーメッセージの多言語化
+│           ├── __init__.py  # 言語判定、フォールバック、t()
+│           ├── en.py        # 英語（フォールバック先。全メッセージ ID を持つ）
+│           └── ja.py        # 日本語
 ├── tests/
+│   ├── helpers.py           # MockTransport 用ヘルパー
 │   ├── test_http.py
 │   ├── test_sse.py
 │   ├── test_openai.py
 │   ├── test_openrouter.py
+│   ├── test_google.py
 │   ├── test_anthropic.py
 │   ├── test_llm.py
+│   ├── test_models.py
+│   ├── test_lang.py
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
-└── examples/
+├── docs/
+│   └── publish.md       # PyPI への公開手順
+└── examples/                # 使い方のサンプル（コメントは英語。_common.py は共通ヘルパー）
 ```
 
 - インポート名は `llm_ai_api`、配布名（PyPI）は `llm-ai-api`。
@@ -127,10 +140,26 @@ m.client    # 下位の OpenAIClient など（生レイヤーにアクセスで�
 
 - モデル指定文字列は **最初の `:` で分割** する。OpenRouter のモデル名は `/` や `:` を含むため（例: `"openrouter:meta-llama/llama-4:free"` → provider `openrouter`、model `meta-llama/llama-4:free`）。
 - プロバイダー名は小文字に正規化する。`claude` は `anthropic` の別名。未知のプロバイダーや `:` がない文字列は `LLMConfigError`。
-- `ask()` / `stream()` / `chat()` は、キーワード引数（`system`, `max_tokens`, `temperature`, `extra`）で `llm()` の既定値を呼び出しごとに上書きできる。`extra` は既定値と浅くマージする。
+- `ask()` / `stream()` / `chat()` は、キーワード引数（`system`, `max_tokens`, `temperature`, `extra`）で `llm()` の既定値を呼び出しごとに上書きできる。引数を渡さなければ既定値を使い、**`None` を明示すると、その呼び出しだけ既定値を無効にして送らない**（`llm(..., temperature=0.4).ask("q", temperature=None)` は `temperature` を送らない）。両者を区別するため、これらの引数の既定値は内部のセンチネル `UNSET` で、`None` ではない。`extra` は dict を渡すと既定値と浅くマージし、`None` で既定の `extra` を無効にする。ただし Claude の `max_tokens` は API の必須項目なので、`None` を指定してもライブラリ既定の 16000 が使われる。`llm()` 自体の引数では `None` は「既定値なし」の意味。
 - `ask()` / `stream()` は **状態を持たない**（会話履歴を保持しない）。会話を続けたい場合は `chat()` に messages を渡してもらう。
 - `ask()` は `ChatResult.text` をそのまま返す。`stop_reason` が `"refusal"` や `"max_tokens"` でも例外にしない（必要なら `chat()` を使って確認してもらう）。
 - `LLM` は `close()` とコンテキストマネージャ（`with llm(...) as m:`）に対応する。
+
+### 5.2.1 モデル定数（`models.py`）
+
+```python
+from llm_ai_api import llm, models
+
+m = llm(models.OPENAI_GPT6_LUNA)              # "openai:gpt-6-luna"
+m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)     # "anthropic:claude-opus-5-5"
+m = llm(models.OPENROUTER_OPENAI_GPT6_SOL)    # "openrouter:openai/gpt-6-sol"
+```
+
+- 値は `llm()` にそのまま渡せる `"プロバイダー:モデル"` 形式の文字列（`str`）。専用の型は作らない。
+- 命名規則: `<プロバイダー>_<モデル名>`。モデル名は大文字にして `-` と `.` を `_` に置き換える（`gpt-6.1-sol` → `OPENAI_GPT6_1_SOL`）。OpenRouter は `OPENROUTER_<ベンダー>_<モデル名>`。
+- 追加・更新するときは、必ず公式の一覧で実在を確認する（OpenRouter: `https://openrouter.ai/api/v1/models`、OpenAI: `GET /v1/models`、Anthropic: `GET /v1/models`）。推測で書かない。
+- 古くなったモデルを削除すると利用者のコードが壊れるため、定数は原則として消さない（API 側で廃止されたものだけ削除する）。
+- `OPENAI_*` は OpenAI 直接のモデル ID（OpenRouter の `openai/` 付き ID から接頭辞を除いたもの）。直接 API での実在は、公開一覧がないため API キーで `GET /v1/models` を叩いて確認すること。
 
 ### 5.3 クライアント
 
@@ -158,6 +187,7 @@ client = AnthropicClient(
 |---|---|
 | `OPENAI_API_KEY` / `OPENAI_BASE_URL` | OpenAI |
 | `OPENROUTER_API_KEY` / `OPENROUTER_BASE_URL` | OpenRouter |
+| `GEMINI_API_KEY`（なければ `GOOGLE_API_KEY`） / `GOOGLE_BASE_URL` | Google Gemini |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_BASE_URL` | Anthropic |
 
 ### 5.4 生レイヤー
@@ -186,12 +216,15 @@ for chunk in client.stream_chat(model=..., messages=..., ...):
 
 メッセージ形式とパラメータ変換（ライブラリが行う変換はこれだけ）:
 
-| 項目 | OpenAI | OpenRouter | Anthropic |
-|---|---|---|---|
-| `role: system` | そのまま送信 | そのまま送信 | messages から取り出して連結し、トップレベル `system` に設定 |
-| `max_tokens` | `max_completion_tokens` として送信 | `max_tokens` として送信 | `max_tokens`（必須。未指定時 16000） |
-| `content` | 文字列またはパーツ配列をそのまま | 同左 | 同左（Claude 形式のブロック配列をそのまま） |
-| ストリーミング | `stream: true` と `stream_options: {"include_usage": true}` を付与 | `stream: true` | `stream: true` |
+| 項目 | OpenAI | OpenRouter | Google | Anthropic |
+|---|---|---|---|---|
+| `role: system` | そのまま送信 | そのまま送信 | そのまま送信 | messages から取り出して連結し、トップレベル `system` に設定 |
+| `max_tokens` | `max_completion_tokens` として送信 | `max_tokens` として送信 | `max_tokens` として送信 | `max_tokens`（必須。未指定時 16000） |
+| `content` | 文字列またはパーツ配列をそのまま | 同左 | 同左 | 同左（Claude 形式のブロック配列をそのまま） |
+| ストリーミング | `stream: true` と `stream_options: {"include_usage": true}` を付与 | `stream: true` | `stream: true` | `stream: true` |
+
+- Google は OpenAI 互換エンドポイントを使うため、OpenAI 系の共通実装（`OpenAICompatClient`）を継承する。Google が互換エンドポイントを変更・廃止した場合は、ネイティブ API（`:generateContent`、`contents[]` / `systemInstruction` / `generationConfig.maxOutputTokens`）に切り替える。切り替えても `llm("google:...")` の使い方は変えない。
+- Google の `max_tokens` と `stream_options` の扱いは、実際の API で未確認（ライブテストで確かめる）。
 
 - 画像などのマルチモーダル content は **プロバイダー間で変換しない**。各プロバイダーの形式で渡してもらう。
 - 共通インターフェイスの `system=` 引数は、先頭に `{"role": "system", ...}` を追加することで実現する（変換は上表のとおりプロバイダーレイヤーで行う）。
@@ -232,13 +265,15 @@ class ChatChunk:
   - 既定 2 回。指数バックオフ（0.5 秒起点、上限 8 秒、ジッターあり）。
   - `retry-after` ヘッダーがあれば優先（上限 60 秒）。
   - ストリーミングは、レスポンスを読み始めた後はリトライしない。
+- ストリーミングでは、HTTP エラー応答のボディ読み取り（`resp.read()`）もヘッダー受信と同じ例外変換・リトライの対象にする。ここで httpx の例外を外に漏らしてはならない。
+- パッケージ内の `llm` は関数（`llm_ai_api.llm`）で、同名のモジュール `llm.py` を隠す。モジュールを直接参照するときは `sys.modules["llm_ai_api.llm"]` を使う。
 - エラー時はレスポンスボディを読み、JSON として解釈できれば dict、できなければ文字列として例外に格納する。
 
 ### SSE パーサー
 
 - 行単位で読み、空行でイベントを確定する。`event:` / `data:`（複数行は `\n` で連結）を扱う。
 - `:` で始まる行はコメントとして無視する（OpenRouter は `: OPENROUTER PROCESSING` を送ってくる）。
-- OpenAI 系は `data: [DONE]` で終了。
+- OpenAI 系は `data: [DONE]` で終了。ストリームの途中で `error` フィールドを持つイベント（OpenRouter など）を受け取ったら、空のチャンクとして扱わず `APIStreamError` を送出する（本文は `body` に保持する）。部分的な回答を完成したものと誤認させないため。
 - Anthropic は `ping` を無視し、`error` イベントを受け取ったら `APIStreamError` を送出する。`message_stop` で終了。
 - テキスト差分の取り出し:
   - OpenAI 系: `choices[0].delta.content`
@@ -263,7 +298,31 @@ LLMError                      # 基底
 ```
 
 - `request_id` は `x-request-id`（OpenAI）/ `request-id`（Anthropic）ヘッダーから取得する。
-- 例外メッセージには、API が返したエラーメッセージ（`error.message`）を含める。
+- 例外メッセージには、API が返したエラーメッセージ（`error.message`）を含める（翻訳せず、そのまま付ける）。
+- すべての例外は、言語に依存しない識別子 `code` を持つ。コードで判定するときは、翻訳で変わるメッセージではなく `code` を使う。
+
+  | `code` | 例外 |
+  |---|---|
+  | `missing_api_key` / `invalid_model_spec` / `unknown_provider` | `LLMConfigError` |
+  | `connection_error` | `APIConnectionError` |
+  | `timeout` | `APITimeoutError` |
+  | `api_error` | `APIStatusError` とそのサブクラス（HTTP ステータスは `status_code`） |
+  | `stream_error` | `APIStreamError` |
+  | `invalid_json_response` | `LLMError` |
+
+## 7.1 多言語化（`lang/`）
+
+パッケージが自分で作るメッセージ（設定ミス、接続失敗、HTTP エラーの見出しとヒントなど）を、利用者の言語で出す。対応言語は `ja` と `en`。
+
+- **メッセージの置き場所**: `lang/<言語コード>.py` の `MESSAGES`（メッセージ ID → `str.format` 形式のテンプレート）。メッセージ ID は `missing_api_key` のような英小文字のスネークケースで、エラーの `code` と揃える。`gettext` / `.po` は使わない。
+- **フォールバック**: `指定された言語 → en → メッセージ ID そのもの`。言語ファイルに ID がなければ英語を使う。英語にもなければ ID を返す（例外にしない）。テンプレートの書式が壊れていたときも次の言語に進む。
+- **英語がマスター**: `en.py` が全メッセージ ID を持つ。新しいメッセージは、まず `en.py` に追加し、他の言語は後から足してよい。他言語にだけ存在する ID を作らない。
+- **言語の追加**: `lang/<コード>.py` を 1 つ作るだけでよい（登録は不要。初回に `importlib` で自動的に読み込まれる）。言語コードは 2〜3 文字の小文字。
+- **言語の決め方**（優先順）: `lang=` 引数（`llm(..., lang="en")`、各クライアント） → `set_language()` → 環境変数 `LLM_AI_API_LANG` → `LANGUAGE`（`ja:en` のようなコロン区切りで、対応している最初のもの） → `LC_ALL` → `LC_MESSAGES` → `LANG`（最初に設定されているもの。`C` / `POSIX` は英語） → `locale.getlocale()` → 英語。macOS の GUI の言語設定を読むための外部コマンドは使わない。
+- **翻訳しないもの**: API が返した `error.message`、プロバイダー名、モデル名、パラメータ名。
+- **ヒント**: HTTP エラーには、原因の見当がつくものだけ、メッセージの 2 行目に `ヒント: ...` を付ける（400 / 401 / 403 / 404 / 429 / 5xx）。
+- メッセージは `t(msg_id, lang, **params)` で作る。例外クラスや呼び出し側に、文章を直接書かない。
+- 公開 API: `set_language(lang)`, `get_language()`（`llm_ai_api` から import できる）。
 
 ## 8. 対応 Python バージョン・パッケージング
 
@@ -274,7 +333,8 @@ LLMError                      # 基底
 
 ## 9. テスト
 
-- テストフレームワークは標準の `unittest`。実行: `python -m unittest discover -s tests`
+- テストフレームワークは標準の `unittest`。実行: `PYTHONPATH=src python -m unittest discover -s tests -t .`（`pip install -e .` 済みなら `PYTHONPATH` は不要）
+- テスト共通のヘルパーは `tests/helpers.py`（`Recorder` が送信内容を記録して応答を返す）。
 - ユニットテストはネットワークに出ない。`httpx.MockTransport` を使って、送信内容の検証と応答の差し替えを行う。
 - 最低限テストすること:
   - 共通インターフェイス: モデル指定文字列の分割（`:` を含むモデル名）、別名、エラー、既定値と呼び出しごとの上書き
@@ -282,14 +342,22 @@ LLMError                      # 基底
   - ヘッダー: 認証ヘッダー、`anthropic-version`、追加ヘッダー
   - SSE: 複数行 data、コメント行、`[DONE]`、`ping`、`error` イベント、改行コード `\r\n`
   - エラー: ステータスコードごとの例外クラス、JSON/非 JSON のエラーボディ、リトライと `retry-after`、httpx 例外の変換
+  - 多言語化: 言語判定の優先順位、フォールバック（言語 → en → ID）、ja が en にない ID を持たないこと、テンプレートの引数が言語間で一致すること、コード中のメッセージ ID が `en.py` に存在すること
+  - テストは実行環境のロケールに依存してはならない。メッセージを検証するときは `lang=` を明示する
 - ライブテスト（`tests/test_live.py`）は `LLM_AI_API_LIVE=1` かつ各 API キーがあるときだけ実行する。課金が発生するため `max_tokens` を小さくする。
 
 ## 10. コーディング規約
 
 - `httpx` と標準ライブラリ以外を import しない（これに違反する変更は受け入れない）。
-- 公開関数・クラスには型ヒントと docstring を付ける。docstring・コメントは日本語でよい。
+- 公開関数・クラスには型ヒントと docstring を付ける。
+- **ソースコード中のコメントと docstring は英語で書く**（`src/`、`tests/`、`examples/` のすべて）。理由: 海外の利用者・コントリビューターも読めるようにするため。
+  - 対象外: ユーザーに見せる文言は `lang/<言語コード>.py` に置く（それぞれの言語で書く）。コード中に日本語などの文章を直接書かない。
+  - 対象外: テストデータとして日本語の文字列を使うのは構わない（日本語の入出力を検証するため）。
+  - 既存のコードに日本語のコメントが残っている場合は、そのファイルを触るついでに英語にする。新しく書くコメントは英語にする。
 - 公開 API は `__init__.py` で明示的に re-export し、それ以外は内部扱い（`_` 始まり）とする。
-- 公開 API を変更したら README.md（英語）、README-ja.md（日本語）とこのファイルを同時に更新する。
+- ユーザーに見えるメッセージを追加・変更したら、`lang/en.py` と `lang/ja.py` を更新する。
+- 公開 API を変更したら README-ja.md、README.md とこのファイルを同時に更新する。
+- **README-ja.md（日本語）が元で、README.md（英語）はその翻訳**。README-ja.md を変更したら、同じコミットで README.md にも同じ内容を英語で反映する（片方だけの変更はしない）。見出しの順序・コード例・リンクを両者で揃える。PyPI に表示されるのは README.md。
 - フォーマットは PEP 8 に準拠（ツールは強制しない）。
 
 ## 11. 公式 API 仕様の参照先
