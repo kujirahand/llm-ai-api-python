@@ -15,6 +15,7 @@ import asyncio
 import json
 import os
 import random
+import warnings
 from typing import Any, AsyncIterable, AsyncIterator, Callable, Dict, List, Optional, Tuple
 
 import httpx
@@ -380,8 +381,32 @@ class _AsyncBaseClient:
         )
 
 
+# The loop keeps only weak references to tasks; hold finalizer closes until they finish.
+_PENDING_CLOSES: set = set()
+
+
+def _schedule_close(resp: Any) -> None:
+    """Run `resp.aclose()` as a task on the current loop (called via `call_soon_threadsafe`)."""
+    # A task whose loop was closed before it finished never runs its done
+    # callback; prune such entries so they are not retained until process exit.
+    for old in list(_PENDING_CLOSES):
+        try:
+            if old.done() or old.get_loop().is_closed():
+                _PENDING_CLOSES.discard(old)
+        except Exception:
+            _PENDING_CLOSES.discard(old)
+    task = asyncio.ensure_future(_close_quietly(resp))
+    _PENDING_CLOSES.add(task)
+    task.add_done_callback(_PENDING_CLOSES.discard)
+
+
 class _AsyncEventStream:
-    """SSE events of one streaming response. Closes the response when done or closed."""
+    """SSE events of one streaming response. Closes the response when done or closed.
+
+    Callers should `aclose()` a stream they stop early. As a last resort, a stream
+    garbage-collected while still open schedules `resp.aclose()` on the event loop it
+    was created on, or emits a `ResourceWarning` if that loop is gone.
+    """
 
     def __init__(self, client: _AsyncBaseClient, resp: httpx.Response) -> None:
         self._client = client
@@ -389,6 +414,10 @@ class _AsyncEventStream:
         self._lines = resp.aiter_lines()
         self._events = aiter_sse(self._lines)
         self._closed = False
+        try:
+            self._loop: Optional[asyncio.AbstractEventLoop] = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = None
 
     def __aiter__(self) -> "_AsyncEventStream":
         return self
@@ -428,6 +457,25 @@ class _AsyncEventStream:
                 await _close_quietly(self._lines)
             finally:
                 await _close_quietly(self._resp)
+
+    def __del__(self) -> None:
+        # Safety net for a stream dropped without aclose(). Never raise from here.
+        if getattr(self, "_closed", True):
+            return
+        self._closed = True
+        try:
+            loop = getattr(self, "_loop", None)
+            if loop is not None and not loop.is_closed():
+                loop.call_soon_threadsafe(_schedule_close, self._resp)
+                return
+        except Exception:
+            pass
+        try:
+            client = getattr(self, "_client", None)
+            lang = getattr(client, "lang", None)
+            warnings.warn(t("unclosed_stream", lang), ResourceWarning, source=self)
+        except Exception:
+            pass
 
 
 class _ReplayEvents:

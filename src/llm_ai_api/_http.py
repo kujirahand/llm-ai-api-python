@@ -302,6 +302,10 @@ class BaseClient:
                 yield ev
             complete = True
         finally:
+            # 途中で閉じられたときも、レスポンスをすぐに解放する。
+            close = getattr(events, "close", None)
+            if close is not None:
+                close()
             if complete:
                 self._cache_store(body, ChatResult("", None, None, None, {"events": recorded}))
 
@@ -346,25 +350,17 @@ class BaseClient:
         *,
         headers: Optional[Dict[str, str]] = None,
         timeout: Optional[float] = None,
-    ) -> Iterator[SSEEvent]:
-        """JSON を送り、SSE イベントを順に返す。HTTP エラーはこの呼び出しで送出される。"""
+    ) -> "_EventStream":
+        """JSON を送り、SSE イベントを順に返す。HTTP エラーはこの呼び出しで送出される。
+
+        返すストリームは、最後まで読んだとき・エラーになったとき・`close()` を呼んだときに
+        レスポンスを閉じる。途中でやめるときは `close()` を呼ぶこと
+        （閉じずに捨てた場合も、回収時にレスポンスを閉じる）。
+        """
         resp = self._open("POST", path, body, headers, timeout, stream=True)
-        return self._iter_events(resp)
+        return _EventStream(self, resp)
 
     # --- 内部 -----------------------------------------------------------------
-
-    def _iter_events(self, resp: httpx.Response) -> Iterator[SSEEvent]:
-        try:
-            for ev in iter_sse(resp.iter_lines()):
-                yield ev
-        except httpx.TimeoutException as e:
-            raise APITimeoutError(self._t("stream_timeout"), code="timeout") from e
-        except httpx.RequestError as e:
-            raise APIConnectionError(
-                self._t("stream_connection_error", detail=e), code="connection_error"
-            ) from e
-        finally:
-            resp.close()
 
     def _headers(self, stream: bool, extra: Optional[Dict[str, str]]) -> Dict[str, str]:
         h = {
@@ -487,3 +483,68 @@ class BaseClient:
             request_id=request_id,
             headers=dict(resp.headers),
         )
+
+
+class _EventStream:
+    """SSE events of one streaming response. Owns the `httpx.Response`.
+
+    Closes the response when read to the end, on error, or on `close()`. Also closes
+    it from `__del__`, for streams dropped without ever being read (a plain
+    generator's `finally` would not run then).
+    """
+
+    def __init__(self, client: BaseClient, resp: httpx.Response) -> None:
+        self._client = client
+        self._resp = resp
+        self._events = iter_sse(resp.iter_lines())
+        self._closed = False
+
+    def __iter__(self) -> "_EventStream":
+        return self
+
+    def __next__(self) -> SSEEvent:
+        if self._closed:
+            raise StopIteration
+        try:
+            return next(self._events)
+        except StopIteration:
+            self.close()
+            raise
+        except httpx.TimeoutException as e:
+            self.close()
+            raise APITimeoutError(self._client._t("stream_timeout"), code="timeout") from e
+        except httpx.RequestError as e:
+            self.close()
+            raise APIConnectionError(
+                self._client._t("stream_connection_error", detail=e), code="connection_error"
+            ) from e
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self) -> None:
+        """Close the stream and the response. Safe to call more than once.
+
+        Best-effort cleanup: errors from closing are suppressed so httpx exceptions
+        never leak and never mask the error that triggered the close.
+        """
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._events.close()
+        except Exception:
+            pass
+        try:
+            self._resp.close()
+        except Exception:
+            pass
+
+    def __del__(self) -> None:
+        # Last resort for a stream dropped without close(). Never raise from __del__.
+        if getattr(self, "_closed", True):
+            return
+        try:
+            self.close()
+        except Exception:
+            pass

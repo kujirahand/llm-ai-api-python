@@ -34,6 +34,8 @@ for piece in luna.stream("短い物語を書いて"):
 result = luna.chat([{"role": "user", "content": "こんにちは"}])  # ChatResult: text, stop_reason, usage, raw
 ```
 
+ストリームは、最後まで読むか、捨てられたときに自動で接続を閉じます（非同期では、ストリームを作ったイベントループがまだ動いている場合に限ります）。途中でやめるときは `close()`（非同期では `await stream.aclose()`）を呼ぶと、すぐに接続を解放できます。
+
 指定していないパラメータは送りません（新しいモデルは `temperature` などをデフォルト値でも拒否することがあるため）。
 それ以外のパラメータは `extra={...}` で、さらに細かい操作は生レイヤー `luna.client.request(path, body)` で扱えます。
 
