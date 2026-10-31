@@ -18,6 +18,7 @@ from .errors import (
     PermissionDeniedError,
     RateLimitError,
 )
+from .google import GoogleClient
 from .llm import LLM, llm
 from .lang import get_language, set_language
 from .openai import OpenAIClient
@@ -34,6 +35,7 @@ __all__ = [
     "OpenAIClient",
     "OpenRouterClient",
     "AnthropicClient",
+    "GoogleClient",
     "ChatResult",
     "ChatChunk",
     "SSEEvent",

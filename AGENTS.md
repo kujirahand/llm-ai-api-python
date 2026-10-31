@@ -41,6 +41,7 @@ print(luna.ask(question))  # ポチ
 |---|---|---|---|
 | OpenAI | `openai` | `POST https://api.openai.com/v1/chat/completions` | `Authorization: Bearer $OPENAI_API_KEY` |
 | OpenRouter | `openrouter` | `POST https://openrouter.ai/api/v1/chat/completions` | `Authorization: Bearer $OPENROUTER_API_KEY`（任意で `HTTP-Referer`, `X-Title`） |
+| Google Gemini | `google` | `POST https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`（OpenAI 互換エンドポイント。Google 自身が「ベータ」と明記している） | `Authorization: Bearer $GEMINI_API_KEY`（なければ `GOOGLE_API_KEY`） |
 | Anthropic | `anthropic`（別名 `claude`） | `POST https://api.anthropic.com/v1/messages` | `x-api-key: $ANTHROPIC_API_KEY` + `anthropic-version: 2026-10-21` |
 
 - 共通インターフェイス `llm()` によるテキストの一問一答・ストリーミング
@@ -73,6 +74,7 @@ llm-ai-api-python/
 │       ├── types.py         # ChatResult などの dataclass
 │       ├── openai.py        # OpenAIClient
 │       ├── openrouter.py    # OpenRouterClient（OpenAI 互換部分を共有）
+│       ├── google.py        # GoogleClient（OpenAI 互換部分を共有）
 │       ├── anthropic.py     # AnthropicClient
 │       ├── llm.py           # 共通インターフェイス llm() / LLM
 │       ├── models.py        # 代表的なモデルの定数（"provider:model" 形式の文字列）
@@ -86,6 +88,7 @@ llm-ai-api-python/
 │   ├── test_sse.py
 │   ├── test_openai.py
 │   ├── test_openrouter.py
+│   ├── test_google.py
 │   ├── test_anthropic.py
 │   ├── test_llm.py
 │   ├── test_models.py
@@ -184,6 +187,7 @@ client = AnthropicClient(
 |---|---|
 | `OPENAI_API_KEY` / `OPENAI_BASE_URL` | OpenAI |
 | `OPENROUTER_API_KEY` / `OPENROUTER_BASE_URL` | OpenRouter |
+| `GEMINI_API_KEY`（なければ `GOOGLE_API_KEY`） / `GOOGLE_BASE_URL` | Google Gemini |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_BASE_URL` | Anthropic |
 
 ### 5.4 生レイヤー
@@ -212,12 +216,15 @@ for chunk in client.stream_chat(model=..., messages=..., ...):
 
 メッセージ形式とパラメータ変換（ライブラリが行う変換はこれだけ）:
 
-| 項目 | OpenAI | OpenRouter | Anthropic |
-|---|---|---|---|
-| `role: system` | そのまま送信 | そのまま送信 | messages から取り出して連結し、トップレベル `system` に設定 |
-| `max_tokens` | `max_completion_tokens` として送信 | `max_tokens` として送信 | `max_tokens`（必須。未指定時 16000） |
-| `content` | 文字列またはパーツ配列をそのまま | 同左 | 同左（Claude 形式のブロック配列をそのまま） |
-| ストリーミング | `stream: true` と `stream_options: {"include_usage": true}` を付与 | `stream: true` | `stream: true` |
+| 項目 | OpenAI | OpenRouter | Google | Anthropic |
+|---|---|---|---|---|
+| `role: system` | そのまま送信 | そのまま送信 | そのまま送信 | messages から取り出して連結し、トップレベル `system` に設定 |
+| `max_tokens` | `max_completion_tokens` として送信 | `max_tokens` として送信 | `max_tokens` として送信 | `max_tokens`（必須。未指定時 16000） |
+| `content` | 文字列またはパーツ配列をそのまま | 同左 | 同左 | 同左（Claude 形式のブロック配列をそのまま） |
+| ストリーミング | `stream: true` と `stream_options: {"include_usage": true}` を付与 | `stream: true` | `stream: true` | `stream: true` |
+
+- Google は OpenAI 互換エンドポイントを使うため、OpenAI 系の共通実装（`OpenAICompatClient`）を継承する。Google が互換エンドポイントを変更・廃止した場合は、ネイティブ API（`:generateContent`、`contents[]` / `systemInstruction` / `generationConfig.maxOutputTokens`）に切り替える。切り替えても `llm("google:...")` の使い方は変えない。
+- Google の `max_tokens` と `stream_options` の扱いは、実際の API で未確認（ライブテストで確かめる）。
 
 - 画像などのマルチモーダル content は **プロバイダー間で変換しない**。各プロバイダーの形式で渡してもらう。
 - 共通インターフェイスの `system=` 引数は、先頭に `{"role": "system", ...}` を追加することで実現する（変換は上表のとおりプロバイダーレイヤーで行う）。

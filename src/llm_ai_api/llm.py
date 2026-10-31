@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterator, List, Optional
 from ._http import BaseClient
 from .anthropic import AnthropicClient
 from .errors import LLMConfigError
+from .google import GoogleClient
 from .lang import t
 from .openai import OpenAIClient
 from .openrouter import OpenRouterClient
@@ -15,6 +16,7 @@ from .types import ChatResult
 _PROVIDERS = {
     "openai": OpenAIClient,
     "openrouter": OpenRouterClient,
+    "google": GoogleClient,
     "anthropic": AnthropicClient,
     "claude": AnthropicClient,
 }

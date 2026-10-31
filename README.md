@@ -20,8 +20,9 @@ luna = llm("openai:gpt-6-luna")
 print(luna.ask("Come up with a cute name for a dog"))
 ```
 
-Set the API key via an environment variable (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`).
-The model is always `"<provider>:<model>"` (providers: `openai`, `openrouter`, `anthropic` / `claude`).
+Set the API key via an environment variable (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`).
+The model is always `"<provider>:<model>"` (providers: `openai`, `openrouter`, `anthropic` / `claude`, `google`).
+Google Gemini is called through Google's OpenAI-compatible endpoint.
 
 ```python
 for piece in luna.stream("Write a short story"):   # streaming

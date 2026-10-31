@@ -9,7 +9,7 @@ import json
 import os
 import random
 import time
-from typing import Any, Dict, Iterable, Iterator, Optional
+from typing import Any, Dict, Iterable, Iterator, Optional, Tuple
 
 import httpx
 
@@ -83,6 +83,7 @@ class BaseClient:
     provider = ""
     default_base_url = ""
     api_key_env = ""
+    api_key_env_fallbacks: Tuple[str, ...] = ()  # tried after `api_key_env`
     base_url_env = ""
 
     def __init__(
@@ -101,7 +102,9 @@ class BaseClient:
         `transport` はテスト用（`httpx.MockTransport` を渡す）。
         """
         self.lang = lang
-        key = api_key or os.environ.get(self.api_key_env)
+        key = api_key
+        for name in (self.api_key_env,) + self.api_key_env_fallbacks:
+            key = key or os.environ.get(name)
         if not key:
             raise LLMConfigError(
                 t("missing_api_key", lang, provider=self.provider, env=self.api_key_env),

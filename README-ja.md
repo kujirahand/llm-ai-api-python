@@ -20,8 +20,9 @@ luna = llm("openai:gpt-6-luna")
 print(luna.ask("可愛い犬の名前を考えて"))
 ```
 
-API キーは環境変数（`OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY`）で渡します。
-モデルは `"<プロバイダー>:<モデル名>"` で指定します（`openai` / `openrouter` / `anthropic`（別名 `claude`））。
+API キーは環境変数（`OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`（または `GOOGLE_API_KEY`））で渡します。
+モデルは `"<プロバイダー>:<モデル名>"` で指定します（`openai` / `openrouter` / `anthropic`（別名 `claude`） / `google`）。
+Google Gemini は、Google の OpenAI 互換エンドポイント経由で呼び出します。
 
 ```python
 for piece in luna.stream("短い物語を書いて"):   # ストリーミング

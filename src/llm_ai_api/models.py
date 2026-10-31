@@ -24,6 +24,12 @@ ANTHROPIC_CLAUDE_OPUS_5_5 = "anthropic:claude-opus-5-5"
 ANTHROPIC_CLAUDE_SONNET_5_5 = "anthropic:claude-sonnet-5-5"
 ANTHROPIC_CLAUDE_HAIKU_5_5 = "anthropic:claude-haiku-5-5"
 
+# --- Google Gemini (generativelanguage.googleapis.com) ------------------------
+GOOGLE_GEMINI_4_ARGON = "google:gemini-4-argon"
+GOOGLE_GEMINI_3_8_FLASH = "google:gemini-3.8-flash"
+GOOGLE_GEMINI_3_5_FLASH_LITE = "google:gemini-3.5-flash-lite"
+GOOGLE_GEMINI_3_1_PRO_PREVIEW = "google:gemini-3.1-pro-preview"
+
 # --- OpenRouter（モデル名は `ベンダー/モデル`。バージョンの区切りは `.`） ------------
 OPENROUTER_OPENAI_GPT6_LUNA = "openrouter:openai/gpt-6-luna"
 OPENROUTER_OPENAI_GPT6_SOL = "openrouter:openai/gpt-6-sol"
