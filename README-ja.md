@@ -33,6 +33,16 @@ result = luna.chat([{"role": "user", "content": "こんにちは"}])  # ChatResu
 指定していないパラメータは送りません（新しいモデルは `temperature` などをデフォルト値でも拒否することがあるため）。
 それ以外のパラメータは `extra={...}` で、さらに細かい操作は生レイヤー `luna.client.request(path, body)` で扱えます。
 
+代表的なモデルは定数でも指定できます（中身は `"プロバイダー:モデル"` の文字列です）。
+
+```python
+from llm_ai_api import llm, models
+
+m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
+```
+
+定数は例です。載っていないモデルも `llm("openai:新しいモデル名")` のように文字列でそのまま使えます。
+
 ## ライセンス
 
 MIT

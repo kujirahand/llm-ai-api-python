@@ -2,6 +2,7 @@
 
 __version__ = "0.0.1"
 
+from . import models
 from .anthropic import AnthropicClient
 from .errors import (
     APIConnectionError,
@@ -25,6 +26,7 @@ from .types import ChatChunk, ChatResult, SSEEvent, Usage
 __all__ = [
     "__version__",
     "llm",
+    "models",
     "LLM",
     "OpenAIClient",
     "OpenRouterClient",

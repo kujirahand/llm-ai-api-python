@@ -28,7 +28,7 @@ print(luna.ask(question))  # ポチ
 3. **指定されていないパラメータは送らない**: `temperature`, `top_p`, `max_tokens` などは利用者が明示した場合のみ送信する。
    - 理由: 新しいモデルや API バージョンでは、デフォルト値であっても送るだけで 400 になるパラメータがある（例: Claude の API バージョン `2026-10-21` では `temperature` / `top_p` / `top_k` が全モデルで拒否される。OpenAI の推論系モデルも `temperature` を拒否する）。
    - 例外: API 仕様上必須のもの（Claude の `max_tokens`）のみ、デフォルト値を補う。
-4. **モデル名をハードコードしない**: ライブラリ本体にデフォルトモデルを持たない。`model` は常に呼び出し側が指定する。モデル名はサンプルコード・README・ライブテストにのみ書く。
+4. **デフォルトモデルを持たない**: `model` は常に呼び出し側が指定する。ライブラリの処理が特定のモデル名に依存してはならない（分岐しない）。モデル名を書いてよいのは `models.py`（便利な定数）、サンプルコード、README、ライブテストだけ。`models.py` の定数は例にすぎず、載っていないモデルも文字列でそのまま指定できること。
 5. **API バージョン・URL は差し替え可能にする**: ベース URL、`anthropic-version` ヘッダー、追加ヘッダーはすべて引数または環境変数で上書きできるようにする。
 6. **エスケープハッチを常に用意する**: 共通インターフェイスが対応していない機能（ツール呼び出し、画像入力、構造化出力など）も、生レイヤー（`request()`）や `extra` 引数で必ず使えるようにする。
 7. **小さく保つ**: 1 プロバイダーあたり 1 ファイル、数百行程度を目安にする。
@@ -74,7 +74,8 @@ llm-ai-api-python/
 │       ├── openai.py        # OpenAIClient
 │       ├── openrouter.py    # OpenRouterClient（OpenAI 互換部分を共有）
 │       ├── anthropic.py     # AnthropicClient
-│       └── llm.py           # 共通インターフェイス llm() / LLM
+│       ├── llm.py           # 共通インターフェイス llm() / LLM
+│       └── models.py        # 代表的なモデルの定数（"provider:model" 形式の文字列）
 ├── tests/
 │   ├── helpers.py           # MockTransport 用ヘルパー
 │   ├── test_http.py
@@ -83,6 +84,7 @@ llm-ai-api-python/
 │   ├── test_openrouter.py
 │   ├── test_anthropic.py
 │   ├── test_llm.py
+│   ├── test_models.py
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
 ├── docs/
 │   └── publish.md       # PyPI への公開手順
@@ -134,6 +136,22 @@ m.client    # 下位の OpenAIClient など（生レイヤーにアクセスで�
 - `ask()` / `stream()` は **状態を持たない**（会話履歴を保持しない）。会話を続けたい場合は `chat()` に messages を渡してもらう。
 - `ask()` は `ChatResult.text` をそのまま返す。`stop_reason` が `"refusal"` や `"max_tokens"` でも例外にしない（必要なら `chat()` を使って確認してもらう）。
 - `LLM` は `close()` とコンテキストマネージャ（`with llm(...) as m:`）に対応する。
+
+### 5.2.1 モデル定数（`models.py`）
+
+```python
+from llm_ai_api import llm, models
+
+m = llm(models.OPENAI_GPT6_LUNA)              # "openai:gpt-6-luna"
+m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)     # "anthropic:claude-opus-5-5"
+m = llm(models.OPENROUTER_OPENAI_GPT6_SOL)    # "openrouter:openai/gpt-6-sol"
+```
+
+- 値は `llm()` にそのまま渡せる `"プロバイダー:モデル"` 形式の文字列（`str`）。専用の型は作らない。
+- 命名規則: `<プロバイダー>_<モデル名>`。モデル名は大文字にして `-` と `.` を `_` に置き換える（`gpt-6.1-sol` → `OPENAI_GPT6_1_SOL`）。OpenRouter は `OPENROUTER_<ベンダー>_<モデル名>`。
+- 追加・更新するときは、必ず公式の一覧で実在を確認する（OpenRouter: `https://openrouter.ai/api/v1/models`、OpenAI: `GET /v1/models`、Anthropic: `GET /v1/models`）。推測で書かない。
+- 古くなったモデルを削除すると利用者のコードが壊れるため、定数は原則として消さない（API 側で廃止されたものだけ削除する）。
+- `OPENAI_*` は OpenAI 直接のモデル ID（OpenRouter の `openai/` 付き ID から接頭辞を除いたもの）。直接 API での実在は、公開一覧がないため API キーで `GET /v1/models` を叩いて確認すること。
 
 ### 5.3 クライアント
 

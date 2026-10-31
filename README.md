@@ -33,6 +33,16 @@ result = luna.chat([{"role": "user", "content": "hi"}])  # ChatResult: text, sto
 Parameters you do not pass are never sent (newer models reject even default values such as `temperature`).
 Anything else can go through `extra={...}`, or the raw layer: `luna.client.request(path, body)`.
 
+You can also pick from the model constants (they are just `"provider:model"` strings):
+
+```python
+from llm_ai_api import llm, models
+
+m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
+```
+
+The constants are examples. Any other model works as a plain string, e.g. `llm("openai:some-new-model")`.
+
 ## License
 
 MIT
