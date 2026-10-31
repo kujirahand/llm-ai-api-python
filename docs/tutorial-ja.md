@@ -161,6 +161,7 @@ asyncio.run(main())
 
 - `async with`（または `await m.aclose()`）で閉じます。閉じた `LLM` は再利用できません。
 - `asyncio.run()` のたびに新しい `llm()` を作ってください。
+- 非同期コードの中で同期版の `ask()` / `chat()` / `stream()` を呼ぶと、イベントループ全体が止まります。必ず `aask()` / `achat()` / `astream()` を使ってください。
 
 ## 8. エラーを処理する
 

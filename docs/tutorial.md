@@ -161,6 +161,7 @@ asyncio.run(main())
 
 - Close it with `async with` (or `await m.aclose()`). A closed `LLM` cannot be reused.
 - Create a new `llm()` for each `asyncio.run()`.
+- Calling the sync `ask()` / `chat()` / `stream()` inside async code blocks the whole event loop. Always use `aask()` / `achat()` / `astream()` there.
 
 ## 8. Handle errors
 

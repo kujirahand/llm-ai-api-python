@@ -74,6 +74,8 @@ asyncio.run(main())
 - `astream()` starts the request at the first iteration, so connection and HTTP errors are raised there (when `async for` starts), not when `astream()` is called (the sync `stream()` raises on the call). To stop early, call `await stream.aclose()`.
 - Close it with `async with` (or `await m.aclose()`). A closed `LLM` cannot be reused.
 - Do not carry one across event loops: create a new `llm()` for each `asyncio.run()`.
+- Do not call the sync `ask()` / `chat()` / `stream()` from async code (for example, a FastAPI handler running in the event loop): they block the whole loop until the request finishes. Use `aask()` / `achat()` / `astream()` instead.
+- `close()` closes only the sync client, not the async one. If you used the async API, call `await m.aclose()` (or use `async with`), which closes both.
 
 The cache and the log work the same way as in the sync API. Only the common interface (`llm()`) is async; there are no async provider clients or raw layer (`request()`).
 
@@ -145,6 +147,8 @@ from llm_ai_api import llm, set_language
 set_language("ja")                       # for the whole process
 m = llm("openai:gpt-6-luna", lang="en")  # or per model
 ```
+
+`set_language()` is process-global: it changes the language of error messages for the whole process, including other threads and instances created earlier when they raise (unlike `set_cache()` / `set_log()`, which are resolved when an instance is created). For a per-instance language, use the `lang=` option.
 
 Every exception has a language-independent `code` (e.g. `"missing_api_key"`) you can check instead of the message.
 Messages returned by the API itself are never translated.

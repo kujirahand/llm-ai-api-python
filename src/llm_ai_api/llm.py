@@ -110,7 +110,10 @@ class LLM:
         return "LLM(%r)" % ("%s:%s" % (self.provider, self.model))
 
     def close(self) -> None:
-        """下位クライアントを閉じる。"""
+        """下位の同期クライアントを閉じる。
+
+        非同期クライアントは閉じない。非同期 API を使った場合は `aclose()` を使うこと。
+        """
         self.client.close()
 
     def __enter__(self) -> "LLM":
@@ -258,7 +261,7 @@ class LLM:
         return _AsyncTextStream(self, msgs, system, max_tokens, temperature, extra)
 
     async def aclose(self) -> None:
-        """Close the async client (if it was created) and the sync client.
+        """Close both the async client (if it was created) and the sync client.
 
         Safe to call more than once. A closed `LLM` cannot be used again; create a new
         one with `llm()` (for example, one per `asyncio.run()`).
