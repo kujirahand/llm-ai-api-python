@@ -1,7 +1,6 @@
 # llm-ai-api
 
-A thin, stable HTTP wrapper for the OpenAI, OpenRouter, and Claude (Anthropic) APIs.
-It does not use the official SDKs; the only dependency is `httpx`.
+A thin, stable HTTP wrapper for the OpenAI, OpenRouter, Claude (Anthropic), and Google APIs. It does not use the official SDKs; the only dependency is `httpx`.
 
 [日本語版 (Japanese)](README-ja.md)
 
@@ -11,7 +10,7 @@ It does not use the official SDKs; the only dependency is `httpx`.
 pip install llm-ai-api
 ```
 
-## Usage
+## Quick start
 
 ```python
 from llm_ai_api import llm
@@ -24,10 +23,14 @@ Set the API key via an environment variable (`OPENAI_API_KEY`, `OPENROUTER_API_K
 The model is always `"<provider>:<model>"` (providers: `openai`, `openrouter`, `anthropic` / `claude`, `google`).
 Google Gemini is called through Google's OpenAI-compatible endpoint.
 
+### Streaming and chat
+
 ```python
-for piece in luna.stream("Write a short story"):   # streaming
+# Streaming
+for piece in luna.stream("Write a short story"):
     print(piece, end="", flush=True)
 
+# Using a chat history
 result = luna.chat([{"role": "user", "content": "hi"}])  # ChatResult: text, stop_reason, usage, raw
 ```
 

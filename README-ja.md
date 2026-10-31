@@ -1,7 +1,6 @@
 # llm-ai-api
 
-OpenAI / OpenRouter / Claude (Anthropic) の API を呼び出す、薄くて壊れにくい HTTP ラッパーです。
-公式 SDK を使わず、依存は `httpx` のみです。
+OpenAI / OpenRouter / Claude (Anthropic) / Google の API を呼び出す、薄くて壊れにくい HTTP ラッパーです。公式 SDK を使わず、依存は `httpx` のみです。
 
 [English](README.md)
 
@@ -11,7 +10,7 @@ OpenAI / OpenRouter / Claude (Anthropic) の API を呼び出す、薄くて壊�
 pip install llm-ai-api
 ```
 
-## 使い方
+## 簡単な使い方
 
 ```python
 from llm_ai_api import llm
@@ -24,10 +23,14 @@ API キーは環境変数（`OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC
 モデルは `"<プロバイダー>:<モデル名>"` で指定します（`openai` / `openrouter` / `anthropic`（別名 `claude`） / `google`）。
 Google Gemini は、Google の OpenAI 互換エンドポイント経由で呼び出します。
 
+### ストリーミングとチャット
+
 ```python
-for piece in luna.stream("短い物語を書いて"):   # ストリーミング
+# ストリーミング
+for piece in luna.stream("短い物語を書いて"):
     print(piece, end="", flush=True)
 
+# 会話履歴の利用
 result = luna.chat([{"role": "user", "content": "こんにちは"}])  # ChatResult: text, stop_reason, usage, raw
 ```
 
