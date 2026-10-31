@@ -502,9 +502,9 @@ class _ReplayEvents:
 class _AsyncRecordedEvents:
     """Pass events through and store the stream in the cache once it is complete.
 
-    Complete means read to the end or up to the terminal event (`[DONE]` /
-    `message_stop`): parsers stop there and close the stream early. Errors,
-    cancellation and early `aclose()` are not stored.
+    Complete means a terminal event (`[DONE]` / `message_stop`) was received:
+    parsers stop there and close the stream early. EOF without a terminal event,
+    errors, cancellation and early `aclose()` are not stored.
     """
 
     def __init__(self, client: _AsyncBaseClient, events: Any, body: Dict[str, Any]) -> None:
@@ -529,7 +529,6 @@ class _AsyncRecordedEvents:
         try:
             ev = await self._events.__anext__()
         except StopAsyncIteration:
-            await self._store()
             raise
         except BaseException:
             await _close_quietly(self._events)

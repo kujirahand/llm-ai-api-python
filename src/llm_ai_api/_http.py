@@ -90,7 +90,7 @@ def _is_terminal_event(ev: SSEEvent) -> bool:
     not a successful end. Only a successful end may mark a recorded stream as
     complete (a failed stream is never stored in the cache).
     """
-    if ev.data == "[DONE]":
+    if ev.data.strip() == "[DONE]":  # the OpenAI-style parser strips too
         return True
     if not ev.data:
         # No payload: the parser falls back to the event name.
@@ -292,8 +292,9 @@ class BaseClient:
         return self._record_events(events, body), False
 
     def _record_events(self, events: Iterator[SSEEvent], body: Dict[str, Any]) -> Iterator[SSEEvent]:
-        # Parsers stop at the terminal event and close this generator early, so a
-        # terminal event counts as complete too. Errors and early stops are not stored.
+        # Parsers stop at the terminal event and close this generator early, so only
+        # a terminal event marks the stream complete. EOF without one (a cut-off
+        # stream), errors and early stops are not stored.
         recorded: list = []
         complete = False
         try:
@@ -302,7 +303,6 @@ class BaseClient:
                 if _is_terminal_event(ev):
                     complete = True
                 yield ev
-            complete = True
         finally:
             # 途中で閉じられたときも、レスポンスをすぐに解放する。
             close = getattr(events, "close", None)

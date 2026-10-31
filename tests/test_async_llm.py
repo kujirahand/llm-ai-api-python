@@ -354,6 +354,23 @@ class AsyncLLMCacheTest(AsyncLLMTestBase):
         self.assertEqual([p async for p in m.astream("r")], ["ポ", "チ"])
         self.assertEqual(len(rec.requests), 2)
 
+    async def test_stream_without_terminal_event_is_not_cached(self):
+        eof = OPENAI_STREAM.replace("data: [DONE]\n\n", "")
+        rec = Recorder(sse_response(eof))
+        m = self.make(rec, cache=self.db)
+        self.assertEqual([p async for p in m.astream("q")], ["ポ", "チ"])
+        self.assertEqual(len(SQLiteCache(self.db)), 0)
+        self.assertEqual([p async for p in m.astream("q")], ["ポ", "チ"])
+        self.assertEqual(len(rec.requests), 2)
+
+    async def test_anthropic_stream_with_message_stop_is_cached(self):
+        rec = Recorder(sse_response(CLAUDE_STREAM))
+        m = llm("anthropic:claude-x", api_key="k", transport=rec.transport, cache=self.db)
+        self.assertEqual([p async for p in m.astream("q")], ["ポ", "チ"])
+        self.assertEqual([p async for p in m.astream("q")], ["ポ", "チ"])
+        self.assertEqual(len(rec.requests), 1)
+        await m.aclose()
+
     async def test_stream_closed_early_is_not_cached(self):
         rec = Recorder(sse_response(OPENAI_STREAM))
         m = self.make(rec, cache=self.db)

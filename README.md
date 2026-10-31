@@ -102,7 +102,7 @@ m2 = llm("openai:gpt-6-luna", cache="other.db")  # per instance
 m3 = llm("openai:gpt-6-luna", cache=False)       # off for this instance only
 ```
 
-`cache=True` uses the default file `llm_ai_api_cache.db`. A `SQLiteCache` object can also be passed. Setting the environment variable `LLM_AI_API_CACHE_DIR` to a directory turns the cache on as `<dir>/cache.db` without calling `set_cache()`. Streaming (`stream()` / `stream_chat()`) is cached too (stored only when read to the end).
+`cache=True` uses the default file `llm_ai_api_cache.db`. A `SQLiteCache` object can also be passed. Setting the environment variable `LLM_AI_API_CACHE_DIR` to a directory turns the cache on as `<dir>/cache.db` without calling `set_cache()`. Streaming (`stream()` / `stream_chat()`) is cached too (stored only when read up to the terminal event).
 
 Stored responses are encrypted with a key derived from the API key. The lookup key is a hash of `{provider}:{model}@{api_key}>>>{input}`, so a different API key means a separate cache. Remove old entries with `clear_cache(days)` (`clear_cache(0)` deletes everything).
 

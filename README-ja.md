@@ -102,7 +102,7 @@ m2 = llm("openai:gpt-6-luna", cache="other.db")  # インスタンスごとの�
 m3 = llm("openai:gpt-6-luna", cache=False)       # このインスタンスだけオフ
 ```
 
-`cache=True` は既定のファイル `llm_ai_api_cache.db` を使います。`SQLiteCache` オブジェクトを渡すこともできます。環境変数 `LLM_AI_API_CACHE_DIR` にディレクトリを指定すると、`set_cache()` を呼ばなくても `<ディレクトリ>/cache.db` でオンになります。ストリーミング（`stream()` / `stream_chat()`）もキャッシュされます（最後まで読み切ったときだけ保存）。
+`cache=True` は既定のファイル `llm_ai_api_cache.db` を使います。`SQLiteCache` オブジェクトを渡すこともできます。環境変数 `LLM_AI_API_CACHE_DIR` にディレクトリを指定すると、`set_cache()` を呼ばなくても `<ディレクトリ>/cache.db` でオンになります。ストリーミング（`stream()` / `stream_chat()`）もキャッシュされます（終端イベントまで読み切ったときだけ保存）。
 
 保存される応答は、API キーから作った鍵で暗号化されます。キーは `{プロバイダー}:{モデル}@{APIキー}>>>{入力}` のハッシュなので、API キーが違えば別のキャッシュになります。古いエントリは `clear_cache(days)` で削除できます（`clear_cache(0)` で全削除）。
 
