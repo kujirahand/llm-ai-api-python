@@ -228,12 +228,20 @@ class _AsyncBaseClient:
         """Send JSON and return the response JSON (dict) as is."""
         resp = await self._aopen(method, path, body, headers, timeout, stream=False)
         try:
-            return resp.json()
-        except ValueError as e:
-            raise LLMError(
-                self._t("invalid_json_response", preview=resp.text[:200]),
-                code="invalid_json_response",
-            ) from e
+            try:
+                value = resp.json()
+            except ValueError as e:
+                raise LLMError(
+                    self._t("invalid_json_response", preview=resp.text[:200]),
+                    code="invalid_json_response",
+                ) from e
+            if not isinstance(value, dict):
+                # Valid JSON but not an object (array, scalar, null).
+                raise LLMError(
+                    self._t("invalid_json_response", preview=resp.text[:200]),
+                    code="invalid_json_response",
+                )
+            return value
         finally:
             await resp.aclose()
 

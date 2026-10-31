@@ -122,6 +122,31 @@ class AsyncRawLayerTest(AsyncClientTestBase):
             await c.request("/x", {})
         self.assertEqual(cm.exception.code, "invalid_json_response")
 
+    async def test_request_non_object_response(self):
+        for payload in (b'["x"]', b"42", b'"str"', b"null"):
+            rec = Recorder(httpx.Response(200, content=payload))
+            c = self.make(rec)
+            with self.assertRaises(LLMError) as cm:
+                await c.request("/x", {})
+            self.assertEqual(cm.exception.code, "invalid_json_response")
+
+    async def test_non_object_response(self):
+        for payload in (b'["x"]', b"42", b"null"):
+            rec = Recorder(httpx.Response(200, content=payload))
+            c = self.make(rec)
+            with self.assertRaises(LLMError) as cm:
+                await c.achat("gpt-x", MESSAGES)
+            self.assertEqual(cm.exception.code, "invalid_json_response")
+
+    async def test_stream_non_object_event(self):
+        for data in ('["just","an","array"]', "42"):
+            rec = Recorder(sse_response("data: %s\n\n" % data))
+            c = self.make(rec)
+            chunks = await c.stream_chat("gpt-x", MESSAGES)
+            with self.assertRaises(LLMError) as cm:
+                await chunks.__anext__()
+            self.assertEqual(cm.exception.code, "invalid_json_response")
+
     async def test_retry_then_success(self):
         rec = Recorder(json_response({}, status=429), json_response({"ok": True}))
         c = self.make(rec)
