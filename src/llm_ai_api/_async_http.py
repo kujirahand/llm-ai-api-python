@@ -303,9 +303,14 @@ class _AsyncBaseClient:
             kwargs["timeout"] = httpx.Timeout(timeout, connect=10.0)
         attempt = 0
         while True:
-            req = self._client.build_request(
-                method, url, content=content, headers=self._headers(stream, headers), **kwargs
-            )
+            try:
+                req = self._client.build_request(
+                    method, url, content=content, headers=self._headers(stream, headers), **kwargs
+                )
+            except httpx.InvalidURL as e:
+                raise LLMConfigError(
+                    self._t("invalid_url", url=_mask_url(url)), code="invalid_url"
+                ) from e
             resp = None
             try:
                 resp = await self._client.send(req, stream=stream)
@@ -321,7 +326,7 @@ class _AsyncBaseClient:
                     attempt += 1
                     continue
                 raise APITimeoutError(self._t("timeout"), code="timeout") from e
-            except httpx.TransportError as e:
+            except httpx.RequestError as e:
                 if resp is not None:
                     await resp.aclose()
                 if attempt < self.max_retries:
@@ -399,7 +404,7 @@ class _AsyncEventStream:
         except httpx.TimeoutException as e:
             await self.aclose()
             raise APITimeoutError(self._client._t("stream_timeout"), code="timeout") from e
-        except httpx.TransportError as e:
+        except httpx.RequestError as e:
             await self.aclose()
             raise APIConnectionError(
                 self._client._t("stream_connection_error", detail=e), code="connection_error"
