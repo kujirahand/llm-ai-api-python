@@ -78,6 +78,7 @@ llm-ai-api-python/
 │       ├── types.py         # ChatResult などの dataclass
 │       ├── cache.py         # SQLite による応答キャッシュ（暗号化、既定はオフ）、set_cache() / clear_cache()
 │       ├── log.py           # JSON Lines の入出力ログ（既定はオフ）、set_log() / get_log()
+│       ├── _connection.py   # 接続設定（内部）: set_connection() / get_connection()、解決と httpx 引数の生成
 │       ├── openai.py        # OpenAIClient
 │       ├── openrouter.py    # OpenRouterClient（OpenAI 互換部分を共有）
 │       ├── google.py        # GoogleClient（OpenAI 互換部分を共有）
@@ -102,6 +103,7 @@ llm-ai-api-python/
 │   ├── test_per_call_timeout.py # 呼び出しごとの timeout（httpx に届くこと）
 │   ├── test_models.py
 │   ├── test_lang.py
+│   ├── test_connection.py # 接続設定（set_connection / connection=）
 │   ├── test_cache.py
 │   ├── test_log.py
 │   ├── test_cache_crypto.py
@@ -213,6 +215,7 @@ client = AnthropicClient(
     headers=None,          # 追加ヘッダー（dict）
     cache=CACHE_NOT_SET,   # 応答キャッシュ（未指定ならグローバル設定。5.7 を参照）
     log=LOG_NOT_SET,       # 入出力ログ（未指定ならグローバル設定。5.8 を参照）
+    connection=None,       # 接続設定（dict。未指定ならグローバル設定。5.3.1 を参照）
     anthropic_version="2026-10-21",  # AnthropicClient のみ
 )
 ```
@@ -230,6 +233,19 @@ client = AnthropicClient(
 | `OPENROUTER_API_KEY` / `OPENROUTER_BASE_URL` | OpenRouter |
 | `GEMINI_API_KEY`（なければ `GOOGLE_API_KEY`） / `GOOGLE_BASE_URL` | Google Gemini |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_BASE_URL` | Anthropic |
+
+### 5.3.1 接続設定（`_connection.py`）
+
+本番の同時実行数やネットワーク要件に合わせるための設定。httpx の型は公開 API に出さない（数値・bool・パス・URL 文字列だけを受け付ける）。
+
+- 全体設定は `set_connection()`（公開 API）。**置き換え式**で、引数なしで呼ぶと既定に戻る（`set_cache()` と同型）。現在の実効値は `get_connection()` が返す。
+- インスタンスごとに変えたいときは `llm()` と各クライアントの `connection=` に dict を渡し、キー単位で全体設定を上書きする。値に `None` を指定したキーはライブラリ既定に戻る。
+- キーは7つ: `max_connections`（int ≥ 1、既定 100）、`max_keepalive_connections`（int ≥ 0、既定 20）、`keepalive_expiry`（秒 ≥ 0、既定 5.0）、`connect_timeout`（秒 > 0、既定 10.0）、`verify`（bool または CA ファイル/ディレクトリのパス、既定 True）、`cert`（パスまたは (証明書, 鍵) の組、既定なし）、`proxy`（http/https の URL、既定なし）。http2 と socks は追加の依存が必要なため対象外。
+- 解決は**生成時に1回だけ**（`set_cache()` / `set_log()` と同じ）。後から `set_connection()` を呼んでも既存のクライアントは変わらない。非同期クライアントは同期クライアントの解決済みの値をそのまま引き継ぐ。生成後の変更は用意しない（変えたい場合は新しい `llm()` を作る）。
+- 同期と非同期で接続プールは別々で、上限もそれぞれに効く。
+- `transport` を渡したときは検証だけを行い、httpx には適用しない（テスト用 transport がプロキシ等で迂回されるのを防ぐ）。警告も出さない。
+- 検証は生成時と `set_connection()` で行い、違反は `LLMConfigError`（`code="invalid_connection"`）。proxy の URL に認証情報が含まれていても、エラーメッセージや `repr` には出さない（userinfo はマスクする）。
+- TLS は httpx 0.28 で非推奨の `verify=<文字列>` を使わず、`ssl` で `SSLContext` を組み立てて渡す（CA パスは `create_default_context(cafile=/capath=)`、クライアント証明書は `load_cert_chain`）。
 
 ### 5.4 生レイヤー
 
@@ -322,10 +338,10 @@ class ChatChunk:
 
 ## 6. HTTP 層の仕様（`_http.py`）
 
-- `httpx.Client` を使う。プロキシは httpx の環境変数対応（`trust_env=True`、`HTTPS_PROXY` 等）に任せる。
+- `httpx.Client` を使う。プロキシは既定では httpx の環境変数対応（`trust_env=True`、`HTTPS_PROXY` 等）に任せ、`connection` の `proxy` が指定されたときだけそちらを使う。接続数の上限や TLS などは `connection` の解決済みの値から組み立てる（5.3.1）。
 - 共通ヘッダー: `Content-Type: application/json`, `Accept: application/json`（ストリーム時 `text/event-stream`）, `User-Agent: llm-ai-api-python/<version>`。
 - JSON は `json.dumps(body, ensure_ascii=False).encode("utf-8")` で自前でシリアライズして `content=` に渡す（httpx の `json=` の挙動差に依存しない）。
-- タイムアウト既定値は 600 秒（長い生成に対応するため）。接続タイムアウトは 10 秒。
+- タイムアウト既定値は 600 秒（長い生成に対応するため）。接続タイムアウトは `connection` の `connect_timeout`（既定 10 秒）で、クライアント生成時と呼び出しごとの timeout 指定の両方に使う。
 - ストリーミングは `client.stream("POST", ...)` と `response.iter_lines()` を使い、SSE パースは自前で行う。
 - `request_stream()` は `httpx.Response` を所有する `_EventStream`（`close()` を持つイテレータ）を返す。最後まで読んだとき・エラー時・`close()` でレスポンスを閉じ、一度も読まずに捨てられた場合も `__del__` で閉じる（素の generator では `finally` が動かず、接続プールが枯渇するため。#25）。
 - 例外の変換: `httpx.TimeoutException` → `APITimeoutError`、その他の `httpx.RequestError`（`TransportError` や `DecodingError` など）→ `APIConnectionError`（リトライ対象）。リクエスト組み立て時の `httpx.InvalidURL` → `LLMConfigError`（`code="invalid_url"`、URL は `_mask_url()` でマスクして表示）。httpx の例外をそのまま外に出さない。
@@ -381,6 +397,7 @@ LLMError                      # 基底
   | `cache_dir_not_set` | `LLMConfigError`（`clear_cache()` でディレクトリ未指定） |
   | `invalid_cache` | `LLMConfigError`（キャッシュ設定の誤り） |
   | `invalid_log` | `LLMConfigError`（ログ設定の誤り） |
+  | `invalid_connection` | `LLMConfigError`（接続設定の誤り） |
   | `invalid_url` | `LLMConfigError`（ベース URL / パスが URL として不正） |
   | `invalid_json_response` | `LLMError` |
 

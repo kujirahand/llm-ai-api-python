@@ -128,6 +128,19 @@ m2 = llm("openai:gpt-6-luna", log=False)         # このインスタンスだ�
 
 詳しくは、[こちら](docs/io_logs-ja.md) を参照してください。
 
+## 接続設定
+
+同時接続数やプロキシ、TLS のような接続まわりの設定は、`set_connection()` でプロセス全体に、`connection=` でインスタンスごとに指定できます。
+
+```python
+from llm_ai_api import llm, set_connection
+
+set_connection(max_connections=50, proxy="http://proxy.example:8080")  # プロセス全体
+m = llm("openai:gpt-6-luna", connection={"max_connections": 5})        # このインスタンスだけ差分
+```
+
+指定できるのは `max_connections`（既定 100）、`max_keepalive_connections`（既定 20）、`keepalive_expiry`（秒、既定 5.0）、`connect_timeout`（秒、既定 10.0）、`verify`（bool または CA のパス、既定 True）、`cert`（証明書のパスまたは組）、`proxy`（http/https の URL）です。設定はクライアント生成時に解決され、後から `set_connection()` を呼んでも既存のインスタンスには影響しません。`set_connection()` は置き換え式で、引数なしで呼ぶと既定に戻ります。
+
 ## サンプル
 
 [`examples/`](examples/) を参照してください。どのスクリプトも、引数 `プロバイダー:モデル`（または環境変数 `LLM_MODEL`）でモデルを指定します。

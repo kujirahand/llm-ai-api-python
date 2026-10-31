@@ -16,7 +16,7 @@ import json
 import os
 import random
 import warnings
-from typing import Any, AsyncIterable, AsyncIterator, Callable, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterable, AsyncIterator, Callable, Dict, List, Mapping, Optional, Tuple
 
 import httpx
 
@@ -29,6 +29,7 @@ from ._http import (
     _user_agent,
     error_message,
 )
+from ._connection import build_httpx_kwargs, resolve_connection
 from .cache import CACHE_NOT_SET, SQLiteCache, cache_key, resolve_cache
 from .errors import (
     APIConnectionError,
@@ -87,8 +88,13 @@ class _AsyncBaseClient:
         cache: Any = CACHE_NOT_SET,
         log: Any = LOG_NOT_SET,
         transport: Optional[httpx.AsyncBaseTransport] = None,
+        connection: Optional[Mapping[str, Any]] = None,
     ) -> None:
-        """Same arguments as `BaseClient`; `transport` is for tests (`httpx.MockTransport`)."""
+        """Same arguments as `BaseClient`; `transport` is for tests (`httpx.MockTransport`).
+
+        `connection` mirrors `BaseClient`: it overrides `set_connection()` settings per key
+        and is validated but not applied to httpx when `transport` is specified.
+        """
         self.lang = lang
         self.cache = resolve_cache(cache, lang=lang)
         self.log = resolve_log(log, lang=lang)
@@ -106,10 +112,19 @@ class _AsyncBaseClient:
         ).rstrip("/")
         self.timeout = timeout
         self.max_retries = max_retries
+        self.connection = resolve_connection(connection, lang=lang)
+        self._connect_timeout = self.connection["connect_timeout"]
         self._extra_headers = dict(headers or {})
-        self._client = httpx.AsyncClient(
-            transport=transport, timeout=httpx.Timeout(timeout, connect=10.0)
-        )
+        if transport is not None:
+            self._client = httpx.AsyncClient(
+                transport=transport,
+                timeout=httpx.Timeout(timeout, connect=self._connect_timeout),
+            )
+        else:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(timeout, connect=self._connect_timeout),
+                **build_httpx_kwargs(self.connection, lang=lang),
+            )
 
     def __repr__(self) -> str:
         return "%s(base_url=%r)" % (type(self).__name__, _mask_url(self.base_url))
@@ -311,7 +326,9 @@ class _AsyncBaseClient:
         )
         kwargs: Dict[str, Any] = {}
         if timeout is not None:
-            kwargs["timeout"] = httpx.Timeout(timeout, connect=10.0)
+            kwargs["timeout"] = httpx.Timeout(
+            timeout, connect=self._connect_timeout
+        )
         attempt = 0
         while True:
             try:
