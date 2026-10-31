@@ -83,20 +83,23 @@ def iter_sse(lines: Iterable[str]) -> Iterator[SSEEvent]:
 def _is_terminal_event(ev: SSEEvent) -> bool:
     """Whether `ev` successfully ends a stream, as the provider parsers see it.
 
-    `[DONE]` (OpenAI style) is unambiguous. For `message_stop` (Anthropic) the
-    parser decides by the payload: an event whose payload is invalid JSON or an
-    error is a failure, not a successful end, so it must not mark a recorded
-    stream as complete (a failed stream is never stored in the cache).
+    `[DONE]` (OpenAI style) is unambiguous. For Anthropic the parser decides by
+    the payload's `type`, falling back to the event name: a stream can end with
+    `data: {"type": "message_stop"}` and no `event:` line at all, while a
+    `message_stop` event whose payload is invalid JSON or an error is a failure,
+    not a successful end. Only a successful end may mark a recorded stream as
+    complete (a failed stream is never stored in the cache).
     """
     if ev.data == "[DONE]":
         return True
-    if ev.event != "message_stop":
-        return False
     if not ev.data:
-        return True
+        # No payload: the parser falls back to the event name.
+        return ev.event == "message_stop"
     try:
         raw = ev.json()
     except LLMError:
+        return False
+    if not isinstance(raw, dict):
         return False
     return (raw.get("type") or ev.event) == "message_stop"
 

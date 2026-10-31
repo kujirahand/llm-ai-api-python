@@ -414,9 +414,15 @@ class _AsyncEventStream:
         if self._closed:
             return
         self._closed = True
-        await _close_quietly(self._events)
-        await _close_quietly(self._lines)
-        await _close_quietly(self._resp)
+        # Attempt every close even if an earlier one is cancelled, so the
+        # response is not left open.
+        try:
+            await _close_quietly(self._events)
+        finally:
+            try:
+                await _close_quietly(self._lines)
+            finally:
+                await _close_quietly(self._resp)
 
 
 class _ReplayEvents:
