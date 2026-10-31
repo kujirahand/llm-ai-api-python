@@ -38,7 +38,7 @@ for piece in luna.stream("短い物語を書いて"):
     print(piece, end="", flush=True)
 
 # 会話履歴の利用
-result = luna.chat([{"role": "user", "content": "こんにちは"}])  # ChatResult: text, stop_reason, usage, raw
+result = luna.chat([{"role": "user", "content": "こんにちは"}])  # ChatResult: text, stop_reason, usage, raw, request_id, latency, retries
 ```
 
 ストリームは、最後まで読むか、捨てられたときに自動で接続を閉じます（非同期では、ストリームを作ったイベントループがまだ動いている場合に限ります）。途中でやめるときは `close()`（非同期では `await stream.aclose()`）を呼ぶと、すぐに接続を解放できます。
@@ -74,6 +74,18 @@ m.set_config(max_retries=0)  # 生成後に変更する（渡した引数だけ�
 ```
 
 既定では、接続段階の失敗（サーバーに届いていないもの）と HTTP 408 / 409 / 429 / 5xx だけをリトライします。読み取りタイムアウトなど送信後の失敗は、二重課金を避けるためリトライしません（`retry_read_timeout=True` で読み取りタイムアウトもリトライします）。`retry_after_max` は `retry-after` ヘッダーに従って待つ秒数の上限です。設定の一覧と本番環境での推奨は、[設定リファレンス](docs/config-ja.md) を参照してください。
+
+### 呼び出しの結果とイベント
+
+`chat()` / `achat()` の `ChatResult` には、応答ボディ（`raw`）とは別に `request_id`、`latency`（秒）、`retries` が入ります。`ask()` はテキストだけです。リトライや失敗は入出力ログには残らないので、`add_event_listener` で受け取ります。
+
+```python
+luna.add_event_listener("retry", lambda event, payload: print(event, payload.get("request_id")))
+result = luna.chat([{"role": "user", "content": "こんにちは"}])
+print(result.request_id, result.retries, result.latency)
+```
+
+イベントの一覧、payload のキー、`request_id` の参照先（`ChatResult`、`ChatChunk`、ストリームのイテレータ、例外、`request()`）は、[イベント](docs/events-ja.md) を参照してください。
 
 ### 非同期（async）
 

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
-from ._http import BaseClient
+from ._events import apply_result_meta, note_request_error, note_stream_error
+from ._http import BaseClient, _TaggedIter
 from ._model_params import adjust_body
-from .errors import APIStreamError
+from .errors import APIStreamError, LLMError
 from .types import ChatChunk, ChatResult, SSEEvent, Usage
 
 DEFAULT_MAX_TOKENS = 16000
@@ -173,12 +174,12 @@ class AnthropicClient(BaseClient):
         override for this call.
         """
         body = self._build_body(model, messages, max_tokens, temperature, extra, False)
-        cached = self._cache_lookup(body)
+        cached = self._lookup_chat_cache(body)
         if cached is not None:
             self._log_call(body, cached.raw, cached=True)
             return cached
-        raw = self.request("/v1/messages", body, timeout=timeout)
-        result = _parse_response(raw)
+        raw, meta = self._read_json("/v1/messages", body, timeout=timeout)
+        result = apply_result_meta(_parse_response(raw), meta)
         self._cache_store(body, result)
         self._log_call(body, raw)
         return result
@@ -196,13 +197,36 @@ class AnthropicClient(BaseClient):
         """Stream a chat and yield text deltas."""
         body = self._build_body(model, messages, max_tokens, temperature, extra, True)
         events, cached = self._stream_events("/v1/messages", body, timeout=timeout)
-        return self._log_chunks(body, self._iter_chunks(events), cached)
+        chunks = self._log_chunks(body, self._iter_chunks(events), cached)
+        return _TaggedIter(
+            chunks,
+            request_id=getattr(events, "request_id", None),
+            retries=getattr(events, "retries", 0) or 0,
+            started=getattr(events, "started", None),
+            method=getattr(events, "method", None),
+            path=getattr(events, "path", None),
+            status_code=getattr(events, "status_code", None),
+        )
 
     def _iter_chunks(self, events: Iterator[Any]) -> Iterator[ChatChunk]:
         headline = self._t("stream_error", provider=self.provider)
-        for ev in events:
-            chunk, terminal = _chunk_from_event(ev, headline)
-            if terminal:
-                break
-            if chunk is not None:
-                yield chunk
+        request_id = getattr(events, "request_id", None)
+        try:
+            for ev in events:
+                try:
+                    chunk, terminal = _chunk_from_event(ev, headline)
+                except APIStreamError as e:
+                    note_stream_error(self, e, events)
+                    raise
+                except LLMError as e:
+                    note_request_error(self, events, e.code)
+                    raise
+                if terminal:
+                    break
+                if chunk is not None:
+                    chunk.request_id = request_id
+                    yield chunk
+        finally:
+            close = getattr(events, "close", None)
+            if close is not None:
+                close()

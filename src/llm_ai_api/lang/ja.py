@@ -14,6 +14,8 @@ MESSAGES = {
     "invalid_connection": "接続設定が不正です: {detail}",
     "invalid_url": "URL が正しくありません: {url}",
     "invalid_option": "{name} には 0 以上の有限の数を指定してください: {value!r}",
+    "invalid_event": "未知のイベントです: {event!r}（使えるイベント: {known}）",
+    "invalid_listener": "イベントリスナーは呼び出し可能である必要があります。",
     "unknown_provider": "未知のプロバイダーです: {provider!r}（対応: {supported}）",
     "cache_dir_not_set": "cache_dir=... か環境変数 LLM_AI_API_CACHE_DIR で、キャッシュのディレクトリを指定してください。",
     # 通信

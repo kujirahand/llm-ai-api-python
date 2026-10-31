@@ -99,6 +99,11 @@ print(result.model, result.stop_reason, result.usage)
 | `stop_reason` | Why generation stopped (the raw value from the API) |
 | `usage` | `input_tokens` and `output_tokens` (`None` if unavailable) |
 | `raw` | The whole JSON (dict) returned by the API |
+| `request_id` | `x-request-id` or `request-id` (`None` when absent) |
+| `latency` | Seconds from the start of the call until the body was read, including retry waits |
+| `retries` | How many retries ran before this response (0 when the first attempt succeeded) |
+
+`ask()` returns only the text. Use `chat()` to read `request_id`.
 
 ## 5. Streaming
 
@@ -109,7 +114,10 @@ from llm_ai_api import llm
 
 m = llm("openai:gpt-6-luna")
 
-for piece in m.stream("Write a short story"):
+stream = m.stream("Write a short story")
+print(stream.request_id)  # set when stream() returns
+
+for piece in stream:
     print(piece, end="", flush=True)
 print()
 ```
@@ -186,6 +194,16 @@ Every exception has a language-independent `code` attribute (e.g. `"missing_api_
 
 Failed requests are retried automatically, up to `max_retries` times (2 by default). Only connection-stage failures (the request never reached the server) and HTTP 408 / 409 / 429 / 5xx are retried. Failures after the request was sent, such as read timeouts, are not retried (to avoid running and paying for the same generation twice). In latency-sensitive services, consider `llm(..., max_retries=0)` or a short `timeout`. See the [configuration reference](config.md) for details.
 
+Connection failures (`APIConnectionError` / `APITimeoutError`) and mid-stream errors (`APIStreamError`) also have `provider` and `request_id`. `request_id` is `None` when the failure happened before response headers. They also have `retries` and `latency` (seconds). HTTP errors (`APIStatusError`) have `retries` and `latency` too.
+
+Retries and failures are not written to the I/O log. Receive them with `add_event_listener`. A listener that raises does not fail the request. Pass `None` to receive every event.
+
+```python
+m.add_event_listener("retry", lambda event, payload: print(event, payload.get("request_id")))
+```
+
+Event names, payload keys, and where `request_id` appears are in [Events](events.md).
+
 ## 9. Reuse and cleanup
 
 `llm()` creates an HTTP client with a connection pool. Creating one for every request repeats connection setup and TLS handshakes. Create one when your process or service starts, then reuse it. This also makes response caching and connection reuse effective.
@@ -236,6 +254,7 @@ For production deployments where you need to change the number of concurrent con
 
 ## 10. Next steps
 
+- [Events](events.md): `add_event_listener`, the event list, and where to read `request_id`.
 - [Configuration reference](config.md): `llm()` settings and the retry policy.
 - [Local response cache](io_cache.md): repeat requests return the stored result without calling the API (off by default).
 - [Input/output log](io_logs.md): record inputs and outputs as JSON Lines (off by default).

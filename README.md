@@ -38,7 +38,7 @@ for piece in luna.stream("Write a short story"):
     print(piece, end="", flush=True)
 
 # Using a chat history
-result = luna.chat([{"role": "user", "content": "hi"}])  # ChatResult: text, stop_reason, usage, raw
+result = luna.chat([{"role": "user", "content": "hi"}])  # ChatResult: text, stop_reason, usage, raw, request_id, latency, retries
 ```
 
 A stream closes its connection by itself when it is read to the end or dropped (for async streams, only while the event loop that created the stream is still running). To stop early, call `close()` (`await stream.aclose()` in async code) to release the connection right away.
@@ -74,6 +74,18 @@ m.set_config(max_retries=0)  # change after creation (only the given arguments; 
 ```
 
 By default, only connection-stage failures (the request never reached the server) and HTTP 408 / 409 / 429 / 5xx are retried. Failures after the request was sent, such as read timeouts, are not retried, to avoid double billing (`retry_read_timeout=True` retries read timeouts too). `retry_after_max` caps how many seconds to wait when following a `retry-after` header. For the full list of settings and production recommendations, see the [configuration reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/config.md).
+
+### Call results and events
+
+`ChatResult` from `chat()` / `achat()` carries `request_id`, `latency` (seconds), and `retries` in addition to the response body (`raw`). `ask()` still returns only the text. Retries and failures are not written to the I/O log. Observe them with `add_event_listener`.
+
+```python
+luna.add_event_listener("retry", lambda event, payload: print(event, payload.get("request_id")))
+result = luna.chat([{"role": "user", "content": "hi"}])
+print(result.request_id, result.retries, result.latency)
+```
+
+The event list, payload keys, and where to read `request_id` (`ChatResult`, `ChatChunk`, stream iterators, exceptions, and `request()`) are in the [events reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/events.md).
 
 ### Async
 

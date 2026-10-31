@@ -1,4 +1,4 @@
-"""例外クラス。httpx の例外は外に出さず、ここの例外に包んで送出する。"""
+"""Exception classes. httpx exceptions are wrapped here and never leak out."""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ from typing import Any, Dict, Optional
 
 
 class LLMError(Exception):
-    """このパッケージの例外の基底クラス。
+    """Base class for exceptions raised by this package.
 
-    `code` は言語に依存しない識別子（例: `"missing_api_key"`）。メッセージの翻訳が変わっても、
-    コードでの判定にはこちらを使う。
+    `code` is a language-independent identifier (for example `"missing_api_key"`).
+    Branch on `code`, not on the translated message.
     """
 
     def __init__(self, message: str = "", *, code: Optional[str] = None) -> None:
@@ -18,19 +18,45 @@ class LLMError(Exception):
 
 
 class LLMConfigError(LLMError):
-    """API キー未設定、モデル指定文字列の誤りなど、設定の問題。"""
+    """A configuration problem, such as a missing API key or a bad model string."""
 
 
 class APIConnectionError(LLMError):
-    """API に接続できなかった。"""
+    """The API could not be reached.
+
+    `request_id` is set when the failure happened after response headers arrived
+    (a dropped stream). It is None when the connection failed before that.
+    `retries` is how many retries ran before this failure. `latency` is seconds
+    from the start of the call until the failure, including retry waits.
+    """
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        code: Optional[str] = None,
+        provider: Optional[str] = None,
+        request_id: Optional[str] = None,
+        retries: int = 0,
+        latency: Optional[float] = None,
+    ) -> None:
+        super().__init__(message, code=code)
+        self.provider = provider
+        self.request_id = request_id
+        self.retries = retries
+        self.latency = latency
 
 
 class APITimeoutError(APIConnectionError):
-    """リクエストがタイムアウトした。"""
+    """The request timed out."""
 
 
 class APIStatusError(LLMError):
-    """HTTP 4xx / 5xx が返った。"""
+    """The API returned HTTP 4xx or 5xx.
+
+    `retries` is how many retries ran before this response. `latency` is seconds
+    from the start of the call until this response, including retry waits.
+    """
 
     def __init__(
         self,
@@ -41,6 +67,8 @@ class APIStatusError(LLMError):
         provider: Optional[str] = None,
         request_id: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
+        retries: int = 0,
+        latency: Optional[float] = None,
     ) -> None:
         super().__init__(message, code="api_error")
         self.status_code = status_code
@@ -48,6 +76,8 @@ class APIStatusError(LLMError):
         self.provider = provider
         self.request_id = request_id
         self.headers = headers or {}
+        self.retries = retries
+        self.latency = latency
 
 
 class BadRequestError(APIStatusError):
@@ -75,15 +105,32 @@ class InternalServerError(APIStatusError):
 
 
 class APIStreamError(LLMError):
-    """ストリームの途中で error イベントを受け取った。"""
+    """An error event arrived in the middle of a stream.
 
-    def __init__(self, message: str, *, body: Any = None) -> None:
+    `request_id` is taken from the response headers when the chat layer raises
+    this. `retries` and `latency` describe the call that opened the stream.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        body: Any = None,
+        provider: Optional[str] = None,
+        request_id: Optional[str] = None,
+        retries: int = 0,
+        latency: Optional[float] = None,
+    ) -> None:
         super().__init__(message, code="stream_error")
         self.body = body
+        self.provider = provider
+        self.request_id = request_id
+        self.retries = retries
+        self.latency = latency
 
 
 def status_error_class(status_code: int) -> type:
-    """HTTP ステータスコードに対応する例外クラスを返す。"""
+    """Return the exception class for an HTTP status code."""
     if status_code == 400:
         return BadRequestError
     if status_code == 401:

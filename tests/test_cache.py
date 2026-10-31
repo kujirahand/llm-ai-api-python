@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import unittest
@@ -80,6 +81,9 @@ class SQLiteCacheTest(CacheTestBase):
             stop_reason="stop",
             usage=Usage(3, 4),
             raw={"a": [1, 2], "b": "日本語"},
+            request_id="req-1",
+            latency=0.25,
+            retries=2,
         )
 
     def test_roundtrip_and_persistence(self):
@@ -92,9 +96,34 @@ class SQLiteCacheTest(CacheTestBase):
         self.assertEqual(got.stop_reason, "stop")
         self.assertEqual(got.usage, Usage(3, 4))
         self.assertEqual(got.raw, {"a": [1, 2], "b": "日本語"})
+        self.assertEqual(got.request_id, "req-1")
+        self.assertEqual(got.latency, 0.25)
+        self.assertEqual(got.retries, 2)
         self.assertEqual(len(c), 1)
         # A second instance on the same file sees the entry.
         self.assertEqual(SQLiteCache(self.db).get("k").text, "ポチ")
+
+    def test_row_written_without_call_metadata_still_loads(self):
+        import sqlite3
+
+        from llm_ai_api.cache import _PLAIN
+
+        c = SQLiteCache(self.db)
+        plain = json.dumps(
+            {"text": "old", "model": "m", "stop_reason": "stop", "usage": None, "raw": {}}
+        ).encode("utf-8")
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "INSERT INTO llm_cache (key, provider, model, response, created_at) VALUES (?, ?, ?, ?, ?)",
+            ("old", "openai", "m", _PLAIN + plain, 1.0),
+        )
+        conn.commit()
+        conn.close()
+        got = c.get("old")
+        self.assertEqual(got.text, "old")
+        self.assertIsNone(got.request_id)
+        self.assertIsNone(got.latency)
+        self.assertEqual(got.retries, 0)
 
     def test_no_usage_and_clear(self):
         c = SQLiteCache(self.db)

@@ -99,6 +99,11 @@ print(result.model, result.stop_reason, result.usage)
 | `stop_reason` | 終了理由（API が返した値のまま） |
 | `usage` | `input_tokens` と `output_tokens`（取得できなければ `None`） |
 | `raw` | API が返した JSON（dict）全体 |
+| `request_id` | `x-request-id` または `request-id`（無ければ `None`） |
+| `latency` | 呼び出し開始からボディ読了までの秒（リトライの待ちを含む） |
+| `retries` | その応答の前に行ったリトライ回数（最初で成功すれば 0） |
+
+`ask()` の戻り値はテキストだけです。`request_id` を見るときは `chat()` を使います。
 
 ## 5. ストリーミング
 
@@ -109,7 +114,10 @@ from llm_ai_api import llm
 
 m = llm("openai:gpt-6-luna")
 
-for piece in m.stream("短い物語を書いて"):
+stream = m.stream("短い物語を書いて")
+print(stream.request_id)  # 呼び出しが返った時点で入っている
+
+for piece in stream:
     print(piece, end="", flush=True)
 print()
 ```
@@ -186,6 +194,16 @@ except LLMError as e:
 
 失敗したリクエストは、最大 `max_retries` 回（既定 2 回）自動でリトライされます。対象は、接続段階の失敗（サーバーに届いていないもの）と、HTTP 408 / 409 / 429 / 5xx だけです。読み取りタイムアウトなど、送信した後の失敗はリトライしません（生成が二重に行われ、二重に課金されるのを防ぐため）。応答の速さが大事なサービスでは、`llm(..., max_retries=0)` や短い `timeout` を検討してください。詳しくは [設定リファレンス](config-ja.md) を参照してください。
 
+接続失敗（`APIConnectionError` / `APITimeoutError`）とストリーム途中のエラー（`APIStreamError`）にも、`provider` と `request_id` があります。ヘッダーが届く前の接続失敗では `request_id` は `None` です。`retries` と `latency`（秒）も付きます。HTTP エラー（`APIStatusError`）にも `retries` と `latency` が付きます。
+
+リトライや失敗は入出力ログには残りません。`add_event_listener` で受け取ります。リスナーが例外を出しても、そのリクエストは続行します。`None` を渡すとすべてのイベントを受け取ります。
+
+```python
+m.add_event_listener("retry", lambda event, payload: print(event, payload.get("request_id")))
+```
+
+イベント名、payload のキー、`request_id` の参照先は、[イベント](events-ja.md) を参照してください。
+
 ## 9. 使い回しと後片付け
 
 `llm()` は接続プールを持つ HTTP クライアントを作ります。リクエストごとに作り直すと、接続や TLS ハンドシェイクが繰り返されます。プロセスやサービスの起動時に 1 つ作り、使い回してください。キャッシュや接続の再利用も有効になります。
@@ -236,6 +254,7 @@ asyncio.run(main())
 
 ## 10. 次のステップ
 
+- [イベント](events-ja.md): `add_event_listener`、イベントの一覧、`request_id` の参照先です。
 - [設定リファレンス](config-ja.md): `llm()` の設定とリトライの方針です。
 - [応答のローカルキャッシュ](io_cache-ja.md): 同じリクエストでは API を呼ばず、保存済みの結果を返します（既定はオフ）。
 - [入出力ログ](io_logs-ja.md): 入力と出力を JSON Lines で記録します（既定はオフ）。
