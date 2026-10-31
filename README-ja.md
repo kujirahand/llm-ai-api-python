@@ -47,6 +47,27 @@ m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 
 定数は例です。載っていないモデルも `llm("openai:新しいモデル名")` のように文字列でそのまま使えます。
 
+## API応答のキャッシュ
+
+デフォルトではオフです。オンにすると、同じプロバイダー・モデル・リクエスト（メッセージとパラメータ）で再び呼び出したとき、API を呼ばずに保存済みの結果を返します。
+
+```python
+from llm_ai_api import llm, set_cache
+
+set_cache("cache.db")                    # プロセス全体でオン（SQLite ファイルのパス）
+m = llm("openai:gpt-6-luna")              # グローバル設定を使う
+m2 = llm("openai:gpt-6-luna", cache="other.db")  # インスタンスごとの指定
+m3 = llm("openai:gpt-6-luna", cache=False)       # このインスタンスだけオフ
+```
+
+`cache=True` は既定のファイル `llm_ai_api_cache.db` を使います。`SQLiteCache` オブジェクトを渡すこともできます。環境変数 `LLM_AI_API_CACHE_DIR` にディレクトリを指定すると、`set_cache()` を呼ばなくても `<ディレクトリ>/cache.db` でオンになります。ストリーミング（`stream()` / `stream_chat()`）もキャッシュされます（最後まで読み切ったときだけ保存）。
+
+保存される応答は、API キーから作った鍵で暗号化されます。キーは `{プロバイダー}:{モデル}@{APIキー}>>>{入力}` のハッシュなので、API キーが違えば別のキャッシュになります。古いエントリは `clear_cache(days)` で削除できます（`clear_cache(0)` で全削除）。
+
+なお、キャッシュが有効な間は、同じリクエストには常に同じ保存済みの応答が返ります。新しい応答が欲しい場合は、キャッシュを空にするかオフにしてください。ファイルを新規作成するときは、所有者のみがアクセスできる権限（0600）になります。
+
+詳しくは、[こちら](docs/io_cache-ja.md) を参照してください。
+
 ## サンプル
 
 [`examples/`](examples/) を参照してください。どのスクリプトも、引数 `プロバイダー:モデル`（または環境変数 `LLM_MODEL`）でモデルを指定します。
@@ -59,6 +80,7 @@ m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 | `ocr_test.py` | 画像に書かれた文字を読み取る |
 | `image_desc.py` | 画像の内容を説明してもらう |
 | `models_test.py` | `models` の定数を使い、2 つのモデル（GPT-6 Luna と Claude Haiku）に朝食のメニューについて意見交換してもらう（両方の API キーが必要） |
+| `cache_demo.py` | 同じ質問を 2 回して、2 回目がキャッシュから返ることを確かめる |
 
 画像のコンテンツはプロバイダー間で変換されません。サンプルでは、プロバイダーごとの形式を組み立てています（`examples/_common.py` を参照）。
 
@@ -77,6 +99,10 @@ m = llm("openai:gpt-6-luna", lang="en")  # モデルごと
 
 すべての例外は、言語に依存しない `code`（例: `"missing_api_key"`）を持っています。メッセージの文面ではなく `code` で判定してください。
 API 自身が返したメッセージは翻訳しません。
+
+## プロンプトキャッシュについて
+
+詳しくは、[こちら](docs/cache-ja.md) を参照してください。
 
 ## ライセンス
 

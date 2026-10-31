@@ -36,6 +36,24 @@ class HttpTest(unittest.TestCase):
         c = make(Recorder(json_response({})))
         self.assertNotIn("sk-test", repr(c))
 
+    def test_base_url_credentials_masked_in_repr(self):
+        c = OpenAIClient(
+            api_key="k",
+            base_url="https://user:p4ssw0rd@example.example/v1?token=abc",
+            transport=Recorder(json_response({})).transport,
+        )
+        r = repr(c)
+        self.assertNotIn("p4ssw0rd", r)
+        self.assertNotIn("token", r)
+        self.assertIn("***", r)
+        plain = OpenAIClient(
+            api_key="k",
+            base_url="https://example.example/v1",
+            transport=Recorder(json_response({})).transport,
+        )
+        self.assertIn("https://example.example/v1", repr(plain))
+        self.assertNotIn("***", repr(plain))
+
     def test_headers_and_raw_passthrough(self):
         rec = Recorder(json_response({"x": 1}))
         c = make(rec, headers={"X-Foo": "bar"})

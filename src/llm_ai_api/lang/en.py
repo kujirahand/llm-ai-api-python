@@ -9,7 +9,9 @@ MESSAGES = {
     "invalid_model_spec": (
         'Specify the model as "provider:model" (e.g. "openai:gpt-6-luna"): {spec!r}'
     ),
+    "invalid_cache": "Invalid cache setting: {detail}",
     "unknown_provider": "Unknown provider: {provider!r} (supported: {supported})",
+    "cache_dir_not_set": "Set cache_dir=... or the LLM_AI_API_CACHE_DIR environment variable to choose the cache directory.",
     # 通信
     "timeout": "The request timed out. Try a larger timeout=, or check your network.",
     "connection_error": "Could not connect to the API: {detail}",

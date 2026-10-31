@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# llm-ai-api response cache
+llm_ai_api_cache.db*
