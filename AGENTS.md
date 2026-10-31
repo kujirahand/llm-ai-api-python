@@ -76,7 +76,7 @@ llm-ai-api-python/
 │       ├── anthropic.py     # AnthropicClient
 │       ├── llm.py           # 共通インターフェイス llm() / LLM
 │       ├── models.py        # 代表的なモデルの定数（"provider:model" 形式の文字列）
-│       └── locale/          # エラーメッセージの多言語化
+│       └── lang/            # エラーメッセージの多言語化
 │           ├── __init__.py  # 言語判定、フォールバック、t()
 │           ├── en.py        # 英語（フォールバック先。全メッセージ ID を持つ）
 │           └── ja.py        # 日本語
@@ -89,7 +89,7 @@ llm-ai-api-python/
 │   ├── test_anthropic.py
 │   ├── test_llm.py
 │   ├── test_models.py
-│   ├── test_locale.py
+│   ├── test_lang.py
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
 ├── docs/
 │   └── publish.md       # PyPI への公開手順
@@ -302,14 +302,14 @@ LLMError                      # 基底
   | `stream_error` | `APIStreamError` |
   | `invalid_json_response` | `LLMError` |
 
-## 7.1 多言語化（`locale/`）
+## 7.1 多言語化（`lang/`）
 
 パッケージが自分で作るメッセージ（設定ミス、接続失敗、HTTP エラーの見出しとヒントなど）を、利用者の言語で出す。対応言語は `ja` と `en`。
 
-- **メッセージの置き場所**: `locale/<言語コード>.py` の `MESSAGES`（メッセージ ID → `str.format` 形式のテンプレート）。メッセージ ID は `missing_api_key` のような英小文字のスネークケースで、エラーの `code` と揃える。`gettext` / `.po` は使わない。
+- **メッセージの置き場所**: `lang/<言語コード>.py` の `MESSAGES`（メッセージ ID → `str.format` 形式のテンプレート）。メッセージ ID は `missing_api_key` のような英小文字のスネークケースで、エラーの `code` と揃える。`gettext` / `.po` は使わない。
 - **フォールバック**: `指定された言語 → en → メッセージ ID そのもの`。言語ファイルに ID がなければ英語を使う。英語にもなければ ID を返す（例外にしない）。テンプレートの書式が壊れていたときも次の言語に進む。
 - **英語がマスター**: `en.py` が全メッセージ ID を持つ。新しいメッセージは、まず `en.py` に追加し、他の言語は後から足してよい。他言語にだけ存在する ID を作らない。
-- **言語の追加**: `locale/<コード>.py` を 1 つ作るだけでよい（登録は不要。初回に `importlib` で自動的に読み込まれる）。言語コードは 2〜3 文字の小文字。
+- **言語の追加**: `lang/<コード>.py` を 1 つ作るだけでよい（登録は不要。初回に `importlib` で自動的に読み込まれる）。言語コードは 2〜3 文字の小文字。
 - **言語の決め方**（優先順）: `lang=` 引数（`llm(..., lang="en")`、各クライアント） → `set_language()` → 環境変数 `LLM_AI_API_LANG` → `LANGUAGE`（`ja:en` のようなコロン区切りで、対応している最初のもの） → `LC_ALL` → `LC_MESSAGES` → `LANG`（最初に設定されているもの。`C` / `POSIX` は英語） → `locale.getlocale()` → 英語。macOS の GUI の言語設定を読むための外部コマンドは使わない。
 - **翻訳しないもの**: API が返した `error.message`、プロバイダー名、モデル名、パラメータ名。
 - **ヒント**: HTTP エラーには、原因の見当がつくものだけ、メッセージの 2 行目に `ヒント: ...` を付ける（400 / 401 / 403 / 404 / 429 / 5xx）。
@@ -343,7 +343,7 @@ LLMError                      # 基底
 - `httpx` と標準ライブラリ以外を import しない（これに違反する変更は受け入れない）。
 - 公開関数・クラスには型ヒントと docstring を付ける。docstring・コメントは日本語でよい。
 - 公開 API は `__init__.py` で明示的に re-export し、それ以外は内部扱い（`_` 始まり）とする。
-- ユーザーに見えるメッセージを追加・変更したら、`locale/en.py` と `locale/ja.py` を更新する。
+- ユーザーに見えるメッセージを追加・変更したら、`lang/en.py` と `lang/ja.py` を更新する。
 - 公開 API を変更したら README.md（英語）、README-ja.md（日本語）とこのファイルを同時に更新する。
 - フォーマットは PEP 8 に準拠（ツールは強制しない）。
 

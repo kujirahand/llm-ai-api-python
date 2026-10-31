@@ -21,7 +21,7 @@ from .errors import (
     LLMError,
     status_error_class,
 )
-from .locale import t
+from .lang import t
 from .types import SSEEvent
 
 _RETRY_STATUS = {408, 409, 429}

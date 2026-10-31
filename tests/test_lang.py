@@ -9,9 +9,9 @@ from llm_ai_api.errors import APIStatusError
 
 from .helpers import Recorder, json_response
 
-loc = sys.modules["llm_ai_api.locale"]
-from llm_ai_api.locale import en as loc_en  # noqa: E402
-from llm_ai_api.locale import ja as loc_ja  # noqa: E402
+loc = sys.modules["llm_ai_api.lang"]
+from llm_ai_api.lang import en as loc_en  # noqa: E402
+from llm_ai_api.lang import ja as loc_ja  # noqa: E402
 
 
 def env(**kw):

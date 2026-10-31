@@ -19,7 +19,7 @@ from .errors import (
     RateLimitError,
 )
 from .llm import LLM, llm
-from .locale import get_language, set_language
+from .lang import get_language, set_language
 from .openai import OpenAIClient
 from .openrouter import OpenRouterClient
 from .types import ChatChunk, ChatResult, SSEEvent, Usage

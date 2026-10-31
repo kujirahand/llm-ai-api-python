@@ -7,7 +7,7 @@ from typing import Any, Dict, Iterator, List, Optional
 from ._http import BaseClient
 from .anthropic import AnthropicClient
 from .errors import LLMConfigError
-from .locale import t
+from .lang import t
 from .openai import OpenAIClient
 from .openrouter import OpenRouterClient
 from .types import ChatResult
