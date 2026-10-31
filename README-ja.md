@@ -4,6 +4,13 @@ OpenAI / OpenRouter / Claude (Anthropic) / Google の API を呼び出す、薄�
 
 [English](README.md)
 
+## このパッケージを使うメリット
+
+- **プロバイダーごとの切り替えコードが減る**: `llm("openai:gpt-6-luna")`、`llm("openrouter:anthropic/claude-sonnet-5.5")`、`llm("claude:claude-sonnet-5-5")`、`llm("google:gemini-3.8-flash")` のように、モデル文字列を変えるだけで同じ `ask()` / `chat()` / `stream()` が使えます。
+- **モデルごとのパラメータ回避コードが不要**: 指定していないパラメータは送信しません。さらに v0.4.0 からは、公式仕様で拒否されると確認したパラメータ（`temperature` や `top_p` など）はルール表に従って、明示的に渡しても送信しないため、呼び出し側で回避コード（`_is_no_temperature()` など）を自前で書く必要がありません。
+- **SQLite キャッシュと JSON Lines ログを標準搭載**: `set_cache()`（または `cache=`）による SQLite レスポンスキャッシュ（API キーから作った鍵で暗号化。ストリーミングもキャッシュ可能）や、`set_log()`（または `log=`）による JSON Lines 入出力ログが組み込まれています。
+- **依存が軽い（`httpx` のみ）**: 依存は `httpx` のみで、公式の `openai` や `anthropic` パッケージなどは不要です。インストールが軽く、依存関係の競合が起きにくくなります。
+
 ## インストール
 
 ```sh
