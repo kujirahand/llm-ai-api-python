@@ -262,6 +262,23 @@ class ChatCacheTest(CacheTestBase):
         self.assertEqual("".join(m.stream("q")), "ポチ")
         self.assertEqual(len(rec.requests), 1)
 
+    def test_stream_without_terminal_event_is_not_cached(self):
+        eof = OPENAI_STREAM.replace("data: [DONE]\n\n", "")
+        rec = Recorder(sse_response(eof))
+        m = self.make(rec, cache=self.db)
+        self.assertEqual("".join(m.stream("q")), "ポチ")  # the caller still gets the chunks
+        self.assertEqual(len(SQLiteCache(self.db)), 0)
+        self.assertEqual("".join(m.stream("q")), "ポチ")
+        self.assertEqual(len(rec.requests), 2)
+
+    def test_google_stream_with_done_is_cached(self):
+        rec = Recorder(sse_response(OPENAI_STREAM))
+        m = llm("google:gemini-x", api_key="k", transport=rec.transport, cache=self.db)
+        self.addCleanup(m.close)
+        self.assertEqual("".join(m.stream("q")), "ポチ")
+        self.assertEqual("".join(m.stream("q")), "ポチ")
+        self.assertEqual(len(rec.requests), 1)
+
     def test_partial_stream_is_not_cached(self):
         rec = Recorder(sse_response(OPENAI_STREAM))
         m = self.make(rec, cache=self.db)
