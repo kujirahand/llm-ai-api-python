@@ -75,6 +75,8 @@ asyncio.run(main())
 
 The cache and the log work the same way as in the sync API. Only the common interface (`llm()`) is async; there are no async provider clients or raw layer (`request()`).
 
+To try things step by step from the beginning, see the [Tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md).
+
 ## Response caching
 
 Off by default. When on, a repeat call with the same provider, model and request (messages and parameters) returns the stored result without calling the API.
