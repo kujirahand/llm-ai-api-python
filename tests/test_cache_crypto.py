@@ -88,6 +88,36 @@ class CryptoTest(unittest.TestCase):
         self.assertEqual(c.chat("m", MSGS).text, "hi")
         self.assertEqual(len(rec.requests), 2)
 
+    def test_plain_value_is_rejected_when_a_secret_is_used(self):
+        rec = Recorder(json_response(REPLY))
+        c = self.client(rec, cache=self.db)
+        c.chat("m", MSGS)
+        conn = sqlite3.connect(self.db)
+        forged = b'P{"text":"forged","raw":{}}'
+        conn.execute("UPDATE llm_cache SET response = ?", (forged,))
+        conn.commit()
+        conn.close()
+        self.assertEqual(c.chat("m", MSGS).text, "hi")
+        self.assertEqual(len(rec.requests), 2)
+
+    def test_ciphertext_cannot_be_moved_to_another_row(self):
+        rec = Recorder(json_response(REPLY), json_response({"choices": [{"message": {"content": "other"}}]}))
+        c = self.client(rec, cache=self.db)
+        c.chat("m", MSGS)
+        c.chat("m", [{"role": "user", "content": "q2"}])
+        conn = sqlite3.connect(self.db)
+        rows = conn.execute("SELECT key, response FROM llm_cache ORDER BY created_at").fetchall()
+        conn.execute("UPDATE llm_cache SET response = ? WHERE key = ?", (rows[0][1], rows[1][0]))
+        conn.commit()
+        conn.close()
+        self.assertEqual(c.chat("m", [{"role": "user", "content": "q2"}]).text, "other")
+        self.assertEqual(len(rec.requests), 3)
+
+    def test_aad_is_authenticated(self):
+        blob = encrypt(b"e" * 32, b"m" * 32, b"x", b"key1")
+        self.assertEqual(decrypt(b"e" * 32, b"m" * 32, blob, b"key1"), b"x")
+        self.assertIsNone(decrypt(b"e" * 32, b"m" * 32, blob, b"key2"))
+
     def test_env_var_enables_cache(self):
         os.environ["LLM_AI_API_CACHE_DIR"] = self.dir
         rec = Recorder(json_response(REPLY))

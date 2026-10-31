@@ -42,19 +42,29 @@ def _keystream(key: bytes, nonce: bytes, length: int) -> bytes:
     return bytes(out[:length])
 
 
-def encrypt(enc_key: bytes, mac_key: bytes, plain: bytes) -> bytes:
-    """Encrypt-then-MAC. Layout: nonce(16) + ciphertext + mac(32)."""
+def _mac(mac_key: bytes, aad: bytes, nonce: bytes, ct: bytes) -> bytes:
+    # `aad` (the cache key) is authenticated too, so a ciphertext cannot be moved to
+    # another row. Its length is included to keep the field boundaries unambiguous.
+    data = len(aad).to_bytes(4, "big") + aad + nonce + ct
+    return hmac.new(mac_key, data, hashlib.sha256).digest()
+
+
+def encrypt(enc_key: bytes, mac_key: bytes, plain: bytes, aad: bytes = b"") -> bytes:
+    """Encrypt-then-MAC. Layout: nonce(16) + ciphertext + mac(32).
+
+    `aad` is authenticated but not stored; pass the same value to `decrypt()`.
+    """
     nonce = os.urandom(_NONCE)
     ct = bytes(a ^ b for a, b in zip(plain, _keystream(enc_key, nonce, len(plain))))
-    return nonce + ct + hmac.new(mac_key, nonce + ct, hashlib.sha256).digest()
+    return nonce + ct + _mac(mac_key, aad, nonce, ct)
 
 
-def decrypt(enc_key: bytes, mac_key: bytes, blob: bytes) -> Optional[bytes]:
+def decrypt(enc_key: bytes, mac_key: bytes, blob: bytes, aad: bytes = b"") -> Optional[bytes]:
     """Return the plain text, or None if the blob is malformed or fails authentication."""
     if len(blob) < _NONCE + _MAC:
         return None
     nonce, ct, mac = blob[:_NONCE], blob[_NONCE:-_MAC], blob[-_MAC:]
-    if not hmac.compare_digest(mac, hmac.new(mac_key, nonce + ct, hashlib.sha256).digest()):
+    if not hmac.compare_digest(mac, _mac(mac_key, aad, nonce, ct)):
         return None
     return bytes(a ^ b for a, b in zip(ct, _keystream(enc_key, nonce, len(ct))))
 
@@ -177,8 +187,12 @@ class SQLiteCache:
             if not isinstance(row[0], (bytes, bytearray)) or not row[0]:
                 raise ValueError("cached response has an unexpected shape")
             blob = bytes(row[0])
-            if blob[:1] == _ENCRYPTED and secret is not None:
-                plain = decrypt(*self._derive(secret), blob[1:])
+            if secret is not None:
+                # With a secret only authenticated, encrypted values are accepted; a
+                # plain-text value here could have been planted by someone else.
+                if blob[:1] != _ENCRYPTED:
+                    raise ValueError("cached response is not encrypted")
+                plain = decrypt(*self._derive(secret), blob[1:], key.encode("utf-8"))
                 if plain is None:
                     raise ValueError("cached response failed authentication")
             elif blob[:1] == _PLAIN:
@@ -232,7 +246,7 @@ class SQLiteCache:
             ensure_ascii=False,
         ).encode("utf-8")
         if secret is not None:
-            value = _ENCRYPTED + encrypt(*self._derive(secret), plain)
+            value = _ENCRYPTED + encrypt(*self._derive(secret), plain, key.encode("utf-8"))
         else:
             value = _PLAIN + plain
         with self._lock, self._connect() as conn:
