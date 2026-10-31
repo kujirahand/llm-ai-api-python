@@ -182,7 +182,53 @@ except LLMError as e:
 
 すべての例外は、言語に依存しない `code` 属性（例: `"missing_api_key"`）を持っています。エラーの判定には、翻訳で変わるメッセージの文面ではなく `code` を使ってください。
 
-## 9. 次のステップ
+## 9. 使い回しと後片付け
+
+`llm()` は接続プールを持つ HTTP クライアントを作ります。リクエストごとに作り直すと、接続や TLS ハンドシェイクが繰り返されます。プロセスやサービスの起動時に 1 つ作り、使い回してください。キャッシュや接続の再利用も有効になります。
+
+同期版では、`with` を使うか、使い終わったら `close()` を呼びます。
+
+```python
+from llm_ai_api import llm
+
+with llm("openai:gpt-6-luna") as m:
+    print(m.ask("こんにちは"))
+
+# または、アプリケーション終了時に閉じる
+m = llm("openai:gpt-6-luna")
+try:
+    print(m.ask("こんにちは"))
+finally:
+    m.close()
+```
+
+非同期版では、`async with` を使うか、`await aclose()` を呼びます。`aclose()` は非同期・同期の両方のクライアントを閉じ、複数回呼んでも安全です。`close()` が閉じるのは同期クライアントだけです。
+
+```python
+import asyncio
+from llm_ai_api import llm
+
+
+async def main():
+    async with llm("openai:gpt-6-luna") as m:
+        print(await m.aask("こんにちは"))
+
+    # または、アプリケーション終了時に閉じる
+    m = llm("openai:gpt-6-luna")
+    try:
+        print(await m.aask("こんにちは"))
+    finally:
+        await m.aclose()
+
+
+asyncio.run(main())
+```
+
+ストリームを途中で止めても問題ありません。ストリームオブジェクトが破棄または閉じられると、内部のレスポンスも閉じられます。長時間動くプログラムでは、早期終了する場合に `stream.close()` または `await stream.aclose()` を明示的に呼ぶと確実です。
+
+閉じ忘れても、プロセス終了時やガベージコレクション時にはリソースが解放されます。ただし、長時間動くプロセスでは接続やファイルディスクリプタが残るため、明示的に閉じてください。閉じた `LLM` は再利用できません。新しく作り直してください。たとえば、`asyncio.run()` を呼ぶごとに新しい `llm()` を作ります。
+
+## 10. 次のステップ
 
 - [応答のローカルキャッシュ](io_cache-ja.md): 同じリクエストでは API を呼ばず、保存済みの結果を返します（既定はオフ）。
 - [入出力ログ](io_logs-ja.md): 入力と出力を JSON Lines で記録します（既定はオフ）。
