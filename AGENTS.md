@@ -48,6 +48,7 @@ print(luna.ask(question))  # ポチ
 - テキストチャット（非ストリーミング / ストリーミング）
 - 任意パス・任意ボディを送る生リクエスト（上記以外のエンドポイントも呼べる）
 - 任意の API 応答キャッシュ（SQLite。既定はオフ。5.7 を参照）
+- 任意の入出力ログ（JSON Lines。既定はオフ。5.8 を参照）
 
 ### v1 では対応しない（必要になったら別途検討）
 
@@ -74,6 +75,7 @@ llm-ai-api-python/
 │       ├── errors.py        # 例外クラス
 │       ├── types.py         # ChatResult などの dataclass
 │       ├── cache.py         # SQLite による応答キャッシュ（暗号化、既定はオフ）、set_cache() / clear_cache()
+│       ├── log.py           # JSON Lines の入出力ログ（既定はオフ）、set_log() / get_log()
 │       ├── openai.py        # OpenAIClient
 │       ├── openrouter.py    # OpenRouterClient（OpenAI 互換部分を共有）
 │       ├── google.py        # GoogleClient（OpenAI 互換部分を共有）
@@ -96,6 +98,7 @@ llm-ai-api-python/
 │   ├── test_models.py
 │   ├── test_lang.py
 │   ├── test_cache.py
+│   ├── test_log.py
 │   ├── test_cache_crypto.py
 │   ├── test_cache_crypto.py
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
@@ -104,7 +107,9 @@ llm-ai-api-python/
 │   ├── cache.md         # プロンプトキャッシュの使い方（英語）
 │   ├── cache-ja.md      # 同（日本語）
 │   ├── io_cache.md      # 応答のローカルキャッシュ（英語）
-│   └── io_cache-ja.md   # 同（日本語）
+│   ├── io_cache-ja.md   # 同（日本語）
+│   ├── io_logs.md       # 入出力ログ（英語）
+│   └── io_logs-ja.md    # 同（日本語）
 └── examples/                # 使い方のサンプル（コメントは英語。_common.py は共通ヘルパー）
 ```
 
@@ -182,6 +187,7 @@ client = AnthropicClient(
     max_retries=2,
     headers=None,          # 追加ヘッダー（dict）
     cache=CACHE_NOT_SET,   # 応答キャッシュ（未指定ならグローバル設定。5.7 を参照）
+    log=LOG_NOT_SET,       # 入出力ログ（未指定ならグローバル設定。5.8 を参照）
     anthropic_version="2026-10-21",  # AnthropicClient のみ
 )
 ```
@@ -278,6 +284,16 @@ class ChatChunk:
 - 実行時のキャッシュの失敗はベストエフォート（読み取りはミス扱い、書き込みは無視）にして、料金を払って得た応答を失わない。設定の誤り（不正な値、使えないパス）は生成時に `LLMConfigError`（`code="invalid_cache"`）を送出する。
 - `close()` は渡されたキャッシュを閉じない（グローバルと共有されうるため）。
 
+### 5.8 入出力ログ（`log.py`）
+
+- **既定はオフ**。有効にすると、`chat()` / `ask()` / `stream_chat()` / `stream()` の呼び出しごとに 1 行の JSON を追記する（JSON Lines）。生レイヤー（`request()` / `request_stream()`）は対象外。
+- グローバル設定: `set_log(log)` / `get_log()`。`set_log(None)` でオフに戻す（環境変数より優先）。環境変数 `LLM_AI_API_LOG_DIR` にディレクトリを指定すると、`<dir>/llm.jsonl` でオンになる。
+- インスタンスごとの設定: `llm(..., log=...)` と各クライアントの `log=...`。値は `True`（既定ファイル `llm_ai_api_log.jsonl`）、パス、`JSONLLog`（`write(provider, model, request, response, *, stream, cached)` を持つオブジェクトも可）、`False` / `None`（このインスタンスだけオフ）。引数を渡さなければグローバル設定に従う（内部のセンチネル `LOG_NOT_SET`）。
+- **1 行の内容**: `time`（UTC, ISO 8601）, `provider`, `model`, `stream`, `cached`（キャッシュから返したか）, `request`（送ったボディ）, `response`（生の応答 dict。ストリームは `{"text": 連結したテキスト, "chunks": [生のイベント JSON, ...]}`）。API キーと認証ヘッダーは記録しない。
+- ログは平文で、プロンプトと回答がそのまま入る。ファイルは新規作成時に権限 `0600`（親ディレクトリを作る場合は `0700`）にする（ベストエフォート）。
+- ストリームは最後まで読み切ったときだけ記録する。エラーになった呼び出しは記録しない。
+- 実行時のログの失敗はベストエフォート（無視する）にして、料金を払って得た応答を失わない。設定の誤り（不正な値、書けないパス）は生成時に `LLMConfigError`（`code="invalid_log"`）を送出する。
+
 ## 6. HTTP 層の仕様（`_http.py`）
 
 - `httpx.Client` を使う。プロキシは httpx の環境変数対応（`trust_env=True`、`HTTPS_PROXY` 等）に任せる。
@@ -337,6 +353,7 @@ LLMError                      # 基底
   | `stream_error` | `APIStreamError` |
   | `cache_dir_not_set` | `LLMConfigError`（`clear_cache()` でディレクトリ未指定） |
   | `invalid_cache` | `LLMConfigError`（キャッシュ設定の誤り） |
+  | `invalid_log` | `LLMConfigError`（ログ設定の誤り） |
   | `invalid_json_response` | `LLMError` |
 
 ## 7.1 多言語化（`lang/`）
@@ -386,7 +403,7 @@ LLMError                      # 基底
 - 公開 API は `__init__.py` で明示的に re-export し、それ以外は内部扱い（`_` 始まり）とする。
 - ユーザーに見えるメッセージを追加・変更したら、`lang/en.py` と `lang/ja.py` を更新する。
 - 公開 API を変更したら README-ja.md、README.md とこのファイルを同時に更新する。
-- **README-ja.md（日本語）が元で、README.md（英語）はその翻訳**。README-ja.md を変更したら、同じコミットで README.md にも同じ内容を英語で反映する（片方だけの変更はしない）。見出しの順序・コード例・リンクを両者で揃える。PyPI に表示されるのは README.md。そのため README.md のリンクは、リポジトリ内の相対パスではなく GitHub の絶対 URL にする（PyPI のページでは相対リンクが開けない）。
+- **README-ja.md（日本語）が元で、README.md（英語）はその翻訳**。README-ja.md を変更したら、同じコミットで README.md にも同じ内容を英語で反映する（片方だけの変更はしない）。見出しの順序・コード例・リンクを両者で揃える。PyPI に表示されるのは README.md。そのため README.md 内のリポジトリ内ファイル・ディレクトリへのリンク（日本語 README、docs、examples など）は、PyPI からも開けるよう `https://github.com/kujirahand/llm-ai-api-python/blob/main/...` またはディレクトリ用の `.../tree/main/...` の絶対 URL にする。相対リンクは使わない。
 - フォーマットは PEP 8 に準拠（ツールは強制しない）。
 
 ## 11. 公式 API 仕様の参照先

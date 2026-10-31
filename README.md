@@ -68,6 +68,22 @@ Note that while the cache is on, the same request always returns the same stored
 
 See [docs/io_cache.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/io_cache.md) for details.
 
+## Input/output log
+
+Off by default. When enabled, every `ask()` / `chat()` / `stream()` / `stream_chat()` call appends one JSON Lines record with the input (request body) and the output (raw response).
+
+```python
+from llm_ai_api import llm, set_log
+
+set_log("llm_log.jsonl")                       # on for the whole process
+m = llm("openai:gpt-6-luna", log="other.jsonl")  # per instance
+m2 = llm("openai:gpt-6-luna", log=False)         # off for this instance only
+```
+
+Set the `LLM_AI_API_LOG_DIR` environment variable to a directory to enable it as `<dir>/llm.jsonl`. Each line has `time`, `provider`, `model`, `stream`, `cached`, `request` and `response`. The API key is never recorded. The log is plain text and contains your prompts and the answers, so protect it. A stream is recorded only after it has been read to the end.
+
+See [docs/io_logs.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/io_logs.md) for details.
+
 ## Examples
 
 See [`examples/`](https://github.com/kujirahand/llm-ai-api-python/tree/main/examples). Each script takes a `provider:model` argument (or the `LLM_MODEL` env var).

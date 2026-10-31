@@ -65,6 +65,7 @@ class OpenAICompatClient(BaseClient):
         body = self._build_body(model, messages, max_tokens, temperature, extra, False)
         cached = self._cache_lookup(body)
         if cached is not None:
+            self._log_call(body, cached.raw, cached=True)
             return cached
         raw = self.request("/chat/completions", body)
         choices = raw.get("choices") or [{}]
@@ -83,6 +84,7 @@ class OpenAICompatClient(BaseClient):
             raw=raw,
         )
         self._cache_store(body, result)
+        self._log_call(body, raw)
         return result
 
     def stream_chat(
@@ -96,8 +98,8 @@ class OpenAICompatClient(BaseClient):
     ) -> Iterator[ChatChunk]:
         """ストリーミングでチャットを呼び出し、差分を順に返す。"""
         body = self._build_body(model, messages, max_tokens, temperature, extra, True)
-        events = self._stream_events("/chat/completions", body)
-        return self._iter_chunks(events)
+        events, cached = self._stream_events("/chat/completions", body)
+        return self._log_chunks(body, self._iter_chunks(events), cached)
 
     def _iter_chunks(self, events: Iterator[Any]) -> Iterator[ChatChunk]:
         for ev in events:

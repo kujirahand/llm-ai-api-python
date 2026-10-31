@@ -15,6 +15,7 @@ from typing import Any, Dict, Iterable, Iterator, Optional, Tuple
 import httpx
 
 from .cache import CACHE_NOT_SET, SQLiteCache, cache_key, resolve_cache
+from .log import LOG_NOT_SET, resolve_log
 from .errors import (
     APIConnectionError,
     APITimeoutError,
@@ -24,7 +25,7 @@ from .errors import (
     status_error_class,
 )
 from .lang import t
-from .types import ChatResult, SSEEvent
+from .types import ChatChunk, ChatResult, SSEEvent
 
 _RETRY_STATUS = {408, 409, 429}
 _MAX_RETRY_AFTER = 60.0
@@ -114,6 +115,7 @@ class BaseClient:
         *,
         lang: Optional[str] = None,
         cache: Any = CACHE_NOT_SET,
+        log: Any = LOG_NOT_SET,
         transport: Optional[httpx.BaseTransport] = None,
     ) -> None:
         """`lang` はエラーメッセージの言語（`"ja"` / `"en"`）。None なら環境から判定する。
@@ -121,10 +123,14 @@ class BaseClient:
         `cache` は chat() の応答キャッシュ（True / パス / SQLiteCache / False / None。
         未指定なら `set_cache()` のグローバル設定に従う）。
 
+        `log` は chat() の入出力ログ（True / パス / ログオブジェクト / False / None。
+        未指定なら `set_log()` のグローバル設定に従う）。
+
         `transport` はテスト用（`httpx.MockTransport` を渡す）。
         """
         self.lang = lang
         self.cache = resolve_cache(cache, lang=lang)
+        self.log = resolve_log(log, lang=lang)
         key = api_key
         for name in (self.api_key_env,) + self.api_key_env_fallbacks:
             key = key or os.environ.get(name)
@@ -191,21 +197,50 @@ class BaseClient:
             # A cache failure must not lose an API response the caller already paid for.
             pass
 
-    def _stream_events(self, path: str, body: Dict[str, Any]) -> Iterator[SSEEvent]:
+    def _log_call(
+        self, body: Dict[str, Any], response: Any, *, stream: bool = False, cached: bool = False
+    ) -> None:
+        """Write one record to the log, ignoring log failures."""
+        if self.log is None:
+            return
+        try:
+            self.log.write(
+                self.provider, body.get("model"), body, response, stream=stream, cached=cached
+            )
+        except Exception:
+            # A log failure must not lose an API response the caller already paid for.
+            pass
+
+    def _log_chunks(
+        self, body: Dict[str, Any], chunks: Iterator[ChatChunk], cached: bool
+    ) -> Iterator[ChatChunk]:
+        """Pass chunks through and log the whole stream once it has been read to the end."""
+        if self.log is None:
+            yield from chunks
+            return
+        texts: list = []
+        raws: list = []
+        for chunk in chunks:
+            texts.append(chunk.text)
+            raws.append(chunk.raw)
+            yield chunk
+        self._log_call(body, {"text": "".join(texts), "chunks": raws}, stream=True, cached=cached)
+
+    def _stream_events(self, path: str, body: Dict[str, Any]) -> Tuple[Iterator[SSEEvent], bool]:
         """`request_stream()` with the response cache: replay a hit, record a miss.
 
         A stream is stored only when it was read to the end (or up to its terminal event),
         as a `ChatResult` whose `raw["events"]` holds the SSE events.
+        Returns the events and whether they were replayed from the cache.
         """
         cached = self._cache_lookup(body)
         if cached is not None and isinstance(cached.raw.get("events"), list):
-            return iter(
-                [SSEEvent(e.get("event"), e.get("data", "")) for e in cached.raw["events"]]
-            )
+            replay = [SSEEvent(e.get("event"), e.get("data", "")) for e in cached.raw["events"]]
+            return iter(replay), True
         events = self.request_stream(path, body)
         if self.cache is None:
-            return events
-        return self._record_events(events, body)
+            return events, False
+        return self._record_events(events, body), False
 
     def _record_events(self, events: Iterator[SSEEvent], body: Dict[str, Any]) -> Iterator[SSEEvent]:
         # Parsers stop at the terminal event and close this generator early, so a
