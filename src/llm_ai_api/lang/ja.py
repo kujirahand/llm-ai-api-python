@@ -13,6 +13,7 @@ MESSAGES = {
     "invalid_cache": "キャッシュの設定が正しくありません: {detail}",
     "invalid_connection": "接続設定が不正です: {detail}",
     "invalid_url": "URL が正しくありません: {url}",
+    "invalid_messages": "messages は辞書の空でないリストで指定してください。",
     "invalid_option": "{name} には 0 以上の有限の数を指定してください: {value!r}",
     "invalid_event": "未知のイベントです: {event!r}（使えるイベント: {known}）",
     "invalid_listener": "イベントリスナーは呼び出し可能である必要があります。",

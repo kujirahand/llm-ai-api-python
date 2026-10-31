@@ -13,7 +13,6 @@ A thin, stable HTTP wrapper for the OpenAI, OpenRouter, Claude (Anthropic), and 
 - **Built-in caching and logging**: SQLite response caching (encrypted with a key derived from your API key; streams can be cached too) via `set_cache()` (or `cache=`) and JSON Lines request/response logging via `set_log()` (or `log=`) are built right in.
 - **Lightweight dependencies (`httpx` only)**: The only dependency is `httpx`; official packages like `openai` or `anthropic` are not required, keeping installs small and reducing dependency conflicts.
 
-
 Header names are case-insensitive; client and per-request headers override earlier values. See the [configuration reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/config.md) for precedence.
 
 ## Installation
@@ -45,7 +44,24 @@ for piece in luna.stream("Write a short story"):
 
 # Using a chat history
 result = luna.chat([{"role": "user", "content": "hi"}])  # ChatResult: text, stop_reason, usage, raw, request_id, latency, retries
+
+# A chat app with history
+history = []
+while True:
+    user_text = input("You: ")
+    if not user_text:
+        break
+    history.append({"role": "user", "content": user_text})
+    stream = luna.stream(history)
+    print("request_id:", stream.request_id)
+    pieces = []
+    for piece in stream:
+        print(piece, end="", flush=True)
+        pieces.append(piece)
+    history.append({"role": "assistant", "content": "".join(pieces)})
 ```
+
+`ask()` and `stream()` also accept a non-empty list of message dictionaries. The async `aask()` and `astream()` accept the same inputs. The caller owns the history; a `system=` argument is prepended just as in `chat()`. The stream iterator also has a `request_id`.
 
 A stream closes its connection by itself when it is read to the end or dropped (for async streams, only while the event loop that created the stream is still running). To stop early, call `close()` (`await stream.aclose()` in async code) to release the connection right away.
 

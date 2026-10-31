@@ -13,6 +13,7 @@ MESSAGES = {
     "invalid_cache": "Invalid cache setting: {detail}",
     "invalid_connection": "Invalid connection setting: {detail}",
     "invalid_url": "Invalid URL: {url}",
+    "invalid_messages": "Messages must be a non-empty list of dictionaries.",
     "invalid_option": "{name} must be a finite number of 0 or more: {value!r}",
     "invalid_event": "Unknown event {event!r}. Known events: {known}.",
     "invalid_listener": "An event listener must be callable.",

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.7.0
+
+- Accept conversation history in `ask()` / `stream()` and their async counterparts (#59). List input is handled like `chat()` messages, including system handling, cache keys, logging, events, and `request_id` on stream iterators. String input requests and cache keys are unchanged. A non-string, non-list input, an empty list, or a list containing non-dict items raises `LLMConfigError(code="invalid_messages")`.
+
 ## 0.6.0
 
 Production hardening (#49):

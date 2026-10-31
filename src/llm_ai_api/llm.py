@@ -1,4 +1,4 @@
-"""共通インターフェイス `llm("プロバイダー:モデル")`。"""
+"""Common interface for `llm("provider:model")`."""
 
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ def _pick(value: Union[_T, _Unset], default: _T) -> _T:
 
 
 def parse_model_spec(spec: str, lang: Optional[str] = None) -> "tuple[str, str]":
-    """`"provider:model"` を (provider, model) に分ける。最初の `:` で分割する。"""
+    """Split a specification such as `llm("openai:gpt-6-luna")` at its first colon."""
     provider, sep, model = spec.partition(":")
     provider = provider.strip().lower()
     model = model.strip()
@@ -84,7 +84,7 @@ def parse_model_spec(spec: str, lang: Optional[str] = None) -> "tuple[str, str]"
 
 
 class LLM:
-    """プロバイダーの違いを意識せずに使える共通インターフェイス。会話履歴は持たない。"""
+    """Provider-independent interface that does not keep conversation history."""
 
     def __init__(
         self,
@@ -113,10 +113,7 @@ class LLM:
         return "LLM(%r)" % ("%s:%s" % (self.provider, self.model))
 
     def close(self) -> None:
-        """下位の同期クライアントを閉じる。
-
-        非同期クライアントは閉じない。非同期 API を使った場合は `aclose()` を使うこと。
-        """
+        """Close the synchronous client, not the async client; use `aclose()` after async use."""
         self.client.close()
 
     def set_config(
@@ -126,10 +123,9 @@ class LLM:
         retry_read_timeout: Union[bool, _Unset] = UNSET,
         retry_after_max: Union[float, _Unset] = UNSET,
     ) -> None:
-        """生成後にリトライ設定を変更する。渡した引数だけを変え、他はそのまま。
+        """Change only supplied retry settings on the sync and existing async clients.
 
-        同期クライアントと、作成済みなら非同期クライアントの両方に反映する
-        （非同期クライアントを後で作る場合も、その時点の値を使う）。
+        An async client created later uses the current settings.
         """
         changes = {
             "max_retries": max_retries,
@@ -153,6 +149,18 @@ class LLM:
 
     def __exit__(self, *exc: Any) -> None:
         self.close()
+
+    def _validate_messages(self, messages: Any) -> None:
+        if not isinstance(messages, list) or not messages or not all(
+            isinstance(message, dict) for message in messages
+        ):
+            raise LLMConfigError(t("invalid_messages", self.client.lang), code="invalid_messages")
+
+    def _prompt_messages(self, prompt: Union[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+        if isinstance(prompt, str):
+            return [{"role": "user", "content": prompt}]
+        self._validate_messages(prompt)
+        return list(prompt)
 
     def _prepare(
         self,
@@ -192,17 +200,18 @@ class LLM:
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
         timeout: Optional[float] = None,
     ) -> ChatResult:
-        """messages を渡して `ChatResult`（stop_reason や raw を含む）を受け取る。
+        """Send messages and return a `ChatResult`, including stop reason and raw data.
 
-        `timeout`（秒）は、この呼び出しだけクライアントのタイムアウトを上書きする（`None` なら
-        クライアントの設定）。操作ごとのタイムアウトで、合計の期限ではない（リトライで延びる）。
+        `timeout` in seconds overrides the client timeout for this call only; `None`
+        uses the client setting. It is per operation, not a total deadline; retries
+        extend it.
         """
         kw = self._prepare(messages, system, max_tokens, temperature, extra)
         return self.client.chat(timeout=timeout, **kw)  # type: ignore[attr-defined]
 
     def ask(
         self,
-        prompt: str,
+        prompt: Union[str, List[Dict[str, Any]]],
         *,
         system: Union[Optional[str], _Unset] = UNSET,
         max_tokens: Union[Optional[int], _Unset] = UNSET,
@@ -210,8 +219,12 @@ class LLM:
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
         timeout: Optional[float] = None,
     ) -> str:
-        """1 つの質問を送り、回答のテキストだけを返す。`timeout` は `chat()` と同じ。"""
-        msgs = [{"role": "user", "content": prompt}]
+        """Send a prompt or message history and return only the answer text.
+
+        A list is treated as `chat()` messages and is not modified. `timeout` is
+        the same as in `chat()`.
+        """
+        msgs = self._prompt_messages(prompt)
         return self.chat(
             msgs,
             system=system,
@@ -223,7 +236,7 @@ class LLM:
 
     def stream(
         self,
-        prompt: str,
+        prompt: Union[str, List[Dict[str, Any]]],
         *,
         system: Union[Optional[str], _Unset] = UNSET,
         max_tokens: Union[Optional[int], _Unset] = UNSET,
@@ -231,15 +244,17 @@ class LLM:
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
         timeout: Optional[float] = None,
     ) -> Iterator[str]:
-        """Send one question and yield text deltas. `timeout` matches `chat()`
+        """Send a prompt or message history and yield text deltas. `timeout` matches `chat()`
         (for a stream it is the time to wait for the next data).
+
+        A list is treated as `chat()` messages and is not modified.
 
         The returned iterator has `request_id` and `retries` as soon as `stream()`
         returns (response headers have already been received). Read the iterator
         to the end, or call `close()`, to release the connection. Dropping it
         also closes the response when it is garbage-collected.
         """
-        msgs = [{"role": "user", "content": prompt}]
+        msgs = self._prompt_messages(prompt)
         kw = self._prepare(msgs, system, max_tokens, temperature, extra)
         chunks = self.client.stream_chat(timeout=timeout, **kw)  # type: ignore[attr-defined]
         return _TextStream(chunks)
@@ -348,7 +363,7 @@ class LLM:
 
     async def aask(
         self,
-        prompt: str,
+        prompt: Union[str, List[Dict[str, Any]]],
         *,
         system: Union[Optional[str], _Unset] = UNSET,
         max_tokens: Union[Optional[int], _Unset] = UNSET,
@@ -356,11 +371,12 @@ class LLM:
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
         timeout: Optional[float] = None,
     ) -> str:
-        """Async `ask()`: send one question and return only the answer text.
+        """Async `ask()`: send a prompt or message history and return answer text.
 
+        A list is treated as `chat()` messages and is not modified.
         `timeout` is the same as in `achat()`.
         """
-        msgs = [{"role": "user", "content": prompt}]
+        msgs = self._prompt_messages(prompt)
         result = await self.achat(
             msgs,
             system=system,
@@ -373,7 +389,7 @@ class LLM:
 
     def astream(
         self,
-        prompt: str,
+        prompt: Union[str, List[Dict[str, Any]]],
         *,
         system: Union[Optional[str], _Unset] = UNSET,
         max_tokens: Union[Optional[int], _Unset] = UNSET,
@@ -381,8 +397,9 @@ class LLM:
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
         timeout: Optional[float] = None,
     ) -> AsyncIterator[str]:
-        """Async `stream()`: return an async iterator of answer text deltas.
+        """Async `stream()`: stream text from a prompt or message history.
 
+        A list is treated as `chat()` messages and is not modified.
         Use it directly with `async for` (no `await`). The request starts at the first
         iteration, so connection and HTTP errors are raised there. `request_id` and
         `retries` are set once that iteration has received the response headers,
@@ -391,7 +408,7 @@ class LLM:
         early. `timeout` is the same as in `achat()` (for a stream it is the time
         to wait for the next data).
         """
-        msgs = [{"role": "user", "content": prompt}]
+        msgs = self._prompt_messages(prompt)
         return _AsyncTextStream(self, msgs, system, max_tokens, temperature, extra, timeout)
 
     async def aclose(self) -> None:
@@ -520,5 +537,5 @@ class _AsyncTextStream:
 
 
 def llm(spec: str, **options: Any) -> LLM:
-    """`llm("openai:gpt-6-luna")` のようにモデルを指定して `LLM` を作る。"""
+    """Create an `LLM` from a specification, for example `llm("openai:gpt-6-luna")`."""
     return LLM(spec, **options)
