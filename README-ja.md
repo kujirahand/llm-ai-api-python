@@ -68,6 +68,22 @@ m3 = llm("openai:gpt-6-luna", cache=False)       # このインスタンスだ�
 
 詳しくは、[こちら](docs/io_cache-ja.md) を参照してください。
 
+## 入出力のログ
+
+デフォルトではオフです。オンにすると、`ask()` / `chat()` / `stream()` / `stream_chat()` の呼び出しごとに、入力（リクエストボディ）と出力（生の応答）を JSON Lines 形式で 1 行ずつ追記します。
+
+```python
+from llm_ai_api import llm, set_log
+
+set_log("llm_log.jsonl")                       # プロセス全体でオン
+m = llm("openai:gpt-6-luna", log="other.jsonl")  # インスタンスごとの指定
+m2 = llm("openai:gpt-6-luna", log=False)         # このインスタンスだけオフ
+```
+
+環境変数 `LLM_AI_API_LOG_DIR` にディレクトリを指定すると、`<ディレクトリ>/llm.jsonl` でオンになります。1 行には `time`, `provider`, `model`, `stream`, `cached`, `request`, `response` が入ります。API キーは記録されません。ログは平文で、プロンプトと回答がそのまま入るので、取り扱いに注意してください。ストリーミングは最後まで読み切ったときだけ記録されます。
+
+詳しくは、[こちら](docs/io_logs-ja.md) を参照してください。
+
 ## サンプル
 
 [`examples/`](examples/) を参照してください。どのスクリプトも、引数 `プロバイダー:モデル`（または環境変数 `LLM_MODEL`）でモデルを指定します。

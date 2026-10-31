@@ -9,6 +9,7 @@ MESSAGES = {
     "invalid_model_spec": (
         'モデルは "プロバイダー:モデル名" の形式で指定してください（例: "openai:gpt-6-luna"）: {spec!r}'
     ),
+    "invalid_log": "ログの設定が正しくありません: {detail}",
     "invalid_cache": "キャッシュの設定が正しくありません: {detail}",
     "unknown_provider": "未知のプロバイダーです: {provider!r}（対応: {supported}）",
     "cache_dir_not_set": "cache_dir=... か環境変数 LLM_AI_API_CACHE_DIR で、キャッシュのディレクトリを指定してください。",
