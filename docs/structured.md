@@ -66,6 +66,16 @@ A JSON Schema passed as a dict is sent unchanged.
 
 `StructuredOutputError.result` holds the original `ChatResult`, so the (already paid for) response — `text`, `raw` — is not lost.
 
+### What each code means and what to do
+
+| `code` | Meaning | Common causes | What to do |
+|---|---|---|---|
+| `output_refused` | The model refused to answer | The request conflicts with the model's policy; Claude returned `stop_reason="refusal"` | Review the request. Check `StructuredOutputError.result.text` / `raw` for the refusal details |
+| `output_incomplete` | The output ended before the JSON was complete | The `max_tokens` limit was hit (`stop_reason="max_tokens"`); the response was too long | Raise `max_tokens`; make the schema or the requested items smaller |
+| `invalid_structured_output` | The response could not be read as JSON, or schema validation failed | The model returned non-JSON text; a required field is missing or has the wrong type | Check `__cause__` (the original exception) and `.result.text` (the raw response). Spell out the schema essentials in the prompt, reduce the number of fields, or try another model. Retrying can also help |
+
+For every code, logging `.result` (the original response) and `__cause__` (the validation details) before retrying makes the cause easier to pin down.
+
 ## Overriding with extra
 
 As always, `extra` is applied last and wins over the generated keys. For the OpenAI family, `extra={"response_format": ...}` replaces the generated setting entirely. Anthropic's `output_config` is merged shallowly, so adding another key with `extra={"output_config": {"effort": "high"}}` keeps the generated `format`.
