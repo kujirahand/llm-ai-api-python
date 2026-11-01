@@ -201,6 +201,13 @@ class InvalidImagesTest(MultimodalTestBase):
         path = self.write("data.txt", b"text")
         self.assert_invalid(rec, lambda: m.ask("q", images=[path]))
 
+    def test_riff_but_not_webp(self):
+        rec = Recorder(json_response(OPENAI_REPLY))
+        m = openai_llm(rec)
+        # A RIFF container that is not WEBP, and a RIFF header too short to tell.
+        self.assert_invalid(rec, lambda: m.ask("q", images=[b"RIFF\x04\x00\x00\x00AVI "]))
+        self.assert_invalid(rec, lambda: m.ask("q", images=[b"RIFF"]))
+
     def test_unreadable_file_keeps_the_cause(self):
         rec = Recorder(json_response(OPENAI_REPLY))
         missing = os.path.join(self.tmp.name, "missing.png")
@@ -241,6 +248,19 @@ class AsyncImagesTest(MultimodalTestBase, unittest.IsolatedAsyncioTestCase):
         content = rec.body()["messages"][0]["content"]
         self.assertEqual(content[0], {"type": "text", "text": "q"})
         self.assertEqual(content[1]["image_url"]["url"], "data:image/png;base64," + b64(PNG))
+
+    async def test_old_astream_alias_accepts_images(self):
+        path = self.write("a.png", PNG)
+        rec = Recorder(sse_response(OPENAI_STREAM))
+        m = openai_llm(rec)
+        try:
+            self.assertEqual([p async for p in m.astream("q", images=[path])], ["a", "b"])
+        finally:
+            await m.aclose()
+        self.assertEqual(
+            rec.body()["messages"][0]["content"][1]["image_url"]["url"],
+            "data:image/png;base64," + b64(PNG),
+        )
 
     async def test_aask_anthropic_url(self):
         rec = Recorder(json_response(CLAUDE_REPLY))
