@@ -8,7 +8,7 @@ A thin, stable HTTP wrapper for the OpenAI, OpenRouter, Claude (Anthropic), and 
 
 ## Why use this package?
 
-- **Unified code across providers**: Switch models simply by changing the model string—such as `llm("openai:gpt-6-luna")`, `llm("openrouter:anthropic/claude-sonnet-5.5")`, `llm("claude:claude-sonnet-5-5")`, or `llm("google:gemini-3.8-flash")`—while using the same `ask()`, `chat()`, and `stream()` methods.
+- **Unified code across providers**: Switch models simply by changing the model string—such as `llm("openai:gpt-6-luna")`, `llm("openrouter:anthropic/claude-sonnet-5.5")`, `llm("claude:claude-sonnet-5-5")`, or `llm("google:gemini-3.8-flash")`—while using the same `ask()`, `chat()`, and `ask_stream()` methods.
 - **No boilerplate parameter handling**: Unspecified parameters are never sent. Furthermore, starting in v0.4.0, parameters confirmed to be rejected by official API specs (such as `temperature` and `top_p` on certain models) are automatically omitted according to a rule table, even if explicitly passed, removing the need to write custom workaround functions (such as `_is_no_temperature()`).
 - **Built-in caching and logging**: SQLite response caching (encrypted with a key derived from your API key; streams can be cached too) via `set_cache()` (or `cache=`) and JSON Lines request/response logging via `set_log()` (or `log=`) are built right in.
 - **Lightweight dependencies (`httpx` only)**: The only dependency is `httpx`; official packages like `openai` or `anthropic` are not required, keeping installs small and reducing dependency conflicts.
@@ -35,15 +35,30 @@ The model is always `"<provider>:<model>"` (providers: `openai`, `openrouter`, `
 Google Gemini is called through Google's OpenAI-compatible endpoint.
 For step-by-step setup, including how to configure an API key, see the [Tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md).
 
+### Main methods
+
+| Method | Method (async) | Description |
+|---|---|---|
+| `ask(prompt)` | `aask(prompt)` | Get a text response from the LLM |
+| `ask_stream(prompt)` | `aask_stream(prompt)` | Get the LLM response as a stream |
+| `chat(messages)` | `achat(messages)` | Give the LLM a conversation and get a response |
+| `chat_stream(messages)` | `achat_stream(messages)` | Give the LLM a conversation and get the response as a stream |
+
+For the full list of methods, see the [API Reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/api.md).
+
 ### Streaming and chat
 
 ```python
 # Streaming
-for piece in luna.stream("Write a short story"):
+for piece in luna.ask_stream("Write a short story"):
     print(piece, end="", flush=True)
 
 # Using a chat history
 result = luna.chat([{"role": "user", "content": "hi"}])  # ChatResult: text, stop_reason, usage, raw, request_id, latency, retries
+
+# Streaming with messages
+for piece in luna.chat_stream([{"role": "user", "content": "hi"}]):
+    print(piece, end="", flush=True)
 
 # A chat app with history
 history = []
@@ -52,7 +67,7 @@ while True:
     if not user_text:
         break
     history.append({"role": "user", "content": user_text})
-    stream = luna.stream(history)
+    stream = luna.ask_stream(history)
     print("request_id:", stream.request_id)
     pieces = []
     for piece in stream:
@@ -61,7 +76,9 @@ while True:
     history.append({"role": "assistant", "content": "".join(pieces)})
 ```
 
-`ask()` and `stream()` also accept a non-empty list of message dictionaries. The async `aask()` and `astream()` accept the same inputs. The caller owns the history; a `system=` argument is prepended just as in `chat()`. The stream iterator also has a `request_id`.
+`ask()` and `ask_stream()` also accept a non-empty list of message dictionaries. The async `aask()` and `aask_stream()` accept the same inputs. The caller owns the history; a `system=` argument is prepended just as in `chat()`. The stream iterator also has a `request_id`.
+
+The old name `stream()` (`astream()` in async code) is deprecated. It remains as an alias of `ask_stream()` (`aask_stream()` in async code).
 
 A stream closes its connection by itself when it is read to the end or dropped (for async streams, only while the event loop that created the stream is still running). To stop early, call `close()` (`await stream.aclose()` in async code) to release the connection right away.
 
@@ -70,13 +87,13 @@ Parameters the official docs say a model rejects are omitted even when you pass 
 
 #### Per-call timeout
 
-`ask()` / `chat()` / `stream()` (and the async `aask()` / `achat()` / `astream()`) take a keyword argument `timeout` (seconds) that overrides the timeout for that call only. If omitted (`None`), the client's setting is used (default 600 seconds).
+`ask()` / `chat()` / `ask_stream()` / `chat_stream()` (and the async `aask()` / `achat()` / `aask_stream()` / `achat_stream()`) take a keyword argument `timeout` (seconds) that overrides the timeout for that call only. If omitted (`None`), the client's setting is used (default 600 seconds).
 
 ```python
 text = luna.ask("A short question", timeout=30)
 ```
 
-This is a **per-operation timeout**, not a total deadline (for a stream, it is the time to wait for the next data). Retries (2 by default) extend the total time. This parameter alone cannot guarantee a total deadline in sync code: the wait resets whenever data arrives, so even with `max_retries=0` the total time is unbounded, especially for streams and slow-drip responses. In async code, if you need a hard deadline, wrap the coroutine that consumes the whole stream in `asyncio.wait_for()`, not just the `astream()` call, because the request only starts at the first iteration.
+This is a **per-operation timeout**, not a total deadline (for a stream, it is the time to wait for the next data). Retries (2 by default) extend the total time. This parameter alone cannot guarantee a total deadline in sync code: the wait resets whenever data arrives, so even with `max_retries=0` the total time is unbounded, especially for streams and slow-drip responses. In async code, if you need a hard deadline, wrap the coroutine that consumes the whole stream in `asyncio.wait_for()`, not just the `aask_stream()` call, because the request only starts at the first iteration.
 
 You can also pick from the model constants (they are just `"provider:model"` strings):
 
@@ -111,7 +128,7 @@ The event list, payload keys, and where to read `request_id` (`ChatResult`, `Cha
 
 ### Async
 
-The same `llm()` works with asyncio: add an `a` to the method name (`aask()`, `achat()`, `astream()`).
+The same `llm()` works with asyncio: add an `a` to the method name (`aask()`, `achat()`, `aask_stream()`, `achat_stream()`).
 
 ```python
 import asyncio
@@ -121,7 +138,7 @@ async def main():
     async with llm("openai:gpt-6-luna") as m:
         print(await m.aask("Come up with a cute name for a dog"))
 
-        async for piece in m.astream("Write a short story"):  # no await here
+        async for piece in m.aask_stream("Write a short story"):  # no await here
             print(piece, end="", flush=True)
 
         # One LLM can be shared by concurrent calls
@@ -131,10 +148,10 @@ async def main():
 asyncio.run(main())
 ```
 
-- `astream()` starts the request at the first iteration, so connection and HTTP errors are raised there (when `async for` starts), not when `astream()` is called (the sync `stream()` raises on the call). To stop early, call `await stream.aclose()`.
+- `aask_stream()` / `achat_stream()` start the request at the first iteration, so connection and HTTP errors are raised there (when `async for` starts), not when the method is called (the sync `ask_stream()` / `chat_stream()` raise on the call). To stop early, call `await stream.aclose()`.
 - Close it with `async with` (or `await m.aclose()`). A closed `LLM` cannot be reused.
 - Do not carry one across event loops: create a new `llm()` for each `asyncio.run()`.
-- Do not call the sync `ask()` / `chat()` / `stream()` from async code (for example, a FastAPI handler running in the event loop): they block the whole loop until the request finishes. Use `aask()` / `achat()` / `astream()` instead.
+- Do not call the sync `ask()` / `chat()` / `ask_stream()` / `chat_stream()` from async code (for example, a FastAPI handler running in the event loop): they block the whole loop until the request finishes. Use `aask()` / `achat()` / `aask_stream()` / `achat_stream()` instead.
 - `close()` closes only the sync client, not the async one. If you used the async API, call `await m.aclose()` (or use `async with`), which closes both.
 
 The cache and the log work the same way as in the sync API. Only the common interface (`llm()`) is async; there are no async provider clients or raw layer (`request()`).
@@ -154,7 +171,7 @@ m2 = llm("openai:gpt-6-luna", cache="other.db")  # per instance
 m3 = llm("openai:gpt-6-luna", cache=False)       # off for this instance only
 ```
 
-`cache=True` uses the default file `llm_ai_api_cache.db`. A `SQLiteCache` object can also be passed. Setting the environment variable `LLM_AI_API_CACHE_DIR` to a directory turns the cache on as `<dir>/cache.db` without calling `set_cache()`. Streaming (`stream()` / `stream_chat()`) is cached too (stored only when read up to the terminal event).
+`cache=True` uses the default file `llm_ai_api_cache.db`. A `SQLiteCache` object can also be passed. Setting the environment variable `LLM_AI_API_CACHE_DIR` to a directory turns the cache on as `<dir>/cache.db` without calling `set_cache()`. Streaming (`ask_stream()` / `chat_stream()` / `stream_chat()`) is cached too (stored only when read up to the terminal event).
 
 Stored responses are encrypted with a key derived from the API key. The lookup key is a hash of `{provider}:{model}@{api_key}>>>{input}`, so a different API key means a separate cache. Remove old entries with `clear_cache(days)` (`clear_cache(0)` deletes everything). When the file grows past `max_size` (default 100 MB; `set_cache(..., max_size=None)` for unlimited), the oldest third of the rows is deleted automatically.
 
@@ -164,7 +181,7 @@ See [docs/io_cache.md](https://github.com/kujirahand/llm-ai-api-python/blob/main
 
 ## Input/output log
 
-Off by default. When enabled, every `ask()` / `chat()` / `stream()` / `stream_chat()` call appends one JSON Lines record with the input (request body) and the output (raw response).
+Off by default. When enabled, every `ask()` / `chat()` / `ask_stream()` / `chat_stream()` / `stream_chat()` call appends one JSON Lines record with the input (request body) and the output (raw response).
 
 ```python
 from llm_ai_api import llm, set_log
@@ -199,7 +216,7 @@ See [`examples/`](https://github.com/kujirahand/llm-ai-api-python/tree/main/exam
 |---|---|
 | `hello.py` | Ask for a greeting |
 | `hello_stream.py` | Print the reply as it streams |
-| `hello_async.py` | `aask()` and `astream()` with `asyncio.run` and `async with` |
+| `hello_async.py` | `aask()` and `aask_stream()` with `asyncio.run` and `async with` |
 | `chat_history.py` | Reply based on a chat history |
 | `ocr_test.py` | Read the text in an image |
 | `image_desc.py` | Describe an image |

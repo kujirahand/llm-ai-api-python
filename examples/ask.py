@@ -14,6 +14,6 @@ question = sys.argv[2] if len(sys.argv) > 2 else "Come up with a cute name for a
 m = llm(spec)
 print(m.ask(question))
 print("---- stream ----")
-for piece in m.stream(question):
+for piece in m.ask_stream(question):
     print(piece, end="", flush=True)
 print()

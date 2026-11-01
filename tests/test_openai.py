@@ -73,7 +73,7 @@ class OpenAITest(unittest.TestCase):
         m = llm("openai:m", api_key="k", lang="en", transport=rec.transport)
         got = []
         with self.assertRaises(APIStreamError) as cm:
-            for piece in m.stream("q"):
+            for piece in m.ask_stream("q"):
                 got.append(piece)
         self.assertEqual(got, ["par"])  # partial text was delivered before the failure
         self.assertIn("upstream failed", str(cm.exception))

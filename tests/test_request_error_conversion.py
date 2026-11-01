@@ -55,7 +55,7 @@ class SyncRequestErrorTest(_Base):
         ))
         m = self.make(rec)
         with self.assertRaises(APIConnectionError) as cm:
-            list(m.stream("q"))
+            list(m.ask_stream("q"))
         self.assertEqual(cm.exception.code, "connection_error")
         self.assertNotIsInstance(cm.exception, httpx.HTTPError)
         # Once the body has started streaming, there is no retry.
@@ -112,7 +112,7 @@ class AsyncRequestErrorTest(unittest.IsolatedAsyncioTestCase):
         ))
         m = self.make(rec)
         with self.assertRaises(APIConnectionError) as cm:
-            async for _ in m.astream("q"):
+            async for _ in m.aask_stream("q"):
                 pass
         self.assertEqual(cm.exception.code, "connection_error")
         self.assertNotIsInstance(cm.exception, httpx.HTTPError)

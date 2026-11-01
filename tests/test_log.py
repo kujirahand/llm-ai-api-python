@@ -73,7 +73,7 @@ class LogTest(unittest.TestCase):
 
     def test_stream_logged_after_complete_read(self):
         m = self.make(Recorder(sse_response(OPENAI_STREAM)), log=self.path)
-        it = m.stream("q")
+        it = m.ask_stream("q")
         next(it)
         self.assertFalse(os.path.exists(self.path) and self.records())
         list(it)
@@ -85,8 +85,8 @@ class LogTest(unittest.TestCase):
     def test_stream_cache_hit_logged(self):
         rec = Recorder(sse_response(OPENAI_STREAM))
         m = self.make(rec, log=self.path, cache=self.path + ".db")
-        list(m.stream("q"))
-        list(m.stream("q"))
+        list(m.ask_stream("q"))
+        list(m.ask_stream("q"))
         first, second = self.records()
         self.assertEqual((first["stream"], first["cached"]), (True, False))
         self.assertEqual((second["stream"], second["cached"]), (True, True))
@@ -95,7 +95,7 @@ class LogTest(unittest.TestCase):
 
     def test_stream_abandoned_not_logged(self):
         m = self.make(Recorder(sse_response(OPENAI_STREAM)), log=self.path)
-        it = m.stream("q")
+        it = m.ask_stream("q")
         next(it)
         close = getattr(it, "close", None)
         if close is not None:
@@ -114,7 +114,7 @@ class LogTest(unittest.TestCase):
         m = llm(
             "anthropic:claude-x", api_key="sk-ant-test", transport=rec.transport, log=self.path
         )
-        self.assertEqual("".join(m.stream("q")), "ポチ")
+        self.assertEqual("".join(m.ask_stream("q")), "ポチ")
         (r,) = self.records()
         self.assertEqual(r["response"]["text"], "ポチ")
 

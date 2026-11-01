@@ -1,7 +1,7 @@
 """Async HTTP layer (internal): httpx.AsyncClient, SSE reading, retries.
 
 The async counterpart of `_http.BaseClient`. It is not exported; the public async API
-is `LLM.aask()` / `achat()` / `astream()`. HTTP control is duplicated in a small form
+is `LLM.aask()` / `achat()` / `aask_stream()` / `achat_stream()`. HTTP control is duplicated in a small form
 instead of being merged with the sync client; pure helpers are imported from `_http`.
 
 Streams are plain classes implementing `__anext__` / `aclose` rather than async

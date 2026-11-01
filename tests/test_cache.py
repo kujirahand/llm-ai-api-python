@@ -309,8 +309,8 @@ class ChatCacheTest(CacheTestBase):
     def test_streaming_is_cached(self):
         rec = Recorder(sse_response(OPENAI_STREAM))
         m = self.make(rec, cache=self.db)
-        self.assertEqual("".join(m.stream("q")), "ポチ")
-        self.assertEqual("".join(m.stream("q")), "ポチ")
+        self.assertEqual("".join(m.ask_stream("q")), "ポチ")
+        self.assertEqual("".join(m.ask_stream("q")), "ポチ")
         self.assertEqual(len(rec.requests), 1)
 
     def test_stream_without_terminal_event_is_not_cached(self):
@@ -318,33 +318,33 @@ class ChatCacheTest(CacheTestBase):
         rec = Recorder(sse_response(eof))
         m = self.make(rec, cache=self.db)
         with self.assertRaises(APIStreamError):
-            list(m.stream("q"))
+            list(m.ask_stream("q"))
         self.assertEqual(len(SQLiteCache(self.db)), 0)
         with self.assertRaises(APIStreamError):
-            list(m.stream("q"))
+            list(m.ask_stream("q"))
         self.assertEqual(len(rec.requests), 2)
 
     def test_google_stream_with_done_is_cached(self):
         rec = Recorder(sse_response(OPENAI_STREAM))
         m = llm("google:gemini-x", api_key="k", transport=rec.transport, cache=self.db)
         self.addCleanup(m.close)
-        self.assertEqual("".join(m.stream("q")), "ポチ")
-        self.assertEqual("".join(m.stream("q")), "ポチ")
+        self.assertEqual("".join(m.ask_stream("q")), "ポチ")
+        self.assertEqual("".join(m.ask_stream("q")), "ポチ")
         self.assertEqual(len(rec.requests), 1)
 
     def test_partial_stream_is_not_cached(self):
         rec = Recorder(sse_response(OPENAI_STREAM))
         m = self.make(rec, cache=self.db)
-        it = m.stream("q")
+        it = m.ask_stream("q")
         next(it)
         it.close()
-        self.assertEqual("".join(m.stream("q")), "ポチ")
+        self.assertEqual("".join(m.ask_stream("q")), "ポチ")
         self.assertEqual(len(rec.requests), 2)
 
     def test_stream_and_chat_do_not_share_entries(self):
         rec = Recorder(sse_response(OPENAI_STREAM), json_response(OPENAI_REPLY))
         m = self.make(rec, cache=self.db)
-        list(m.stream("q"))
+        list(m.ask_stream("q"))
         m.ask("q")
         self.assertEqual(len(rec.requests), 2)
 

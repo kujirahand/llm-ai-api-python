@@ -8,7 +8,7 @@ OpenAI / OpenRouter / Claude (Anthropic) / Google の API を呼び出す、薄�
 
 ## このパッケージを使うメリット
 
-- **プロバイダーごとの切り替えコードが減る**: `llm("openai:gpt-6-luna")`、`llm("openrouter:anthropic/claude-sonnet-5.5")`、`llm("claude:claude-sonnet-5-5")`、`llm("google:gemini-3.8-flash")` のように、モデル文字列を変えるだけで同じ `ask()` / `chat()` / `stream()` が使えます。
+- **プロバイダーごとの切り替えコードが減る**: `llm("openai:gpt-6-luna")`、`llm("openrouter:anthropic/claude-sonnet-5.5")`、`llm("claude:claude-sonnet-5-5")`、`llm("google:gemini-3.8-flash")` のように、モデル文字列を変えるだけで同じ `ask()` / `chat()` / `ask_stream()` が使えます。
 - **モデルごとのパラメータ回避コードが不要**: 指定していないパラメータは送信しません。さらに v0.4.0 からは、公式仕様で拒否されると確認したパラメータ（`temperature` や `top_p` など）はルール表に従って、明示的に渡しても送信しないため、呼び出し側で回避コード（`_is_no_temperature()` など）を自前で書く必要がありません。
 - **SQLite キャッシュと JSON Lines ログを標準搭載**: `set_cache()`（または `cache=`）による SQLite レスポンスキャッシュ（API キーから作った鍵で暗号化。ストリーミングもキャッシュ可能）や、`set_log()`（または `log=`）による JSON Lines 入出力ログが組み込まれています。
 - **依存が軽い（`httpx` のみ）**: 依存は `httpx` のみで、公式の `openai` や `anthropic` パッケージなどは不要です。インストールが軽く、依存関係の競合が起きにくくなります。
@@ -35,15 +35,30 @@ API キーは環境変数（`OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC
 Google Gemini は、Google の OpenAI 互換エンドポイント経由で呼び出します。
 API キーの設定方法など、最初から順に試す手順は[チュートリアル](docs/tutorial-ja.md)を参照してください。
 
+### 主なメソッド
+
+| メソッド | メソッド(async) | 説明 |
+|---|---|---|
+| `ask(質問)` | `aask(質問)` | LLMからテキストの応答を得る |
+| `ask_stream(質問)` | `aask_stream(質問)` | LLMからの応答をストリームで得る |
+| `chat(会話履歴)` | `achat(会話履歴)` | LLMに会話を与えて応答を得る |
+| `chat_stream(会話履歴)` | `achat_stream(会話履歴)` | LLMに会話を与えて応答をストリームで得る |
+
+全メソッドの一覧は [API リファレンス](docs/api-ja.md) を参照してください。
+
 ### ストリーミングとチャット
 
 ```python
 # ストリーミング
-for piece in luna.stream("短い物語を書いて"):
+for piece in luna.ask_stream("短い物語を書いて"):
     print(piece, end="", flush=True)
 
 # 会話履歴の利用
 result = luna.chat([{"role": "user", "content": "こんにちは"}])  # ChatResult: text, stop_reason, usage, raw, request_id, latency, retries
+
+# messages を渡すストリーミング
+for piece in luna.chat_stream([{"role": "user", "content": "こんにちは"}]):
+    print(piece, end="", flush=True)
 
 # 履歴を使ったチャットアプリ
 history = []
@@ -52,7 +67,7 @@ while True:
     if not user_text:
         break
     history.append({"role": "user", "content": user_text})
-    stream = luna.stream(history)
+    stream = luna.ask_stream(history)
     print("request_id:", stream.request_id)
     pieces = []
     for piece in stream:
@@ -61,7 +76,9 @@ while True:
     history.append({"role": "assistant", "content": "".join(pieces)})
 ```
 
-`ask()` と `stream()` には空でないメッセージ辞書のリストも渡せます。非同期の `aask()` / `astream()` も同じです。履歴は呼び出し側で管理し、`system=` は `chat()` と同じく先頭に追加されます。ストリームイテレーターには `request_id` も設定されます。
+`ask()` と `ask_stream()` には空でないメッセージ辞書のリストも渡せます。非同期の `aask()` / `aask_stream()` も同じです。履歴は呼び出し側で管理し、`system=` は `chat()` と同じく先頭に追加されます。ストリームイテレーターには `request_id` も設定されます。
+
+旧名の `stream()`（非同期は `astream()`）は非推奨です。`ask_stream()`（非同期は `aask_stream()`）の別名として残してあります。
 
 ストリームは、最後まで読むか、捨てられたときに自動で接続を閉じます（非同期では、ストリームを作ったイベントループがまだ動いている場合に限ります）。途中でやめるときは `close()`（非同期では `await stream.aclose()`）を呼ぶと、すぐに接続を解放できます。
 
@@ -70,13 +87,13 @@ while True:
 
 #### 呼び出しごとのタイムアウト
 
-`ask()` / `chat()` / `stream()`（非同期の `aask()` / `achat()` / `astream()` も同じ）は、キーワード引数 `timeout`（秒）でその呼び出しだけタイムアウトを変えられます。省略（`None`）するとクライアントの設定（既定 600 秒）を使います。
+`ask()` / `chat()` / `ask_stream()` / `chat_stream()`（非同期の `aask()` / `achat()` / `aask_stream()` / `achat_stream()` も同じ）は、キーワード引数 `timeout`（秒）でその呼び出しだけタイムアウトを変えられます。省略（`None`）するとクライアントの設定（既定 600 秒）を使います。
 
 ```python
 text = luna.ask("短い質問", timeout=30)
 ```
 
-これは **操作ごとのタイムアウト** で、合計の期限ではありません（ストリームでは「次のデータが届くまでの時間」）。リトライ（既定 2 回）の分だけ全体の時間は延びます。この引数だけでは、同期コードで合計の期限を保証できません（データが届くたびに待ち時間がリセットされるため、`max_retries=0` にしても、特にストリームや少しずつ返る応答では全体の時間に上限がありません）。非同期コードで厳密な期限が必要なときは、`astream()` の呼び出しだけではなく、ストリームを読み切る処理全体のコルーチンを `asyncio.wait_for()` で包んでください（通信は最初の反復で始まるため）。
+これは **操作ごとのタイムアウト** で、合計の期限ではありません（ストリームでは「次のデータが届くまでの時間」）。リトライ（既定 2 回）の分だけ全体の時間は延びます。この引数だけでは、同期コードで合計の期限を保証できません（データが届くたびに待ち時間がリセットされるため、`max_retries=0` にしても、特にストリームや少しずつ返る応答では全体の時間に上限がありません）。非同期コードで厳密な期限が必要なときは、`aask_stream()` の呼び出しだけではなく、ストリームを読み切る処理全体のコルーチンを `asyncio.wait_for()` で包んでください（通信は最初の反復で始まるため）。
 
 代表的なモデルは定数でも指定できます（中身は `"プロバイダー:モデル"` の文字列です）。
 
@@ -111,7 +128,7 @@ print(result.request_id, result.retries, result.latency)
 
 ### 非同期（async）
 
-同じ `llm()` で、メソッド名の先頭に `a` を付けると非同期で使えます（`aask()` / `achat()` / `astream()`）。
+同じ `llm()` で、メソッド名の先頭に `a` を付けると非同期で使えます（`aask()` / `achat()` / `aask_stream()` / `achat_stream()`）。
 
 ```python
 import asyncio
@@ -121,7 +138,7 @@ async def main():
     async with llm("openai:gpt-6-luna") as m:
         print(await m.aask("可愛い犬の名前を考えて"))
 
-        async for piece in m.astream("短い物語を書いて"):  # await は付けない
+        async for piece in m.aask_stream("短い物語を書いて"):  # await は付けない
             print(piece, end="", flush=True)
 
         # 同じ LLM で並行に呼び出せる
@@ -131,10 +148,10 @@ async def main():
 asyncio.run(main())
 ```
 
-- `astream()` は最初の反復で通信を始めるため、接続エラーや HTTP エラーも最初の反復（`async for` の開始時）に発生します（同期版の `stream()` は呼び出し時に発生します）。途中でやめるときは `await stream.aclose()` を呼んでください。
+- `aask_stream()` / `achat_stream()` は最初の反復で通信を始めるため、接続エラーや HTTP エラーも最初の反復（`async for` の開始時）に発生します（同期版の `ask_stream()` / `chat_stream()` は呼び出し時に発生します）。途中でやめるときは `await stream.aclose()` を呼んでください。
 - `async with`（または `await m.aclose()`）で閉じてください。閉じた後は再利用できません。
 - イベントループをまたいで使わないでください。`asyncio.run()` のたびに新しい `llm()` を作ります。
-- 非同期コード（FastAPI のハンドラーなど、イベントループの中）で同期版の `ask()` / `chat()` / `stream()` を呼ばないでください。リクエストが終わるまでイベントループ全体が止まります。`aask()` / `achat()` / `astream()` を使います。
+- 非同期コード（FastAPI のハンドラーなど、イベントループの中）で同期版の `ask()` / `chat()` / `ask_stream()` / `chat_stream()` を呼ばないでください。リクエストが終わるまでイベントループ全体が止まります。`aask()` / `achat()` / `aask_stream()` / `achat_stream()` を使います。
 - `close()` が閉じるのは同期クライアントだけで、非同期クライアントは閉じません。非同期 API を使った場合は `await m.aclose()`（または `async with`）で、非同期・同期の両方を閉じます。
 
 キャッシュとログは非同期でも同期版と同じように働きます。非同期に対応しているのは共通インターフェイス（`llm()`）だけで、プロバイダークライアントや生レイヤー（`request()`）の非同期版はありません。
@@ -154,7 +171,7 @@ m2 = llm("openai:gpt-6-luna", cache="other.db")  # インスタンスごとの�
 m3 = llm("openai:gpt-6-luna", cache=False)       # このインスタンスだけオフ
 ```
 
-`cache=True` は既定のファイル `llm_ai_api_cache.db` を使います。`SQLiteCache` オブジェクトを渡すこともできます。環境変数 `LLM_AI_API_CACHE_DIR` にディレクトリを指定すると、`set_cache()` を呼ばなくても `<ディレクトリ>/cache.db` でオンになります。ストリーミング（`stream()` / `stream_chat()`）もキャッシュされます（終端イベントまで読み切ったときだけ保存）。
+`cache=True` は既定のファイル `llm_ai_api_cache.db` を使います。`SQLiteCache` オブジェクトを渡すこともできます。環境変数 `LLM_AI_API_CACHE_DIR` にディレクトリを指定すると、`set_cache()` を呼ばなくても `<ディレクトリ>/cache.db` でオンになります。ストリーミング（`ask_stream()` / `chat_stream()` / `stream_chat()`）もキャッシュされます（終端イベントまで読み切ったときだけ保存）。
 
 保存される応答は、API キーから作った鍵で暗号化されます。キーは `{プロバイダー}:{モデル}@{APIキー}>>>{入力}` のハッシュなので、API キーが違えば別のキャッシュになります。古いエントリは `clear_cache(days)` で削除できます（`clear_cache(0)` で全削除）。ファイルサイズが `max_size`（既定 100 MB。`set_cache(..., max_size=None)` で無制限）を超えると、古いほうから 1/3 の行が自動で削除されます。
 
@@ -164,7 +181,7 @@ m3 = llm("openai:gpt-6-luna", cache=False)       # このインスタンスだ�
 
 ## 入出力のログ
 
-デフォルトではオフです。オンにすると、`ask()` / `chat()` / `stream()` / `stream_chat()` の呼び出しごとに、入力（リクエストボディ）と出力（生の応答）を JSON Lines 形式で 1 行ずつ追記します。
+デフォルトではオフです。オンにすると、`ask()` / `chat()` / `ask_stream()` / `chat_stream()` / `stream_chat()` の呼び出しごとに、入力（リクエストボディ）と出力（生の応答）を JSON Lines 形式で 1 行ずつ追記します。
 
 ```python
 from llm_ai_api import llm, set_log
@@ -199,7 +216,7 @@ m = llm("openai:gpt-6-luna", connection={"max_connections": 5})        # この�
 |---|---|
 | `hello.py` | 挨拶を返してもらう |
 | `hello_stream.py` | ストリーミングで返信を表示する |
-| `hello_async.py` | `asyncio.run` と `async with` で `aask()` と `astream()` を使う |
+| `hello_async.py` | `asyncio.run` と `async with` で `aask()` と `aask_stream()` を使う |
 | `chat_history.py` | チャット履歴に基づいて返信する |
 | `ocr_test.py` | 画像に書かれた文字を読み取る |
 | `image_desc.py` | 画像の内容を説明してもらう |

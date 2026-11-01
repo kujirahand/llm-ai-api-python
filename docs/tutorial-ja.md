@@ -70,7 +70,7 @@ print(m.ask("可愛い犬の名前を考えて"))
 
 ## 4. 会話を続ける
 
-`ask()` は会話の履歴を保持しません。続きを聞くときは `ask()` / `stream()` / `chat()` に履歴（messages）を渡します。`chat()` は `ChatResult` を返します。リストは空でなく、要素がすべて辞書である必要があります。そうでない場合は `LLMConfigError`（code `invalid_messages`）が発生します。
+`ask()` は会話の履歴を保持しません。続きを聞くときは `ask()` / `ask_stream()` / `chat()` に履歴（messages）を渡します。`chat()` は `ChatResult` を返します。リストは空でなく、要素がすべて辞書である必要があります。そうでない場合は `LLMConfigError`（code `invalid_messages`）が発生します。
 
 ```python
 from llm_ai_api import llm
@@ -110,14 +110,14 @@ print(result.model, result.stop_reason, result.usage)
 
 ## 5. ストリーミング
 
-`stream()` は、生成されたテキストを少しずつ返します。
+`ask_stream()` は、生成されたテキストを少しずつ返します。
 
 ```python
 from llm_ai_api import llm
 
 m = llm("openai:gpt-6-luna")
 
-stream = m.stream("短い物語を書いて")
+stream = m.ask_stream("短い物語を書いて")
 print(stream.request_id)  # 呼び出しが返った時点で入っている
 
 for piece in stream:
@@ -127,7 +127,7 @@ print()
 
 ### チャットアプリで履歴を使ってストリーミングする
 
-履歴全体を `stream()` に渡し、各パーツを表示してから、集めた回答を assistant の履歴に追加します。イテレーターには `stream()` が返った時点で `request_id` が設定されています。
+履歴全体を `ask_stream()` に渡し、各パーツを表示してから、集めた回答を assistant の履歴に追加します。イテレーターには `ask_stream()` が返った時点で `request_id` が設定されています。
 
 ```python
 from llm_ai_api import llm
@@ -135,7 +135,7 @@ from llm_ai_api import llm
 with llm("openai:gpt-6-luna") as m:
     history = []
     history.append({"role": "user", "content": "短い物語を書いて"})
-    stream = m.stream(history)
+    stream = m.ask_stream(history)
     print("request_id:", stream.request_id)
     pieces = []
     for piece in stream:
@@ -143,6 +143,8 @@ with llm("openai:gpt-6-luna") as m:
         pieces.append(piece)
     history.append({"role": "assistant", "content": "".join(pieces)})
 ```
+
+旧名 `stream()` は `ask_stream()` の非推奨の別名です。
 
 ## 6. 条件を指定する
 
@@ -167,8 +169,8 @@ print(m.ask("日本の首都は？", system="関西弁で答えてください�
 
 ## 7. 非同期で使う
 
-メソッド名の先頭に `a` を付けると、`asyncio` で使えます（`aask()` / `achat()` / `astream()`）。
-`aask()` と `astream()` にも、同期版と同じ空でないメッセージ履歴を渡せます。
+メソッド名の先頭に `a` を付けると、`asyncio` で使えます（`aask()` / `achat()` / `aask_stream()` / `achat_stream()`）。
+`aask()` と `aask_stream()` にも、同期版と同じ空でないメッセージ履歴を渡せます。
 
 ```python
 import asyncio
@@ -179,7 +181,7 @@ async def main():
     async with llm("openai:gpt-6-luna") as m:
         print(await m.aask("可愛い犬の名前を考えて"))
 
-        async for piece in m.astream("短い物語を書いて"):  # await は付けない
+        async for piece in m.aask_stream("短い物語を書いて"):  # await は付けない
             print(piece, end="", flush=True)
         print()
 
@@ -193,7 +195,7 @@ asyncio.run(main())
 
 - `async with`（または `await m.aclose()`）で閉じます。閉じた `LLM` は再利用できません。
 - `asyncio.run()` のたびに新しい `llm()` を作ってください。
-- 非同期コードの中で同期版の `ask()` / `chat()` / `stream()` を呼ぶと、イベントループ全体が止まります。必ず `aask()` / `achat()` / `astream()` を使ってください。
+- 非同期コードの中で同期版の `ask()` / `chat()` / `ask_stream()` / `chat_stream()` を呼ぶと、イベントループ全体が止まります。必ず `aask()` / `achat()` / `aask_stream()` / `achat_stream()` を使ってください。
 
 ## 8. エラーを処理する
 

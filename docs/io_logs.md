@@ -28,14 +28,14 @@ m.ask("Suggest a cute name for a dog")
 
 ## What is recorded
 
-`ask()`, `chat()`, `stream()` and `stream_chat()` each append one line. The raw layer (`request()` / `request_stream()`) is not recorded.
+`ask()`, `chat()`, `ask_stream()`, `chat_stream()` and `stream_chat()` each append one line. The raw layer (`request()` / `request_stream()`) is not recorded.
 
 | Field | Meaning |
 |---|---|
 | `time` | UTC time, ISO 8601 |
 | `provider` | e.g. `openai`, `anthropic` |
 | `model` | The model sent in the request |
-| `stream` | `true` for `stream()` / `stream_chat()` |
+| `stream` | `true` for `ask_stream()` / `chat_stream()` / `stream_chat()` |
 | `cached` | `true` when the response came from the response cache ([io_cache.md](io_cache.md)) |
 | `request` | The request body as sent, after parameters the model rejects are removed |
 | `response` | The raw response dict. For a stream: `{"text": "<concatenated text>", "chunks": [<raw event JSON>, ...]}` |

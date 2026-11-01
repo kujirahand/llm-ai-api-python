@@ -34,7 +34,7 @@ print(result.text)
 print(result.raw["usage"])
 ```
 
-`ask()` and `stream()` accept message lists as well as strings. To send content blocks, place the blocks inside a message dictionary.
+`ask()` and `ask_stream()` accept message lists as well as strings. To send content blocks, place the blocks inside a message dictionary.
 
 From the second call on, the part that is identical to the previous call (the `system` above) is read from the cache. Check whether the cache was hit in `result.raw["usage"]`:
 

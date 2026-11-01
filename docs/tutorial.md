@@ -110,15 +110,15 @@ print(result.model, result.stop_reason, result.usage)
 
 ## 5. Streaming
 
-`stream()` returns the generated text piece by piece.
+`ask_stream()` returns the generated text piece by piece.
 
 ```python
 from llm_ai_api import llm
 
 m = llm("openai:gpt-6-luna")
 
-stream = m.stream("Write a short story")
-print(stream.request_id)  # set when stream() returns
+stream = m.ask_stream("Write a short story")
+print(stream.request_id)  # set when ask_stream() returns
 
 for piece in stream:
     print(piece, end="", flush=True)
@@ -127,7 +127,7 @@ print()
 
 ### Stream a conversation in a chat app
 
-Pass the full history to `stream()`, print each piece, then append the collected assistant reply. The iterator has a `request_id` as soon as `stream()` returns.
+Pass the full history to `ask_stream()`, print each piece, then append the collected assistant reply. The iterator has a `request_id` as soon as `ask_stream()` returns.
 
 ```python
 from llm_ai_api import llm
@@ -135,7 +135,7 @@ from llm_ai_api import llm
 with llm("openai:gpt-6-luna") as m:
     history = []
     history.append({"role": "user", "content": "Write a short story"})
-    stream = m.stream(history)
+    stream = m.ask_stream(history)
     print("request_id:", stream.request_id)
     pieces = []
     for piece in stream:
@@ -143,6 +143,8 @@ with llm("openai:gpt-6-luna") as m:
         pieces.append(piece)
     history.append({"role": "assistant", "content": "".join(pieces)})
 ```
+
+The old name `stream()` is a deprecated alias of `ask_stream()`.
 
 ## 6. Set options
 
@@ -167,8 +169,8 @@ print(m.ask("What is the capital of Japan?", system="Answer like a pirate.", max
 
 ## 7. Use it asynchronously
 
-Add an `a` to the method name to use it with `asyncio` (`aask()` / `achat()` / `astream()`).
-`aask()` and `astream()` accept the same non-empty message history as their synchronous counterparts.
+Add an `a` to the method name to use it with `asyncio` (`aask()` / `achat()` / `aask_stream()` / `achat_stream()`).
+`aask()` and `aask_stream()` accept the same non-empty message history as their synchronous counterparts.
 
 ```python
 import asyncio
@@ -179,7 +181,7 @@ async def main():
     async with llm("openai:gpt-6-luna") as m:
         print(await m.aask("Come up with a cute name for a dog"))
 
-        async for piece in m.astream("Write a short story"):  # no await here
+        async for piece in m.aask_stream("Write a short story"):  # no await here
             print(piece, end="", flush=True)
         print()
 
@@ -193,7 +195,7 @@ asyncio.run(main())
 
 - Close it with `async with` (or `await m.aclose()`). A closed `LLM` cannot be reused.
 - Create a new `llm()` for each `asyncio.run()`.
-- Calling the sync `ask()` / `chat()` / `stream()` inside async code blocks the whole event loop. Always use `aask()` / `achat()` / `astream()` there.
+- Calling the sync `ask()` / `chat()` / `ask_stream()` / `chat_stream()` inside async code blocks the whole event loop. Always use `aask()` / `achat()` / `aask_stream()` / `achat_stream()` there.
 
 ## 8. Handle errors
 

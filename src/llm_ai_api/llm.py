@@ -28,7 +28,7 @@ _PROVIDERS = {
     "claude": AnthropicClient,
 }
 
-# Internal async clients, created lazily by LLM.aask() / achat() / astream().
+# Internal async clients, created lazily by LLM.aask() / achat() / aask_stream() / achat_stream().
 _ASYNC_PROVIDERS = {
     "openai": _AsyncOpenAIClient,
     "openrouter": _AsyncOpenRouterClient,
@@ -234,6 +234,51 @@ class LLM:
             timeout=timeout,
         ).text
 
+    def chat_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        *,
+        system: Union[Optional[str], _Unset] = UNSET,
+        max_tokens: Union[Optional[int], _Unset] = UNSET,
+        temperature: Union[Optional[float], _Unset] = UNSET,
+        extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        timeout: Optional[float] = None,
+    ) -> Iterator[str]:
+        """Send messages and yield text deltas. `timeout` matches `chat()`
+        (for a stream it is the time to wait for the next data).
+
+        The returned iterator has `request_id` and `retries` as soon as `chat_stream()`
+        returns (response headers have already been received). Read the iterator
+        to the end, or call `close()`, to release the connection. Dropping it
+        also closes the response when it is garbage-collected.
+        """
+        kw = self._prepare(messages, system, max_tokens, temperature, extra)
+        chunks = self.client.stream_chat(timeout=timeout, **kw)  # type: ignore[attr-defined]
+        return _TextStream(chunks)
+
+    def ask_stream(
+        self,
+        prompt: Union[str, List[Dict[str, Any]]],
+        *,
+        system: Union[Optional[str], _Unset] = UNSET,
+        max_tokens: Union[Optional[int], _Unset] = UNSET,
+        temperature: Union[Optional[float], _Unset] = UNSET,
+        extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        timeout: Optional[float] = None,
+    ) -> Iterator[str]:
+        """Send a prompt or message history and yield text deltas through `chat_stream()`.
+        A list is treated as messages and is not modified.
+        """
+        msgs = self._prompt_messages(prompt)
+        return self.chat_stream(
+            msgs,
+            system=system,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            extra=extra,
+            timeout=timeout,
+        )
+
     def stream(
         self,
         prompt: Union[str, List[Dict[str, Any]]],
@@ -244,20 +289,15 @@ class LLM:
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
         timeout: Optional[float] = None,
     ) -> Iterator[str]:
-        """Send a prompt or message history and yield text deltas. `timeout` matches `chat()`
-        (for a stream it is the time to wait for the next data).
-
-        A list is treated as `chat()` messages and is not modified.
-
-        The returned iterator has `request_id` and `retries` as soon as `stream()`
-        returns (response headers have already been received). Read the iterator
-        to the end, or call `close()`, to release the connection. Dropping it
-        also closes the response when it is garbage-collected.
-        """
-        msgs = self._prompt_messages(prompt)
-        kw = self._prepare(msgs, system, max_tokens, temperature, extra)
-        chunks = self.client.stream_chat(timeout=timeout, **kw)  # type: ignore[attr-defined]
-        return _TextStream(chunks)
+        """Deprecated: use `ask_stream()`. Kept as an alias that delegates to it."""
+        return self.ask_stream(
+            prompt,
+            system=system,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            extra=extra,
+            timeout=timeout,
+        )
 
     # --- async ---------------------------------------------------------------
 
@@ -287,7 +327,7 @@ class LLM:
         """Register ``listener`` for ``event``, or for every event when ``event`` is None.
 
         ``listener(event, payload)`` is called synchronously with a plain dict,
-        including from ``aask`` / ``achat`` / ``astream`` (on the event loop thread,
+        including from ``aask`` / ``achat`` / ``aask_stream`` / ``achat_stream`` (on the event loop thread,
         so a listener should not block). ``Exception`` raised by a listener is
         discarded and does not affect the request, retries, or later listeners.
         ``BaseException`` (cancellation, keyboard interrupt) is not caught.
@@ -397,9 +437,53 @@ class LLM:
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
         timeout: Optional[float] = None,
     ) -> AsyncIterator[str]:
-        """Async `stream()`: stream text from a prompt or message history.
+        """Deprecated: use `aask_stream()`. Kept as an alias that delegates to it."""
+        return self.aask_stream(
+            prompt,
+            system=system,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            extra=extra,
+            timeout=timeout,
+        )
 
-        A list is treated as `chat()` messages and is not modified.
+    def aask_stream(
+        self,
+        prompt: Union[str, List[Dict[str, Any]]],
+        *,
+        system: Union[Optional[str], _Unset] = UNSET,
+        max_tokens: Union[Optional[int], _Unset] = UNSET,
+        temperature: Union[Optional[float], _Unset] = UNSET,
+        extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        timeout: Optional[float] = None,
+    ) -> AsyncIterator[str]:
+        """Async `ask_stream()`: send a prompt or message history and iterate answer text deltas.
+
+        A list is treated as messages and is not modified. Uses `achat_stream()`
+        (use `async for`, no `await`).
+        """
+        msgs = self._prompt_messages(prompt)
+        return self.achat_stream(
+            msgs,
+            system=system,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            extra=extra,
+            timeout=timeout,
+        )
+
+    def achat_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        *,
+        system: Union[Optional[str], _Unset] = UNSET,
+        max_tokens: Union[Optional[int], _Unset] = UNSET,
+        temperature: Union[Optional[float], _Unset] = UNSET,
+        extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        timeout: Optional[float] = None,
+    ) -> AsyncIterator[str]:
+        """Async `chat_stream()`: return an async iterator of answer text deltas.
+
         Use it directly with `async for` (no `await`). The request starts at the first
         iteration, so connection and HTTP errors are raised there. `request_id` and
         `retries` are set once that iteration has received the response headers,
@@ -408,8 +492,7 @@ class LLM:
         early. `timeout` is the same as in `achat()` (for a stream it is the time
         to wait for the next data).
         """
-        msgs = self._prompt_messages(prompt)
-        return _AsyncTextStream(self, msgs, system, max_tokens, temperature, extra, timeout)
+        return _AsyncTextStream(self, messages, system, max_tokens, temperature, extra, timeout)
 
     async def aclose(self) -> None:
         """Close both the async client (if it was created) and the sync client.
@@ -432,10 +515,10 @@ class LLM:
 
 
 class _TextStream:
-    """Iterator of non-empty text deltas returned by `LLM.stream()`.
+    """Iterator of non-empty text deltas returned by `LLM.chat_stream()` / `ask_stream()`.
 
     `request_id` and `retries` are copied from the underlying chunk iterator,
-    which already has them when `stream()` returns.
+    which already has them when `chat_stream()` returns.
     """
 
     def __init__(self, chunks: Any) -> None:
@@ -476,7 +559,7 @@ class _TextStream:
 
 
 class _AsyncTextStream:
-    """Async iterator returned by `LLM.astream()`; yields non-empty text deltas.
+    """Async iterator returned by `LLM.achat_stream()` / `aask_stream()`; yields non-empty text deltas.
 
     The request is sent at the first `__anext__()`, not when the stream is created.
     """

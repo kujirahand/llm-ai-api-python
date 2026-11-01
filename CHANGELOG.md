@@ -2,9 +2,11 @@
 
 ## Unreleased
 
-## 0.7.0
+- Add a main-methods table to the README and a full API reference at `docs/api.md` / `docs/api-ja.md` (#61).
 
-- Accept conversation history in `ask()` / `stream()` and their async counterparts (#59). List input is handled like `chat()` messages, including system handling, cache keys, logging, events, and `request_id` on stream iterators. String input requests and cache keys are unchanged. A non-string, non-list input, an empty list, or a list containing non-dict items raises `LLMConfigError(code="invalid_messages")`.
+- Rename `LLM.stream()` / `astream()` to `ask_stream()` / `aask_stream()`, and add `chat_stream()` / `achat_stream()`, which take `messages` like `chat()` (#62).
+- The old names `stream()` / `astream()` remain as deprecated aliases (no warning is emitted).
+- Accept conversation history in `ask()` / `ask_stream()` / `aask()` / `aask_stream()` and the deprecated `stream()` / `astream()` aliases (#59). List input is handled like `chat()` messages, including system handling, cache keys, logging, events, and `request_id` on stream iterators. String input requests and cache keys are unchanged. A non-string, non-list input, an empty list, or a list containing non-dict items raises `LLMConfigError(code="invalid_messages")`.
 
 ## 0.6.0
 

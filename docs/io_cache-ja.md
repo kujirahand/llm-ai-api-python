@@ -62,7 +62,7 @@ m = llm("openai:gpt-6-luna", cache=SQLiteCache("./cache.db", max_size=10_000_000
 
 ## 仕様
 
-- **対象**: `chat()` / `ask()` と、`stream_chat()` / `stream()`（ストリーミング）。生レイヤー（`request()`）は対象外です。
+- **対象**: `chat()` / `ask()` と、`stream_chat()` / `ask_stream()` / `chat_stream()`（ストリーミング）。生レイヤー（`request()`）は対象外です。
 - **キー**: `sha256("{プロバイダー}:{モデル}@{APIキー}>>>{入力}")` の16進文字列です。`{入力}` は、リクエストボディ（`messages`、`temperature`、`max_tokens`、`extra` で足したもの、`stream` など）と、応答に影響するクライアント設定（`base_url`、追加ヘッダー、Anthropic の `anthropic_version`）を、キー順に並べた JSON にしたものです。ボディは、モデルが拒否するパラメータを落としたあとのものです。落とされるキーだけが違うリクエストは、同じキャッシュキーになります。
 - **値**: 応答全体（`ChatResult`。`request_id` / `latency` / `retries` を含む）を暗号化して保存します。ストリームは SSE イベントの一覧を保存し、キャッシュから返すときは同じイベントを再生します。キャッシュから返した `request_id` などは、保存してあった元の呼び出しの値です。これらのフィールドが無かった頃の行は、`request_id` と `latency` が `None`、`retries` が `0` として読めます。
 - **API キーが違えば別のキャッシュ**になります。API キーはキーのハッシュと暗号鍵の導出にだけ使い、平文では保存しません。

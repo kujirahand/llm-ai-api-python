@@ -45,9 +45,10 @@ class HistoryTest(unittest.TestCase):
                     self.assertEqual(rec.body()["messages"], [{"role": "system", "content": "outer"}] + HISTORY)
                 self.assertEqual(history, HISTORY)
                 rec.responses = [lambda: response(anthropic, True)]
-                stream = m.stream(history)
+                stream = m.ask_stream(history)
                 self.assertEqual(stream.request_id, "rid")
                 self.assertEqual(list(stream), ["ok"])
+                self.assertEqual(list(m.stream(history)), ["ok"])
                 prepared = m._prepare(history, "outer", None, None, None)
                 list(m.client.stream_chat(**prepared))
                 self.assertEqual(rec.body(-1), rec.body(-2))
@@ -86,7 +87,7 @@ class HistoryTest(unittest.TestCase):
         m = llm("openai:model", api_key="k", lang="en")
         self.addCleanup(m.close)
         for bad in (42, {}, [], [1]):
-            for method in (m.ask, m.stream):
+            for method in (m.ask, m.ask_stream, m.stream):
                 with self.subTest(bad=bad, method=method.__name__):
                     with self.assertRaisesRegex(LLMConfigError, "non-empty list"):
                         method(bad)
@@ -106,8 +107,9 @@ class AsyncHistoryTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(rec.body(0), rec.body(1))
                     self.assertEqual(history, HISTORY)
                     rec.responses = [lambda: response(anthropic, True)]
-                    stream = m.astream(history)
+                    stream = m.aask_stream(history)
                     self.assertEqual([part async for part in stream], ["ok"])
+                    self.assertEqual([part async for part in m.astream(history)], ["ok"])
                     self.assertEqual(stream.request_id, "rid")
                     self.assertEqual(history, HISTORY)
                 finally:
@@ -119,6 +121,8 @@ class AsyncHistoryTest(unittest.IsolatedAsyncioTestCase):
             for bad in (42, {}, [], [1]):
                 with self.assertRaises(LLMConfigError):
                     await m.aask(bad)
+                with self.assertRaises(LLMConfigError):
+                    m.aask_stream(bad)
                 with self.assertRaises(LLMConfigError):
                     m.astream(bad)
         finally:
