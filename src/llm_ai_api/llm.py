@@ -25,10 +25,18 @@ from ._async_clients import (
 )
 from ._async_http import _AsyncBaseClient
 from ._http import BaseClient, _check_retry_after_max
-from ._media import check_images, check_prompt_for_images, image_messages, resolve_images
+from ._media import (
+    check_audio,
+    check_images,
+    check_prompt_for_images,
+    image_messages,
+    resolve_audio,
+    resolve_images,
+    transcription_form,
+)
 from ._structured import inject_schema_extra, interpret_schema, parse_structured_result
 from .anthropic import AnthropicClient
-from .errors import LLMConfigError
+from .errors import LLMConfigError, LLMError
 from .google import GoogleClient
 from .lang import t
 from .openai import OpenAIClient
@@ -278,6 +286,51 @@ class LLM:
             timeout=timeout,
         ).text
 
+    def _transcribe_form(
+        self, file: Any, extra: Optional[Dict[str, Any]]
+    ) -> List[Any]:
+        """Check the arguments of `transcribe()` (no I/O); return the form fields."""
+        lang = self.client.lang
+        if self.provider != "openai":
+            raise LLMConfigError(
+                t("unsupported_modality", lang, provider=self.provider, modality="audio"),
+                code="unsupported_modality",
+            )
+        check_audio(file, lang)
+        return transcription_form(self.model, extra, lang)
+
+    def _transcript_text(self, response: Dict[str, Any]) -> str:
+        text = response.get("text")
+        if not isinstance(text, str):
+            raise LLMError(
+                t("invalid_json_response", self.client.lang, preview=str(response)[:200]),
+                code="invalid_json_response",
+            )
+        return text
+
+    def transcribe(
+        self,
+        file: Union[str, bytes, "os.PathLike[str]"],
+        *,
+        extra: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> str:
+        """Transcribe audio (a file path or bytes) and return the text. OpenAI only.
+
+        Sends multipart/form-data to `/audio/transcriptions`. `extra` keys become form
+        fields. Not cached or logged; use `client.request(files=...)` for the full
+        response (docs/multimodal.md).
+        """
+        fields = self._transcribe_form(file, extra)
+        part = resolve_audio(file, self.client.lang)
+        response = self.client.request(
+            "/audio/transcriptions",
+            files={"file": part},
+            form_data=fields,
+            timeout=timeout,
+        )
+        return self._transcript_text(response)
+
     def chat_stream(
         self,
         messages: List[Dict[str, Any]],
@@ -454,6 +507,24 @@ class LLM:
         kw["extra"] = inject_schema_extra(self.provider, kw["extra"], structured)
         result = await self._get_async_client().achat(timeout=timeout, **kw)  # type: ignore[attr-defined]
         return parse_structured_result(result, self.provider, structured, self.client.lang)
+
+    async def atranscribe(
+        self,
+        file: Union[str, bytes, "os.PathLike[str]"],
+        *,
+        extra: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> str:
+        """Async `transcribe()`; the file is read in a worker thread."""
+        fields = self._transcribe_form(file, extra)
+        part = await asyncio.to_thread(resolve_audio, file, self.client.lang)
+        response = await self._get_async_client().request(
+            "/audio/transcriptions",
+            files={"file": part},
+            form_data=fields,
+            timeout=timeout,
+        )
+        return self._transcript_text(response)
 
     async def aask(
         self,

@@ -49,6 +49,7 @@ Every call method accepts the per-call keyword arguments `system` / `max_tokens`
 - `prompt` accepts a string or a non-empty list of dictionaries. Other inputs raise `LLMConfigError(code="invalid_messages")`.
 - `messages` is a list in the form `[{"role": "user", "content": "..."}]`. The caller's list is not modified.
 - `chat()` / `achat()` also accept `schema=` (a JSON Schema dict, or a pydantic-v2-compatible model class), which requests structured output and puts the decoded, validated value in `ChatResult.parsed`. See [Structured output](structured.md).
+- `transcribe(file, *, extra=None, timeout=None) -> str` / `atranscribe()` transcribe audio (a path or `bytes`) and return a string (OpenAI only; not cached or logged). See [Multimodal](multimodal.md). The raw `request()` can send multipart with `files=` / `form_data=`.
 - `ask()` / `ask_stream()` / `aask()` / `aask_stream()` also accept `images=` (a list of file paths, `bytes`, or http(s) URLs). See [Multimodal](multimodal.md).
 - Sync streams are regular iterators; async streams are async iterators (use `async for`; no `await` is needed). The stream iterator gets `request_id` and `retries` set once the response headers have been received. Read it to the end, or call `close()` (sync) / `aclose()` (async), to release the connection.
 - The old names `stream()` / `astream()` remain as deprecated aliases (same behavior as `ask_stream()` / `aask_stream()`). Use the new names in new code.

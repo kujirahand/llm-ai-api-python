@@ -51,6 +51,34 @@ m.chat([{"role": "user", "content": [
 ]}])
 ```
 
+## Audio transcription (`transcribe()`)
+
+`transcribe(file, *, extra=None, timeout=None) -> str` / `atranscribe()` send audio to OpenAI's `/audio/transcriptions` as multipart/form-data and return the transcript text (`str`).
+
+```python
+m = llm("openai:whisper-1")
+print(m.transcribe("meeting.mp3"))
+print(m.transcribe(wav_bytes, extra={"language": "ja", "timestamp_granularities": ["word", "segment"]}))
+```
+
+- **OpenAI only.** Other providers raise `LLMConfigError(code="unsupported_modality")` without sending anything.
+- `file` is a path (`str` / `os.PathLike`) or audio `bytes`. A path's file name is sent as is; for `bytes` the name is `audio.<ext>`. The type comes from the leading signature bytes (WAV / MP3 / FLAC / OGG / WEBM / M4A), then the extension. An unknown type, an unreadable file, or a wrong argument type raises `invalid_media`.
+- The form holds `model` (the model of the `llm()`), `response_format=json`, and the file as `file`. Keys of `extra` become form fields: strings and numbers are stringified, bools become `true` / `false`, lists and tuples repeat `key[]`, `None` is skipped. A value that cannot be expanded (a dict, for example) raises `invalid_media`.
+- The `text` of the response JSON is returned. If `text` is not a string, `LLMError(code="invalid_json_response")` is raised.
+- It is **not** covered by the response cache, the I/O log, or singleflight. Retries and events work as in the raw layer.
+- `atranscribe()` reads the file in a worker thread.
+- For the full response (`segments`, `duration`, ...), use the raw layer:
+
+```python
+resp = m.client.request(
+    "/audio/transcriptions",
+    files={"file": ("a.wav", wav_bytes, "audio/wav")},
+    form_data=[("model", "whisper-1"), ("response_format", "verbose_json")],
+)
+```
+
+With `files=` (field name → `(filename, bytes, media_type)`) or `form_data=` (a list of `(name, value)`; names may repeat), `body` must be `None` (otherwise `LLMConfigError(code="invalid_option")`). httpx sets `Content-Type` with the boundary.
+
 ## Logs and cache
 
 Images travel as base64 in the request body, so the I/O log (`JSONLLog`) and the cache can end up holding large base64 strings. To keep them out of the log, strip the image parts with the `JSONLLog(path, redact=...)` hook (see [io_logs.md](io_logs.md)).
