@@ -25,6 +25,7 @@ MESSAGES = {
     "media_reason_unknown_audio": "音声の種類を判定できません（対応: WAV, MP3, FLAC, OGG, WEBM, M4A）: {source}",
     "media_reason_audio_read_error": "音声ファイルを読み込めません: {source}",
     "media_reason_bad_extra": "extra[{key!r}] はフォームフィールドとして送れません（{kind} が渡されました）。文字列・数値・bool、またはそのリストを指定してください。",
+    "media_reason_bad_extra_arg": "extra は辞書で指定してください（{kind} が渡されました）。",
     "unsupported_modality": "{provider} では、このライブラリ経由の {modality} は使えません（対応は OpenAI のみ）。API が対応していれば生レイヤー（client.request）を使ってください。",
     "invalid_multipart_body": "files= または form_data= を指定するときは body を None にしてください。",
     "invalid_option": "{name} には 0 以上の有限の数を指定してください: {value!r}",

@@ -702,7 +702,8 @@ class BaseClient:
         To upload a file, pass ``files`` ({field: (filename, bytes, media_type)}) and
         optionally ``form_data`` ([(name, value), ...]; a name may repeat) with
         ``body=None``. The request is then multipart/form-data and the JSON
-        ``Content-Type`` is not set (httpx adds the boundary).
+        ``Content-Type`` is not set (httpx adds the boundary). With ``form_data``
+        alone (no ``files``), the fields go as application/x-www-form-urlencoded.
         """
         value, _meta = self._read_json(
             path,

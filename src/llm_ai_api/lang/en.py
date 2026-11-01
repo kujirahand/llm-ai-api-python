@@ -25,6 +25,7 @@ MESSAGES = {
     "media_reason_unknown_audio": "cannot tell the audio type (supported: WAV, MP3, FLAC, OGG, WEBM, M4A): {source}",
     "media_reason_audio_read_error": "cannot read the audio file: {source}",
     "media_reason_bad_extra": "extra[{key!r}] cannot be sent as a form field (got {kind}); use a string, number, bool, or a list of them.",
+    "media_reason_bad_extra_arg": "extra must be a dict (got {kind}).",
     "unsupported_modality": "{provider} does not support {modality} through this library; only OpenAI does. Use the raw layer (client.request) if the API offers it.",
     "invalid_multipart_body": "body must be None when files= or form_data= is given.",
     "invalid_option": "{name} must be a finite number of 0 or more: {value!r}",

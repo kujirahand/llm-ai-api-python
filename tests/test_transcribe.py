@@ -51,6 +51,26 @@ class TranscribeTest(unittest.TestCase):
         self.assertEqual(f.get_content_type(), "audio/wav")
         self.assertEqual(f.get_payload(decode=True), WAV)
 
+    def test_extra_must_be_a_dict(self):
+        m, rec = self.make()
+        for bad in (["language", "ja"], "ja", 42):
+            with self.assertRaises(LLMConfigError) as cm:
+                m.transcribe(WAV, extra=bad)
+            self.assertEqual(cm.exception.code, "invalid_media")
+        self.assertEqual(rec.requests, [])
+
+    def test_extra_scalar_replaces_default_field(self):
+        m, rec = self.make()
+        m.transcribe(WAV, extra={"model": "whisper-custom", "response_format": "json"})
+        _, parts = parse_multipart(rec.requests[0])
+        self.assertEqual([text_of(p) for p in parts["model"]], ["whisper-custom"])
+
+    def test_instance_extra_does_not_leak_into_transcribe(self):
+        m, rec = self.make(extra={"user": "u"})
+        m.transcribe(WAV)
+        _, parts = parse_multipart(rec.requests[0])
+        self.assertNotIn("user", parts)
+
     def test_extra_fields(self):
         m, rec = self.make()
         m.transcribe(
@@ -243,6 +263,29 @@ class RawMultipartTest(unittest.TestCase):
         self.assertEqual(len(rec.requests), 2)
         for req in rec.requests:
             self.assertEqual(parse_multipart(req)[1]["file"][0].get_payload(decode=True), WAV)
+
+
+class RawMultipartAsyncTest(unittest.IsolatedAsyncioTestCase):
+    async def test_async_request_and_body_rejection(self):
+        from llm_ai_api._async_clients import _AsyncOpenAIClient
+
+        rec = Recorder(json_response({"text": "raw"}))
+        c = _AsyncOpenAIClient(api_key="k", transport=rec.transport)
+        try:
+            resp = await c.request(
+                "/audio/transcriptions",
+                files={"file": ("a.wav", WAV, "audio/wav")},
+                form_data=[("model", "m")],
+            )
+            self.assertEqual(resp, {"text": "raw"})
+            ctype, parts = parse_multipart(rec.requests[0])
+            self.assertTrue(ctype.startswith("multipart/form-data; boundary="))
+            self.assertEqual(parts["file"][0].get_payload(decode=True), WAV)
+            with self.assertRaises(LLMConfigError) as cm:
+                await c.request("/x", {"a": 1}, files={"file": ("a.wav", WAV, "audio/wav")})
+            self.assertEqual(cm.exception.code, "invalid_option")
+        finally:
+            await c.aclose()
 
 
 if __name__ == "__main__":

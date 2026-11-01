@@ -146,7 +146,12 @@ def sniff_audio_type(data: bytes) -> Optional[str]:
     """Return the audio media type from the leading signature bytes, if known."""
     if data[:4] == b"RIFF" and data[8:12] == b"WAVE":
         return "audio/wav"
-    if data.startswith(b"ID3") or data[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+    if data.startswith(b"ID3") or (
+        len(data) >= 2
+        and data[0] == 0xFF
+        and (data[1] & 0xE0) == 0xE0  # frame sync
+        and (data[1] & 0x06) == 0x02  # Layer III, any MPEG version, with or without CRC
+    ):
         return "audio/mpeg"
     if data.startswith(b"fLaC"):
         return "audio/flac"
@@ -196,6 +201,8 @@ def transcription_form(
     Scalars become strings (bool: "true" / "false"), lists and tuples repeat `key[]`,
     None is skipped. A scalar in `extra` replaces the default field of the same name.
     """
+    if extra is not None and not isinstance(extra, dict):
+        raise _audio_error("media_reason_bad_extra_arg", lang, kind=type(extra).__name__)
     fields: List[Tuple[str, str]] = [("model", model), ("response_format", "json")]
     for key, value in (extra or {}).items():
         if value is None:
