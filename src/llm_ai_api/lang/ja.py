@@ -46,9 +46,9 @@ MESSAGES = {
     "api_error": "{provider} API がエラーを返しました (HTTP {status})",
     "stream_incomplete": "{provider} のストリームが終端イベントなしで終了しました",
     "stream_error": "{provider} のストリームでエラーが発生しました",
-    "output_refused": "{provider} が構造化出力を拒否しました。",
-    "output_incomplete": "{provider} の構造化出力が完了しませんでした。",
-    "invalid_structured_output": "{provider} の応答を構造化出力として読み取れませんでした。",
+    "output_refused": "{provider} が構造化出力を拒否しました。入力の内容を見直すか、別のモデルで試してください。",
+    "output_incomplete": "{provider} の構造化出力が完了しませんでした。max_tokens を増やすか、入力を短くして再試行してください。",
+    "invalid_structured_output": "{provider} の応答を構造化出力として読み取れませんでした。スキーマの内容とモデルの対応状況を確認してください。",
     "hint_400": (
         "ヒント: このライブラリが拒否を知っているパラメータは、送信前に省かれます。"
         "それでも HTTP 400 のときは、リクエスト内容を確認し、送っているほかのパラメータを"
