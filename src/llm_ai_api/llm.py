@@ -12,6 +12,7 @@ from ._async_clients import (
 )
 from ._async_http import _AsyncBaseClient
 from ._http import BaseClient, _check_retry_after_max
+from ._structured import inject_schema_extra, interpret_schema, parse_structured_result
 from .anthropic import AnthropicClient
 from .errors import LLMConfigError
 from .google import GoogleClient
@@ -198,6 +199,7 @@ class LLM:
         max_tokens: Union[Optional[int], _Unset] = UNSET,
         temperature: Union[Optional[float], _Unset] = UNSET,
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        schema: Any = None,
         timeout: Optional[float] = None,
     ) -> ChatResult:
         """Send messages and return a `ChatResult`, including stop reason and raw data.
@@ -205,9 +207,16 @@ class LLM:
         `timeout` in seconds overrides the client timeout for this call only; `None`
         uses the client setting. It is per operation, not a total deadline; retries
         extend it.
+
+        `schema` (a JSON Schema dict or a pydantic-v2-compatible model class)
+        requests structured output; the decoded, validated value is stored in
+        `ChatResult.parsed` (see docs/structured.md).
         """
+        structured = interpret_schema(schema, self.client.lang)
         kw = self._prepare(messages, system, max_tokens, temperature, extra)
-        return self.client.chat(timeout=timeout, **kw)  # type: ignore[attr-defined]
+        kw["extra"] = inject_schema_extra(self.provider, kw["extra"], structured)
+        result = self.client.chat(timeout=timeout, **kw)  # type: ignore[attr-defined]
+        return parse_structured_result(result, self.provider, structured, self.client.lang)
 
     def ask(
         self,
@@ -390,6 +399,7 @@ class LLM:
         max_tokens: Union[Optional[int], _Unset] = UNSET,
         temperature: Union[Optional[float], _Unset] = UNSET,
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        schema: Any = None,
         timeout: Optional[float] = None,
     ) -> ChatResult:
         """Async `chat()`: send messages and return a `ChatResult`.
@@ -397,9 +407,14 @@ class LLM:
         `timeout` (seconds) overrides the client timeout for this call only (`None` keeps
         the client's setting). It is a per-operation timeout, not a total deadline: retries
         extend it. Use `asyncio.wait_for()` for a hard deadline.
+
+        `schema` works as in `chat()`: the validated value lands in `ChatResult.parsed`.
         """
+        structured = interpret_schema(schema, self.client.lang)
         kw = self._prepare(messages, system, max_tokens, temperature, extra)
-        return await self._get_async_client().achat(timeout=timeout, **kw)  # type: ignore[attr-defined]
+        kw["extra"] = inject_schema_extra(self.provider, kw["extra"], structured)
+        result = await self._get_async_client().achat(timeout=timeout, **kw)  # type: ignore[attr-defined]
+        return parse_structured_result(result, self.provider, structured, self.client.lang)
 
     async def aask(
         self,

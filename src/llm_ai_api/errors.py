@@ -130,6 +130,27 @@ class APIStreamError(LLMError):
         self.latency = latency
 
 
+class StructuredOutputError(LLMError):
+    """The response could not be used as the structured output requested with `schema=`.
+
+    `result` is the original `ChatResult`, so the (already paid for) response
+    stays available. `code` is one of `output_refused`, `output_incomplete`,
+    or `invalid_structured_output`.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str,
+        result: Any,
+        provider: Optional[str] = None,
+    ) -> None:
+        super().__init__(message, code=code)
+        self.result = result
+        self.provider = provider
+
+
 def status_error_class(status_code: int) -> type:
     """Return the exception class for an HTTP status code."""
     if status_code == 400:

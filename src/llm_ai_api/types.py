@@ -31,6 +31,10 @@ class ChatResult:
     A cache hit returns the `request_id`, `latency`, and `retries` stored with
     the original response. Entries written before those fields existed load as
     None, None, and 0.
+
+    `parsed` holds the decoded or validated structured output when the call
+    used `LLM.chat(..., schema=...)` / `LLM.achat(..., schema=...)`; it is
+    None otherwise.
     """
 
     text: str
@@ -41,6 +45,7 @@ class ChatResult:
     request_id: Optional[str] = None
     latency: Optional[float] = None
     retries: int = 0
+    parsed: Any = None
 
 
 @dataclass

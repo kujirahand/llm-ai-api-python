@@ -19,6 +19,7 @@ from .errors import (
     NotFoundError,
     PermissionDeniedError,
     RateLimitError,
+    StructuredOutputError,
 )
 from .google import GoogleClient
 from .llm import LLM, llm
@@ -64,4 +65,5 @@ __all__ = [
     "RateLimitError",
     "InternalServerError",
     "APIStreamError",
+    "StructuredOutputError",
 ]

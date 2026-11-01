@@ -48,6 +48,7 @@ Every call method accepts the per-call keyword arguments `system` / `max_tokens`
 
 - `prompt` accepts a string or a non-empty list of dictionaries. Other inputs raise `LLMConfigError(code="invalid_messages")`.
 - `messages` is a list in the form `[{"role": "user", "content": "..."}]`. The caller's list is not modified.
+- `chat()` / `achat()` also accept `schema=` (a JSON Schema dict, or a pydantic-v2-compatible model class), which requests structured output and puts the decoded, validated value in `ChatResult.parsed`. See [Structured output](structured.md).
 - Sync streams are regular iterators; async streams are async iterators (use `async for`; no `await` is needed). The stream iterator gets `request_id` and `retries` set once the response headers have been received. Read it to the end, or call `close()` (sync) / `aclose()` (async), to release the connection.
 - The old names `stream()` / `astream()` remain as deprecated aliases (same behavior as `ask_stream()` / `aask_stream()`). Use the new names in new code.
 
@@ -79,6 +80,7 @@ The return value of `chat()` / `achat()`.
 | `request_id` | `str` or `None` | The provider's request ID (`None` when the response had no such header; on a cache hit, the stored value) |
 | `latency` | `float` or `None` | Seconds until the response |
 | `retries` | `int` | The number of retries actually performed |
+| `parsed` | any | The decoded, validated structured output when `schema=` was given; otherwise `None` |
 
 ### ChatChunk / SSEEvent / Usage
 
@@ -130,3 +132,4 @@ Every exception is a subclass of `LLMError`. Configuration mistakes raise `LLMCo
 | `RateLimitError` | 429 |
 | `InternalServerError` | 5xx |
 | `APIStreamError` | An error during streaming (carries `provider` / `request_id` attributes) |
+| `StructuredOutputError` | The `schema=` structured output was refused, incomplete, or failed validation (`result` holds the original `ChatResult`) |

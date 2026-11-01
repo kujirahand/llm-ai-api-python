@@ -48,6 +48,7 @@ luna = llm("openai:gpt-6-luna")
 
 - `prompt` は文字列または空でない辞書のリストを受け取ります。それ以外は `LLMConfigError(code="invalid_messages")` になります。
 - `messages` は `[{"role": "user", "content": "..."}]` 形式のリストです。呼び出し側のリストは変更されません。
+- `chat()` / `achat()` には `schema=`（JSON Schema の dict、または pydantic v2 互換のモデルクラス）も渡せます。構造化出力を要求し、読み取り・検証した値が `ChatResult.parsed` に入ります。詳細は [構造化出力](structured-ja.md) を参照してください。
 - 同期のストリームは通常のイテレータ、非同期のストリームは非同期イテレータ（`async for` で使う。`await` は不要）です。ストリームのイテレータには、レスポンスヘッダー受信後に `request_id` と `retries` が設定されます。最後まで読み切るか、同期は `close()`、非同期は `aclose()` を呼ぶと接続が解放されます。
 - 旧名 `stream()` / `astream()` は非推奨のエイリアスとして残っています（`ask_stream()` / `aask_stream()` と同じ動作）。新規のコードでは新しい名前を使ってください。
 
@@ -79,6 +80,7 @@ luna = llm("openai:gpt-6-luna")
 | `request_id` | `str` または `None` | プロバイダーのリクエスト ID（ヘッダーが無い応答では `None`。キャッシュヒット時は保存されていた値） |
 | `latency` | `float` または `None` | 応答までの秒数 |
 | `retries` | `int` | 実際に行った再送の回数 |
+| `parsed` | 任意 | `schema=` を渡したときの、読み取り・検証済みの構造化出力。それ以外は `None` |
 
 ### ChatChunk / SSEEvent / Usage
 
@@ -130,3 +132,4 @@ luna = llm("openai:gpt-6-luna")
 | `RateLimitError` | 429 |
 | `InternalServerError` | 5xx |
 | `APIStreamError` | ストリーミング中のエラー（`provider` / `request_id` 属性付き） |
+| `StructuredOutputError` | `schema=` の構造化出力が拒否・未完了・検証失敗になった（`result` に元の `ChatResult`） |
