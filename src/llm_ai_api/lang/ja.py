@@ -15,6 +15,7 @@ MESSAGES = {
     "invalid_url": "URL が正しくありません: {url}",
     "invalid_messages": "messages は辞書の空でないリストで指定してください。",
     "invalid_option": "{name} には 0 以上の有限の数を指定してください: {value!r}",
+    "invalid_schema": "schema= には JSON Schema の dict または pydantic v2 互換のモデルを指定してください。",
     "invalid_event": "未知のイベントです: {event!r}（使えるイベント: {known}）",
     "invalid_listener": "イベントリスナーは呼び出し可能である必要があります。",
     "unknown_provider": "未知のプロバイダーです: {provider!r}（対応: {supported}）",
@@ -31,6 +32,9 @@ MESSAGES = {
     "api_error": "{provider} API がエラーを返しました (HTTP {status})",
     "stream_incomplete": "{provider} のストリームが終端イベントなしで終了しました",
     "stream_error": "{provider} のストリームでエラーが発生しました",
+    "output_refused": "{provider} が構造化出力を拒否しました。",
+    "output_incomplete": "{provider} の構造化出力が完了しませんでした。",
+    "invalid_structured_output": "{provider} の応答を構造化出力として読み取れませんでした。",
     "hint_400": (
         "ヒント: このライブラリが拒否を知っているパラメータは、送信前に省かれます。"
         "それでも HTTP 400 のときは、リクエスト内容を確認し、送っているほかのパラメータを"

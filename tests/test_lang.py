@@ -108,6 +108,7 @@ class FallbackTest(unittest.TestCase):
             "cache.py",
             "log.py",
             "_connection.py",
+            "_structured.py",
         ):
             with open(os.path.join(base, name), encoding="utf-8") as f:
                 src += f.read()

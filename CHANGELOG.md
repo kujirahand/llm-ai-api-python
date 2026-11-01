@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `schema=` structured output to `LLM.chat()` / `LLM.achat()`: a JSON Schema dict or a pydantic-v2-compatible model class, validated into `ChatResult.parsed`, with `StructuredOutputError` for refusals, incomplete output, and validation failures (#60).
+
 - Add a main-methods table to the README and a full API reference at `docs/api.md` / `docs/api-ja.md` (#61).
 
 - Rename `LLM.stream()` / `astream()` to `ask_stream()` / `aask_stream()`, and add `chat_stream()` / `achat_stream()`, which take `messages` like `chat()` (#62).

@@ -15,6 +15,7 @@ MESSAGES = {
     "invalid_url": "Invalid URL: {url}",
     "invalid_messages": "Messages must be a non-empty list of dictionaries.",
     "invalid_option": "{name} must be a finite number of 0 or more: {value!r}",
+    "invalid_schema": "schema= must be a JSON Schema dict or a pydantic-v2-compatible model.",
     "invalid_event": "Unknown event {event!r}. Known events: {known}.",
     "invalid_listener": "An event listener must be callable.",
     "unknown_provider": "Unknown provider: {provider!r} (supported: {supported})",
@@ -31,6 +32,9 @@ MESSAGES = {
     "api_error": "{provider} API error (HTTP {status})",
     "stream_incomplete": "{provider} stream ended without a terminal event",
     "stream_error": "{provider} stream error",
+    "output_refused": "{provider} refused the structured output.",
+    "output_incomplete": "{provider} did not finish the structured output.",
+    "invalid_structured_output": "The response from {provider} could not be read as structured output.",
     "hint_400": (
         "Hint: parameters this library knows the model rejects are omitted before "
         "the request. If this is still HTTP 400, check the request and remove the "

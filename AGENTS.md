@@ -83,6 +83,7 @@ llm-ai-api-python/
 │       ├── log.py           # JSON Lines の入出力ログ（既定はオフ）、set_log() / get_log()
 │       ├── _connection.py   # 接続設定（内部）: set_connection() / get_connection()、解決と httpx 引数の生成
 │       ├── _model_params.py # モデルが拒否するパラメータを落とす表（内部。チャットのボディだけ）
+│       ├── _structured.py   # 構造化出力 schema= の解釈・正規化・検証（内部。LLM 層だけが使う）
 │       ├── openai.py        # OpenAIClient
 │       ├── openrouter.py    # OpenRouterClient（OpenAI 互換部分を共有）
 │       ├── google.py        # GoogleClient（OpenAI 互換部分を共有）
@@ -116,12 +117,15 @@ llm-ai-api-python/
 │   ├── test_stream_close.py  # ストリームの閉じ忘れ（#25）
 │   ├── test_retry_policy.py  # リトライの分類、retry_after_max、set_config()（#26）
 │   ├── test_events.py        # イベントリスナーと request_id / latency / retries（#30）
+│   ├── test_structured.py    # schema= の構造化出力（#60）
 │   ├── test_hardening.py     # キャッシュのファイル権限・WAL・サイズ上限・一括 XOR（#33）
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
 ├── docs/
 │   ├── publish.md       # PyPI への公開手順
 │   ├── api.md           # 公開 API の一覧（英語）
 │   ├── api-ja.md        # 同（日本語）
+│   ├── structured.md    # 構造化出力（schema=）（英語）
+│   ├── structured-ja.md # 同（日本語）
 │   ├── events.md        # イベントリスナーと request_id の参照先（英語）
 │   ├── events-ja.md     # 同（日本語）
 │   ├── config.md        # 設定リファレンスとリトライの方針（英語）
@@ -206,6 +210,7 @@ async with llm("openai:gpt-6-luna") as m:
 - 非同期コード（イベントループの中）で同期版の `ask()` / `chat()` / `ask_stream()` / `chat_stream()` を呼ぶとループ全体が止まる。README・チュートリアルで `a*` を使うよう案内する。
 - `aask_stream()` / `achat_stream()` は最初の反復で通信を始めるので、接続エラーや HTTP エラーも最初の反復で出る（同期版 `ask_stream()` / `chat_stream()` は呼び出し時）。途中でやめるときは `await stream.aclose()` を呼ぶ。キャンセルされたストリームはレスポンスを閉じ、キャッシュ・ログに残さない。閉じずに捨てられた `_AsyncEventStream` は、最後の手段として `__del__` から生成時のイベントループに `resp.aclose()` を予約する（ループがなければ `ResourceWarning`）。この回収経路は `stream_end` を出さない（await できないため）。`request_id` はヘッダー受信後にイテレータへ入る（5.9）。
 - イベントループをまたいで使わない。`asyncio.run()` ごとに新しい `llm()` を作る。
+- 構造化出力（#60）: `chat()` / `achat()` はキーワード専用の `schema=None` を受け取る。dict は JSON Schema として無加工で送信し、`model_json_schema()` と `model_validate_json()` を持つモデルクラスは strict 用に正規化（object の `additionalProperties=False`、全プロパティ required 化、任意項目の nullable 化、プロパティの `default` 除去）して送信し、応答を検証する。成功時は `ChatResult.parsed` に値を入れる。プロバイダー差分（OpenAI 系は `response_format`、Anthropic は `output_config.format`）は LLM 層（`_structured.py`）で `extra` に注入し、利用者の `extra` が最後に勝つ。拒否・未完了・JSON/検証失敗は `StructuredOutputError`（コードは `output_refused` / `output_incomplete` / `invalid_structured_output`）、不正な schema 引数は `LLMConfigError(code="invalid_schema")`。`ask` 系・ストリーミング系は対応しない。利用者向けの説明は docs/structured.md / structured-ja.md。
 - 実装は `_async_http.py` / `_async_clients.py`（内部専用）。ボディ生成とパースは同期版の関数を共用する。ストリームは async generator ではなく `__anext__` / `aclose` を持つ通常のクラスで組む（generator の `finally` で `await` しないため）。Python 3.9 互換のため `anext()` / `contextlib.aclosing` / `asyncio.TaskGroup` / `asyncio.timeout` は使わない。
 
 ### 5.2.1 モデル定数（`models.py`）
