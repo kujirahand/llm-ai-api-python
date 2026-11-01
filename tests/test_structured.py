@@ -176,6 +176,34 @@ class StructuredSyncTest(unittest.TestCase):
             m.chat([{"role": "user", "content": "x"}], schema={"type": "object"})
         self.assertEqual(cm.exception.code, "output_refused")
 
+    def test_error_messages_include_guidance(self):
+        hints = {
+            "ja": {
+                "output_refused": "見直す",
+                "output_incomplete": "増やす",
+                "invalid_structured_output": "確認",
+            },
+            "en": {
+                "output_refused": "Review the input",
+                "output_incomplete": "Increase max_tokens",
+                "invalid_structured_output": "Check the schema",
+            },
+        }
+        responses = {
+            "output_refused": openai_response(refusal="no"),
+            "output_incomplete": openai_response(finish_reason="length"),
+            "invalid_structured_output": openai_response("not json"),
+        }
+        for lang, codes in hints.items():
+            for code, hint in codes.items():
+                with self.subTest(lang=lang, code=code):
+                    rec = Recorder(json_response(responses[code]))
+                    m = llm("openai:test", api_key="test-key", transport=rec.transport, lang=lang)
+                    with self.assertRaises(StructuredOutputError) as cm:
+                        m.chat([{"role": "user", "content": "x"}], schema={"type": "object"})
+                    self.assertEqual(cm.exception.code, code)
+                    self.assertIn(hint, str(cm.exception))
+
 
 class NestedModel:
     ORIGINAL = {

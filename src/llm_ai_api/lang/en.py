@@ -46,9 +46,9 @@ MESSAGES = {
     "api_error": "{provider} API error (HTTP {status})",
     "stream_incomplete": "{provider} stream ended without a terminal event",
     "stream_error": "{provider} stream error",
-    "output_refused": "{provider} refused the structured output.",
-    "output_incomplete": "{provider} did not finish the structured output.",
-    "invalid_structured_output": "The response from {provider} could not be read as structured output.",
+    "output_refused": "{provider} refused the structured output. Review the input, or try a different model.",
+    "output_incomplete": "{provider} did not finish the structured output. Increase max_tokens, or shorten the input, and try again.",
+    "invalid_structured_output": "The response from {provider} could not be read as structured output. Check the schema and whether the model supports structured output.",
     "hint_400": (
         "Hint: parameters this library knows the model rejects are omitted before "
         "the request. If this is still HTTP 400, check the request and remove the "

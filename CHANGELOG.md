@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add remediation hints to the `StructuredOutputError` messages (`output_refused`, `output_incomplete`, `invalid_structured_output`) in English and Japanese, and refine the per-code table in `docs/structured.md` (#70).
+
 - Add `LLM.transcribe()` / `atranscribe()` (OpenAI `/audio/transcriptions`; other providers raise `unsupported_modality`) and multipart `files=` / `form_data=` arguments on the raw `request()` (#58).
 
 - Add a keyword-only `images=` argument to `ask()` / `ask_stream()` / `aask()` / `aask_stream()` (file paths, bytes, or http(s) URLs), converted to each provider's image format; invalid input raises `LLMConfigError(code="invalid_media")` (#58).
