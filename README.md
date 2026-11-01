@@ -223,7 +223,7 @@ See [`examples/`](https://github.com/kujirahand/llm-ai-api-python/tree/main/exam
 | `models_test.py` | Two models (GPT-6 Luna and Claude Haiku) discuss the breakfast menu, using the `models` constants (needs both API keys) |
 | `cache_demo.py` | Ask the same question twice and see the second answer come from the cache |
 
-Image content is not converted between providers; the examples build the right format for each one (see `examples/_common.py`).
+`ask(prompt, images=[...])` builds each provider's image format from file paths, bytes, or http(s) URLs ([docs/multimodal.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/multimodal.md)). Native `content` dicts passed to `chat()` are not converted between providers.
 
 ## Error messages
 

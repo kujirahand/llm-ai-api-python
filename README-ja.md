@@ -223,7 +223,7 @@ m = llm("openai:gpt-6-luna", connection={"max_connections": 5})        # この�
 | `models_test.py` | `models` の定数を使い、2 つのモデル（GPT-6 Luna と Claude Haiku）に朝食のメニューについて意見交換してもらう（両方の API キーが必要） |
 | `cache_demo.py` | 同じ質問を 2 回して、2 回目がキャッシュから返ることを確かめる |
 
-画像のコンテンツはプロバイダー間で変換されません。サンプルでは、プロバイダーごとの形式を組み立てています（`examples/_common.py` を参照）。
+`ask(prompt, images=[...])` は、画像（ファイルのパス・bytes・http(s) の URL）をプロバイダーごとの形式に組み立てて送ります（[docs/multimodal-ja.md](docs/multimodal-ja.md)）。`chat()` に渡す `content` のネイティブ dict はプロバイダー間で変換されません。
 
 ## エラーメッセージ
 

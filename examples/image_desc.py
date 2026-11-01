@@ -5,7 +5,7 @@ Usage: python examples/image_desc.py PROVIDER:MODEL IMAGE_PATH
 
 import sys
 
-from _common import get_model_spec, image_message
+from _common import get_model_spec
 
 from llm_ai_api import llm
 
@@ -15,4 +15,4 @@ if len(sys.argv) < 3:
 
 m = llm(spec)
 prompt = "Describe this image in a few sentences."
-print(m.chat([image_message(m.provider, sys.argv[2], prompt)]).text)
+print(m.ask(prompt, images=[sys.argv[2]]))

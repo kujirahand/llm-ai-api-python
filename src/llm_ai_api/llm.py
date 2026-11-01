@@ -2,7 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator, Callable, Dict, Iterator, List, Optional, TypeVar, Union
+import asyncio
+import os
+from typing import (
+    Any,
+    AsyncIterator,
+    Callable,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    TypeVar,
+    Union,
+)
 
 from ._async_clients import (
     _AsyncAnthropicClient,
@@ -12,6 +25,7 @@ from ._async_clients import (
 )
 from ._async_http import _AsyncBaseClient
 from ._http import BaseClient, _check_retry_after_max
+from ._media import check_images, check_prompt_for_images, image_messages, resolve_images
 from ._structured import inject_schema_extra, interpret_schema, parse_structured_result
 from .anthropic import AnthropicClient
 from .errors import LLMConfigError
@@ -157,11 +171,29 @@ class LLM:
         ):
             raise LLMConfigError(t("invalid_messages", self.client.lang), code="invalid_messages")
 
-    def _prompt_messages(self, prompt: Union[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    def _prompt_messages(
+        self, prompt: Union[str, List[Dict[str, Any]]], images: Any = None
+    ) -> List[Dict[str, Any]]:
+        items = check_images(images, self.client.lang)
+        if items:
+            check_prompt_for_images(prompt, self.client.lang)
+            resolved = resolve_images(items, self.client.lang)
+            return image_messages(self.provider, prompt, resolved)  # type: ignore[arg-type]
         if isinstance(prompt, str):
             return [{"role": "user", "content": prompt}]
         self._validate_messages(prompt)
         return list(prompt)
+
+    async def _aprompt_messages(
+        self, prompt: Union[str, List[Dict[str, Any]]], images: Any = None
+    ) -> List[Dict[str, Any]]:
+        items = check_images(images, self.client.lang)
+        if not items:
+            return self._prompt_messages(prompt)
+        check_prompt_for_images(prompt, self.client.lang)
+        # Only the file reads go to a worker thread; building the parts is cheap.
+        resolved = await asyncio.to_thread(resolve_images, items, self.client.lang)
+        return image_messages(self.provider, prompt, resolved)  # type: ignore[arg-type]
 
     def _prepare(
         self,
@@ -226,14 +258,17 @@ class LLM:
         max_tokens: Union[Optional[int], _Unset] = UNSET,
         temperature: Union[Optional[float], _Unset] = UNSET,
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        images: Optional[Sequence[Union[str, bytes, os.PathLike]]] = None,
         timeout: Optional[float] = None,
     ) -> str:
         """Send a prompt or message history and return only the answer text.
 
         A list is treated as `chat()` messages and is not modified. `timeout` is
-        the same as in `chat()`.
+        the same as in `chat()`. `images` (a list of file paths, bytes, or http(s)
+        URLs; string prompts only) is added to the user message in the provider's
+        format (docs/multimodal.md).
         """
-        msgs = self._prompt_messages(prompt)
+        msgs = self._prompt_messages(prompt, images)
         return self.chat(
             msgs,
             system=system,
@@ -273,12 +308,13 @@ class LLM:
         max_tokens: Union[Optional[int], _Unset] = UNSET,
         temperature: Union[Optional[float], _Unset] = UNSET,
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        images: Optional[Sequence[Union[str, bytes, os.PathLike]]] = None,
         timeout: Optional[float] = None,
     ) -> Iterator[str]:
         """Send a prompt or message history and yield text deltas through `chat_stream()`.
-        A list is treated as messages and is not modified.
+        A list is treated as messages and is not modified. `images` works as in `ask()`.
         """
-        msgs = self._prompt_messages(prompt)
+        msgs = self._prompt_messages(prompt, images)
         return self.chat_stream(
             msgs,
             system=system,
@@ -296,11 +332,13 @@ class LLM:
         max_tokens: Union[Optional[int], _Unset] = UNSET,
         temperature: Union[Optional[float], _Unset] = UNSET,
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        images: Optional[Sequence[Union[str, bytes, os.PathLike]]] = None,
         timeout: Optional[float] = None,
     ) -> Iterator[str]:
         """Deprecated: use `ask_stream()`. Kept as an alias that delegates to it."""
         return self.ask_stream(
             prompt,
+            images=images,
             system=system,
             max_tokens=max_tokens,
             temperature=temperature,
@@ -425,14 +463,16 @@ class LLM:
         max_tokens: Union[Optional[int], _Unset] = UNSET,
         temperature: Union[Optional[float], _Unset] = UNSET,
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        images: Optional[Sequence[Union[str, bytes, os.PathLike]]] = None,
         timeout: Optional[float] = None,
     ) -> str:
         """Async `ask()`: send a prompt or message history and return answer text.
 
         A list is treated as `chat()` messages and is not modified.
-        `timeout` is the same as in `achat()`.
+        `timeout` is the same as in `achat()`. `images` works as in `ask()`; files
+        are read in a worker thread.
         """
-        msgs = self._prompt_messages(prompt)
+        msgs = await self._aprompt_messages(prompt, images)
         result = await self.achat(
             msgs,
             system=system,
@@ -451,11 +491,13 @@ class LLM:
         max_tokens: Union[Optional[int], _Unset] = UNSET,
         temperature: Union[Optional[float], _Unset] = UNSET,
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        images: Optional[Sequence[Union[str, bytes, os.PathLike]]] = None,
         timeout: Optional[float] = None,
     ) -> AsyncIterator[str]:
         """Deprecated: use `aask_stream()`. Kept as an alias that delegates to it."""
         return self.aask_stream(
             prompt,
+            images=images,
             system=system,
             max_tokens=max_tokens,
             temperature=temperature,
@@ -471,21 +513,28 @@ class LLM:
         max_tokens: Union[Optional[int], _Unset] = UNSET,
         temperature: Union[Optional[float], _Unset] = UNSET,
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
+        images: Optional[Sequence[Union[str, bytes, os.PathLike]]] = None,
         timeout: Optional[float] = None,
     ) -> AsyncIterator[str]:
         """Async `ask_stream()`: send a prompt or message history and iterate answer text deltas.
 
         A list is treated as messages and is not modified. Uses `achat_stream()`
-        (use `async for`, no `await`).
+        (use `async for`, no `await`). `images` works as in `ask()`; the arguments
+        are checked now, but files are read at the first iteration (in a worker thread).
         """
-        msgs = self._prompt_messages(prompt)
-        return self.achat_stream(
-            msgs,
-            system=system,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            extra=extra,
-            timeout=timeout,
+        items = check_images(images, self.client.lang)
+        if not items:
+            return self.achat_stream(
+                self._prompt_messages(prompt),
+                system=system,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                extra=extra,
+                timeout=timeout,
+            )
+        check_prompt_for_images(prompt, self.client.lang)
+        return _AsyncTextStream(
+            self, [], system, max_tokens, temperature, extra, timeout, media=(prompt, items)
         )
 
     def achat_stream(
@@ -589,8 +638,10 @@ class _AsyncTextStream:
         temperature: Union[Optional[float], _Unset],
         extra: Union[Optional[Dict[str, Any]], _Unset],
         timeout: Optional[float] = None,
+        media: Optional[Any] = None,
     ) -> None:
         self._owner = owner
+        self._media = media  # (prompt, images) whose files are read at the first iteration
         self._args = (messages, system, max_tokens, temperature, extra)
         self._timeout = timeout
         self._chunks: Any = None
@@ -607,6 +658,9 @@ class _AsyncTextStream:
             raise StopAsyncIteration
         try:
             if self._chunks is None:
+                if self._media is not None:
+                    msgs = await self._owner._aprompt_messages(*self._media)
+                    self._args = (msgs,) + self._args[1:]
                 kw = self._owner._prepare(*self._args)
                 client = self._owner._get_async_client()
                 self._chunks = await client.stream_chat(timeout=self._timeout, **kw)  # type: ignore[attr-defined]
