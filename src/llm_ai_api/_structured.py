@@ -81,6 +81,12 @@ def _normalize_node(node: Any) -> None:
             _normalize_node(child)
 
     _normalize_node(node.get("items"))
+    if isinstance(node.get("items"), list):
+        for child in node["items"]:
+            _normalize_node(child)
+    if isinstance(node.get("prefixItems"), list):
+        for child in node["prefixItems"]:
+            _normalize_node(child)
 
     for key in ("anyOf", "oneOf", "allOf"):
         value = node.get(key)
@@ -99,6 +105,13 @@ def _normalize_node(node: Any) -> None:
 
 
 def _nullable(schema: Dict[str, Any]) -> Dict[str, Any]:
+    type_value = schema.get("type")
+    if type_value == "null":
+        return schema
+    if isinstance(type_value, list):
+        if "null" not in type_value:
+            schema["type"] = type_value + ["null"]
+        return schema
     any_of = schema.get("anyOf")
     if isinstance(any_of, list):
         if not any(
@@ -106,9 +119,9 @@ def _nullable(schema: Dict[str, Any]) -> Dict[str, Any]:
         ):
             any_of.append({"type": "null"})
         return schema
-    if isinstance(schema.get("type"), str) and schema["type"] != "null":
-        return {"anyOf": [schema, {"type": "null"}]}
-    return schema
+    # Any other shape ($ref, enum, oneOf, allOf, a plain typed schema, ...):
+    # wrap it so null is allowed alongside the original schema.
+    return {"anyOf": [schema, {"type": "null"}]}
 
 
 def inject_schema_extra(
@@ -122,10 +135,12 @@ def inject_schema_extra(
 
     user_extra = dict(extra or {})
     if provider == "anthropic":
+        supplied = user_extra.get("output_config")
+        if supplied is not None and not isinstance(supplied, dict):
+            return user_extra  # not mergeable: the user's value wins as-is
         output_config: Dict[str, Any] = {
             "format": {"type": "json_schema", "schema": structured.schema}
         }
-        supplied = user_extra.get("output_config")
         if isinstance(supplied, dict):
             output_config.update(supplied)
         injected = dict(user_extra)
@@ -183,7 +198,7 @@ def _result_error_code(result: ChatResult, provider: str) -> Optional[str]:
     if provider == "anthropic":
         if result.stop_reason == "refusal":
             return "output_refused"
-        if result.stop_reason == "max_tokens":
+        if result.stop_reason in ("max_tokens", "model_context_window_exceeded"):
             return "output_incomplete"
         return None
 

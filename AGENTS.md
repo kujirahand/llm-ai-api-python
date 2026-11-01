@@ -83,6 +83,7 @@ llm-ai-api-python/
 │       ├── log.py           # JSON Lines の入出力ログ（既定はオフ）、set_log() / get_log()
 │       ├── _connection.py   # 接続設定（内部）: set_connection() / get_connection()、解決と httpx 引数の生成
 │       ├── _model_params.py # モデルが拒否するパラメータを落とす表（内部。チャットのボディだけ）
+│       ├── _structured.py   # 構造化出力 schema= の解釈・正規化・検証（内部。LLM 層だけが使う）
 │       ├── openai.py        # OpenAIClient
 │       ├── openrouter.py    # OpenRouterClient（OpenAI 互換部分を共有）
 │       ├── google.py        # GoogleClient（OpenAI 互換部分を共有）

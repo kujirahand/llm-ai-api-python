@@ -408,7 +408,8 @@ class LLM:
         the client's setting). It is a per-operation timeout, not a total deadline: retries
         extend it. Use `asyncio.wait_for()` for a hard deadline.
 
-        `schema` works as in `chat()`: the validated value lands in `ChatResult.parsed`.
+        `schema` works as in `chat()`: the validated value lands in `ChatResult.parsed`
+        (docs/structured.md).
         """
         structured = interpret_schema(schema, self.client.lang)
         kw = self._prepare(messages, system, max_tokens, temperature, extra)

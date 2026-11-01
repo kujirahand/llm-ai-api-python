@@ -170,6 +170,97 @@ class StructuredSyncTest(unittest.TestCase):
         result = m.chat([{"role": "user", "content": "x"}])
         self.assertIsNone(result.parsed)
 
+    def test_content_filter_is_refusal(self):
+        m, _ = make("openai:test", openai_response("", finish_reason="content_filter"))
+        with self.assertRaises(StructuredOutputError) as cm:
+            m.chat([{"role": "user", "content": "x"}], schema={"type": "object"})
+        self.assertEqual(cm.exception.code, "output_refused")
+
+
+class NestedModel:
+    ORIGINAL = {
+        "type": "object",
+        "properties": {
+            "child": {"$ref": "#/$defs/Sub"},
+            "tags": {"type": "array", "items": {"$ref": "#/$defs/Sub"}},
+            "kind": {"allOf": [{"$ref": "#/$defs/Kind"}], "default": "a"},
+        },
+        "required": ["tags"],
+        "$defs": {
+            "Sub": {
+                "type": "object",
+                "properties": {"v": {"type": "string"}},
+                "required": ["v"],
+            },
+            "Kind": {"type": "string", "enum": ["a", "b"]},
+        },
+    }
+
+    @classmethod
+    def model_json_schema(cls):
+        import copy
+
+        return copy.deepcopy(cls.ORIGINAL)
+
+    @classmethod
+    def model_validate_json(cls, text):
+        return json.loads(text)
+
+
+class NormalizationTest(unittest.TestCase):
+    def test_nested_and_ref_schemas_are_normalized_without_mutating(self):
+        m, rec = make("openai:test", openai_response("{}"))
+        m.chat([{"role": "user", "content": "x"}], schema=NestedModel)
+
+        schema = rec.body()["response_format"]["json_schema"]["schema"]
+        # Optional $ref / allOf properties become nullable by wrapping.
+        self.assertEqual(
+            schema["properties"]["child"]["anyOf"][1], {"type": "null"}
+        )
+        self.assertEqual(
+            schema["properties"]["kind"]["anyOf"][1], {"type": "null"}
+        )
+        self.assertNotIn("default", schema["properties"]["kind"]["anyOf"][0])
+        # Nested objects inside $defs are normalized too.
+        sub = schema["$defs"]["Sub"]
+        self.assertIs(sub["additionalProperties"], False)
+        self.assertEqual(sub["required"], ["v"])
+        # The model's own schema dict is left alone.
+        self.assertNotIn("anyOf", NestedModel.ORIGINAL["properties"]["child"])
+        self.assertNotIn("additionalProperties", NestedModel.ORIGINAL["$defs"]["Sub"])
+
+    def test_anthropic_accepts_a_model_class(self):
+        m, rec = make("anthropic:test", anthropic_response('{"required":"ok"}'))
+        result = m.chat([{"role": "user", "content": "x"}], schema=FakeModel)
+        fmt = rec.body()["output_config"]["format"]
+        self.assertEqual(fmt["type"], "json_schema")
+        self.assertIs(fmt["schema"]["additionalProperties"], False)
+        self.assertEqual(result.parsed, {"validated": {"required": "ok"}})
+
+    def test_cache_hit_is_validated_again(self):
+        import tempfile
+
+        from llm_ai_api import SQLiteCache
+
+        with tempfile.TemporaryDirectory() as d:
+            cache = SQLiteCache(d + "/cache.db")
+            rec = Recorder(
+                json_response(openai_response('{"x":"first"}')),
+                json_response(openai_response('{"x":"second"}')),
+            )
+            m = llm(
+                "openai:test",
+                api_key="test-key",
+                transport=rec.transport,
+                cache=cache,
+            )
+            schema = {"type": "object"}
+            first = m.chat([{"role": "user", "content": "x"}], schema=schema)
+            second = m.chat([{"role": "user", "content": "x"}], schema=schema)
+            self.assertEqual(first.parsed, {"x": "first"})
+            self.assertEqual(second.parsed, {"x": "first"})  # cache hit, revalidated
+            self.assertEqual(len(rec.requests), 1)
+
 
 class StructuredAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def test_achat_parses(self):
