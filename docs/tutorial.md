@@ -70,7 +70,7 @@ The constants are examples. Any other model works as a plain string, e.g. `llm("
 
 ## 4. Continue a conversation
 
-`ask()` does not keep the conversation history. To follow up, pass the history (messages) to `chat()`. `chat()` returns a `ChatResult`.
+`ask()` does not keep the conversation history. To follow up, pass the history (messages) to `ask()`, `stream()`, or `chat()`. `chat()` returns a `ChatResult`. The list must be non-empty and contain only dictionaries; otherwise the library raises `LLMConfigError` with code `invalid_messages`.
 
 ```python
 from llm_ai_api import llm
@@ -80,6 +80,9 @@ m = llm("openai:gpt-6-luna")
 messages = [{"role": "user", "content": "Name one favorite fruit"}]
 result = m.chat(messages)
 print(result.text)
+
+# ask() also accepts the same history and returns only the reply text
+print(m.ask(messages))
 
 # Add the reply to the history and ask a follow-up
 messages.append({"role": "assistant", "content": result.text})
@@ -122,7 +125,26 @@ for piece in stream:
 print()
 ```
 
-To pass a conversation history (messages), use `chat_stream()`. The old name `stream()` is deprecated and remains as an alias of `ask_stream()`.
+### Stream a conversation in a chat app
+
+Pass the full history to `ask_stream()`, print each piece, then append the collected assistant reply. The iterator has a `request_id` as soon as `ask_stream()` returns.
+
+```python
+from llm_ai_api import llm
+
+with llm("openai:gpt-6-luna") as m:
+    history = []
+    history.append({"role": "user", "content": "Write a short story"})
+    stream = m.ask_stream(history)
+    print("request_id:", stream.request_id)
+    pieces = []
+    for piece in stream:
+        print(piece, end="", flush=True)
+        pieces.append(piece)
+    history.append({"role": "assistant", "content": "".join(pieces)})
+```
+
+The old name `stream()` is a deprecated alias of `ask_stream()`.
 
 ## 6. Set options
 
@@ -148,6 +170,7 @@ print(m.ask("What is the capital of Japan?", system="Answer like a pirate.", max
 ## 7. Use it asynchronously
 
 Add an `a` to the method name to use it with `asyncio` (`aask()` / `achat()` / `aask_stream()` / `achat_stream()`).
+`aask()` and `aask_stream()` accept the same non-empty message history as their synchronous counterparts.
 
 ```python
 import asyncio

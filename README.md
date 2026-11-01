@@ -13,7 +13,6 @@ A thin, stable HTTP wrapper for the OpenAI, OpenRouter, Claude (Anthropic), and 
 - **Built-in caching and logging**: SQLite response caching (encrypted with a key derived from your API key; streams can be cached too) via `set_cache()` (or `cache=`) and JSON Lines request/response logging via `set_log()` (or `log=`) are built right in.
 - **Lightweight dependencies (`httpx` only)**: The only dependency is `httpx`; official packages like `openai` or `anthropic` are not required, keeping installs small and reducing dependency conflicts.
 
-
 Header names are case-insensitive; client and per-request headers override earlier values. See the [configuration reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/config.md) for precedence.
 
 ## Installation
@@ -60,7 +59,24 @@ result = luna.chat([{"role": "user", "content": "hi"}])  # ChatResult: text, sto
 # Streaming with messages
 for piece in luna.chat_stream([{"role": "user", "content": "hi"}]):
     print(piece, end="", flush=True)
+
+# A chat app with history
+history = []
+while True:
+    user_text = input("You: ")
+    if not user_text:
+        break
+    history.append({"role": "user", "content": user_text})
+    stream = luna.ask_stream(history)
+    print("request_id:", stream.request_id)
+    pieces = []
+    for piece in stream:
+        print(piece, end="", flush=True)
+        pieces.append(piece)
+    history.append({"role": "assistant", "content": "".join(pieces)})
 ```
+
+`ask()` and `ask_stream()` also accept a non-empty list of message dictionaries. The async `aask()` and `aask_stream()` accept the same inputs. The caller owns the history; a `system=` argument is prepended just as in `chat()`. The stream iterator also has a `request_id`.
 
 The old name `stream()` (`astream()` in async code) is deprecated. It remains as an alias of `ask_stream()` (`aask_stream()` in async code).
 

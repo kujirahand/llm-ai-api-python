@@ -70,7 +70,7 @@ print(m.ask("可愛い犬の名前を考えて"))
 
 ## 4. 会話を続ける
 
-`ask()` は会話の履歴を保持しません。続きを聞くときは `chat()` に履歴（messages）を渡します。`chat()` は `ChatResult` を返します。
+`ask()` は会話の履歴を保持しません。続きを聞くときは `ask()` / `ask_stream()` / `chat()` に履歴（messages）を渡します。`chat()` は `ChatResult` を返します。リストは空でなく、要素がすべて辞書である必要があります。そうでない場合は `LLMConfigError`（code `invalid_messages`）が発生します。
 
 ```python
 from llm_ai_api import llm
@@ -80,6 +80,9 @@ m = llm("openai:gpt-6-luna")
 messages = [{"role": "user", "content": "好きな果物を1つ挙げて"}]
 result = m.chat(messages)
 print(result.text)
+
+# ask() にも同じ履歴を渡せる（戻り値は回答テキストのみ）
+print(m.ask(messages))
 
 # 応答を履歴に追加して、続きを聞く
 messages.append({"role": "assistant", "content": result.text})
@@ -122,7 +125,26 @@ for piece in stream:
 print()
 ```
 
-会話履歴（messages）を渡すときは `chat_stream()` を使います。旧名の `stream()` は非推奨で、`ask_stream()` の別名として残してあります。
+### チャットアプリで履歴を使ってストリーミングする
+
+履歴全体を `ask_stream()` に渡し、各パーツを表示してから、集めた回答を assistant の履歴に追加します。イテレーターには `ask_stream()` が返った時点で `request_id` が設定されています。
+
+```python
+from llm_ai_api import llm
+
+with llm("openai:gpt-6-luna") as m:
+    history = []
+    history.append({"role": "user", "content": "短い物語を書いて"})
+    stream = m.ask_stream(history)
+    print("request_id:", stream.request_id)
+    pieces = []
+    for piece in stream:
+        print(piece, end="", flush=True)
+        pieces.append(piece)
+    history.append({"role": "assistant", "content": "".join(pieces)})
+```
+
+旧名 `stream()` は `ask_stream()` の非推奨の別名です。
 
 ## 6. 条件を指定する
 
@@ -148,6 +170,7 @@ print(m.ask("日本の首都は？", system="関西弁で答えてください�
 ## 7. 非同期で使う
 
 メソッド名の先頭に `a` を付けると、`asyncio` で使えます（`aask()` / `achat()` / `aask_stream()` / `achat_stream()`）。
+`aask()` と `aask_stream()` にも、同期版と同じ空でないメッセージ履歴を渡せます。
 
 ```python
 import asyncio

@@ -13,7 +13,6 @@ OpenAI / OpenRouter / Claude (Anthropic) / Google の API を呼び出す、薄�
 - **SQLite キャッシュと JSON Lines ログを標準搭載**: `set_cache()`（または `cache=`）による SQLite レスポンスキャッシュ（API キーから作った鍵で暗号化。ストリーミングもキャッシュ可能）や、`set_log()`（または `log=`）による JSON Lines 入出力ログが組み込まれています。
 - **依存が軽い（`httpx` のみ）**: 依存は `httpx` のみで、公式の `openai` や `anthropic` パッケージなどは不要です。インストールが軽く、依存関係の競合が起きにくくなります。
 
-
 ヘッダー名は大文字・小文字を区別せず、クライアントとリクエストごとのヘッダーが先の値を上書きします。優先順位は[設定リファレンス](docs/config-ja.md)を参照してください。
 
 ## インストール
@@ -60,7 +59,24 @@ result = luna.chat([{"role": "user", "content": "こんにちは"}])  # ChatResu
 # messages を渡すストリーミング
 for piece in luna.chat_stream([{"role": "user", "content": "こんにちは"}]):
     print(piece, end="", flush=True)
+
+# 履歴を使ったチャットアプリ
+history = []
+while True:
+    user_text = input("あなた: ")
+    if not user_text:
+        break
+    history.append({"role": "user", "content": user_text})
+    stream = luna.ask_stream(history)
+    print("request_id:", stream.request_id)
+    pieces = []
+    for piece in stream:
+        print(piece, end="", flush=True)
+        pieces.append(piece)
+    history.append({"role": "assistant", "content": "".join(pieces)})
 ```
+
+`ask()` と `ask_stream()` には空でないメッセージ辞書のリストも渡せます。非同期の `aask()` / `aask_stream()` も同じです。履歴は呼び出し側で管理し、`system=` は `chat()` と同じく先頭に追加されます。ストリームイテレーターには `request_id` も設定されます。
 
 旧名の `stream()`（非同期は `astream()`）は非推奨です。`ask_stream()`（非同期は `aask_stream()`）の別名として残してあります。
 

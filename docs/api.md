@@ -41,11 +41,12 @@ Every call method accepts the per-call keyword arguments `system` / `max_tokens`
 
 | Method | Method (async) | Description |
 |---|---|---|
-| `ask(prompt)` | `aask(prompt)` | Send one question and return only the answer text (`str`) |
-| `ask_stream(prompt)` | `aask_stream(prompt)` | Send one question and return the answer text incrementally (as an iterator) |
+| `ask(prompt: str \| list[dict])` | `aask(prompt: str \| list[dict])` | Send a question or history and return only the answer text (`str`) |
+| `ask_stream(prompt: str \| list[dict])` | `aask_stream(prompt: str \| list[dict])` | Send a question or history and return the answer text incrementally (as an iterator) |
 | `chat(messages)` | `achat(messages)` | Send a conversation history and return a `ChatResult` |
 | `chat_stream(messages)` | `achat_stream(messages)` | Send a conversation history and return the answer text incrementally (as an iterator) |
 
+- `prompt` accepts a string or a non-empty list of dictionaries. Other inputs raise `LLMConfigError(code="invalid_messages")`.
 - `messages` is a list in the form `[{"role": "user", "content": "..."}]`. The caller's list is not modified.
 - Sync streams are regular iterators; async streams are async iterators (use `async for`; no `await` is needed). The stream iterator gets `request_id` and `retries` set once the response headers have been received. Read it to the end, or call `close()` (sync) / `aclose()` (async), to release the connection.
 - The old names `stream()` / `astream()` remain as deprecated aliases (same behavior as `ask_stream()` / `aask_stream()`). Use the new names in new code.

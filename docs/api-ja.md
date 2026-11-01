@@ -41,11 +41,12 @@ luna = llm("openai:gpt-6-luna")
 
 | メソッド | メソッド（async） | 説明 |
 |---|---|---|
-| `ask(prompt)` | `aask(prompt)` | 質問を1つ送り、回答のテキスト（`str`）だけを返す |
-| `ask_stream(prompt)` | `aask_stream(prompt)` | 質問を1つ送り、回答のテキストを少しずつ（イテレータで）返す |
+| `ask(prompt: str \| list[dict])` | `aask(prompt: str \| list[dict])` | 質問または履歴を送り、回答のテキスト（`str`）だけを返す |
+| `ask_stream(prompt: str \| list[dict])` | `aask_stream(prompt: str \| list[dict])` | 質問または履歴を送り、回答のテキストを少しずつ（イテレータで）返す |
 | `chat(messages)` | `achat(messages)` | 会話履歴を送り、`ChatResult` を返す |
 | `chat_stream(messages)` | `achat_stream(messages)` | 会話履歴を送り、回答のテキストを少しずつ（イテレータで）返す |
 
+- `prompt` は文字列または空でない辞書のリストを受け取ります。それ以外は `LLMConfigError(code="invalid_messages")` になります。
 - `messages` は `[{"role": "user", "content": "..."}]` 形式のリストです。呼び出し側のリストは変更されません。
 - 同期のストリームは通常のイテレータ、非同期のストリームは非同期イテレータ（`async for` で使う。`await` は不要）です。ストリームのイテレータには、レスポンスヘッダー受信後に `request_id` と `retries` が設定されます。最後まで読み切るか、同期は `close()`、非同期は `aclose()` を呼ぶと接続が解放されます。
 - 旧名 `stream()` / `astream()` は非推奨のエイリアスとして残っています（`ask_stream()` / `aask_stream()` と同じ動作）。新規のコードでは新しい名前を使ってください。
