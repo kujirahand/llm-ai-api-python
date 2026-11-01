@@ -84,6 +84,7 @@ llm-ai-api-python/
 │       ├── _connection.py   # 接続設定（内部）: set_connection() / get_connection()、解決と httpx 引数の生成
 │       ├── _model_params.py # モデルが拒否するパラメータを落とす表（内部。チャットのボディだけ）
 │       ├── _structured.py   # 構造化出力 schema= の解釈・正規化・検証（内部。LLM 層だけが使う）
+│       ├── _media.py        # ask 系 images= の検査・読み込み・プロバイダー形式への組み立て（内部。LLM 層だけが使う）
 │       ├── openai.py        # OpenAIClient
 │       ├── openrouter.py    # OpenRouterClient（OpenAI 互換部分を共有）
 │       ├── google.py        # GoogleClient（OpenAI 互換部分を共有）
@@ -118,6 +119,7 @@ llm-ai-api-python/
 │   ├── test_retry_policy.py  # リトライの分類、retry_after_max、set_config()（#26）
 │   ├── test_events.py        # イベントリスナーと request_id / latency / retries（#30）
 │   ├── test_structured.py    # schema= の構造化出力（#60）
+│   ├── test_multimodal.py    # ask 系の images=（#58）
 │   ├── test_hardening.py     # キャッシュのファイル権限・WAL・サイズ上限・一括 XOR（#33）
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
 ├── docs/
@@ -126,6 +128,8 @@ llm-ai-api-python/
 │   ├── api-ja.md        # 同（日本語）
 │   ├── structured.md    # 構造化出力（schema=）（英語）
 │   ├── structured-ja.md # 同（日本語）
+│   ├── multimodal.md    # 画像入力 images=（英語）
+│   ├── multimodal-ja.md # 同（日本語）
 │   ├── events.md        # イベントリスナーと request_id の参照先（英語）
 │   ├── events-ja.md     # 同（日本語）
 │   ├── config.md        # 設定リファレンスとリトライの方針（英語）
@@ -211,6 +215,7 @@ async with llm("openai:gpt-6-luna") as m:
 - `aask_stream()` / `achat_stream()` は最初の反復で通信を始めるので、接続エラーや HTTP エラーも最初の反復で出る（同期版 `ask_stream()` / `chat_stream()` は呼び出し時）。途中でやめるときは `await stream.aclose()` を呼ぶ。キャンセルされたストリームはレスポンスを閉じ、キャッシュ・ログに残さない。閉じずに捨てられた `_AsyncEventStream` は、最後の手段として `__del__` から生成時のイベントループに `resp.aclose()` を予約する（ループがなければ `ResourceWarning`）。この回収経路は `stream_end` を出さない（await できないため）。`request_id` はヘッダー受信後にイテレータへ入る（5.9）。
 - イベントループをまたいで使わない。`asyncio.run()` ごとに新しい `llm()` を作る。
 - 構造化出力（#60）: `chat()` / `achat()` はキーワード専用の `schema=None` を受け取る。dict は JSON Schema として無加工で送信し、`model_json_schema()` と `model_validate_json()` を持つモデルクラスは strict 用に正規化（object の `additionalProperties=False`、全プロパティ required 化、任意項目の nullable 化、プロパティの `default` 除去）して送信し、応答を検証する。成功時は `ChatResult.parsed` に値を入れる。プロバイダー差分（OpenAI 系は `response_format`、Anthropic は `output_config.format`）は LLM 層（`_structured.py`）で `extra` に注入し、利用者の `extra` が最後に勝つ。拒否・未完了・JSON/検証失敗は `StructuredOutputError`（コードは `output_refused` / `output_incomplete` / `invalid_structured_output`）、不正な schema 引数は `LLMConfigError(code="invalid_schema")`。`ask` 系・ストリーミング系は対応しない。利用者向けの説明は docs/structured.md / structured-ja.md。
+- 画像入力（#58）: `ask()` / `ask_stream()` / `aask()` / `aask_stream()`（旧名 `stream()` / `astream()` も）はキーワード専用の `images=None` を受け取る（`chat()` 系にはない。新しい公開名は増やさない）。要素はファイルのパス（`str` / `os.PathLike`）、画像の `bytes`、`http(s)://` で始まる URL 文字列で、リストで渡す。`None` または空なら従来と完全に同じ（content は文字列、キャッシュキーも不変）。非空なら user メッセージの content を `[{"type": "text", ...}, 画像パート...]`（指定順）にする。形式は LLM 層（`_media.py`）で組み立て、プロバイダー層・生レイヤーは無変換: OpenAI 系（`openai` / `openrouter` / `google`）は `image_url`（data URL または URL）、Anthropic は `image` の `source`（`base64` または `url`）。media type は先頭バイトのシグネチャ（PNG / JPEG / GIF / WEBP）、だめなら拡張子で判定し、不明・読めないファイル・リストでない `images`・不正な要素・文字列でない prompt（messages のリスト）との併用は `LLMConfigError(code="invalid_media")`。独自の件数・サイズ上限は設けない。非同期はファイル読み込みだけ `asyncio.to_thread()` で行い、`aask_stream()` は引数の形を呼び出し時に検査して、ファイルは最初の反復で読む。利用者向けの説明は docs/multimodal.md / multimodal-ja.md。
 - 実装は `_async_http.py` / `_async_clients.py`（内部専用）。ボディ生成とパースは同期版の関数を共用する。ストリームは async generator ではなく `__anext__` / `aclose` を持つ通常のクラスで組む（generator の `finally` で `await` しないため）。Python 3.9 互換のため `anext()` / `contextlib.aclosing` / `asyncio.TaskGroup` / `asyncio.timeout` は使わない。
 
 ### 5.2.1 モデル定数（`models.py`）
@@ -502,6 +507,7 @@ LLMError                      # 基底
   | `invalid_option` | `LLMConfigError`（オプションの値が範囲外。現在は `retry_after_max`） |
   | `invalid_event` | `LLMConfigError`（未知のイベント名） |
   | `invalid_listener` | `LLMConfigError`（リスナーが呼び出し可能でない） |
+  | `invalid_media` | `LLMConfigError`（`images=` の指定の誤り、画像の種類を判定できない、ファイルを読めない） |
   | `invalid_json_response` | `LLMError` |
   | `response_too_large` | `LLMError`（レスポンス本体、SSE の 1 行または 1 イベントがサイズ上限を超えた） |
 
