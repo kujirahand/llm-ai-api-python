@@ -51,6 +51,34 @@ m.chat([{"role": "user", "content": [
 ]}])
 ```
 
+## 音声の文字起こし（`transcribe()`）
+
+`transcribe(file, *, extra=None, timeout=None) -> str` / `atranscribe()` は、音声を OpenAI の `/audio/transcriptions` に multipart/form-data で送り、文字起こしのテキスト（`str`）を返します。
+
+```python
+m = llm("openai:whisper-1")
+print(m.transcribe("meeting.mp3"))
+print(m.transcribe(wav_bytes, extra={"language": "ja", "timestamp_granularities": ["word", "segment"]}))
+```
+
+- 対応は **OpenAI のみ**です。他のプロバイダーでは通信せずに `LLMConfigError(code="unsupported_modality")` を送出します。
+- `file` はパス（`str` / `os.PathLike`）または音声の `bytes` です。パスのときはファイル名をそのまま送り、`bytes` のときは `audio.<拡張子>` を使います。形式は先頭バイトのシグネチャ（WAV / MP3 / FLAC / OGG / WEBM / M4A）、だめなら拡張子で判定します。判定できない・読めない・型が違う場合は `invalid_media` です。
+- フォームには `model`（`llm()` のモデル）、`response_format=json`、ファイル `file` が入ります。`extra` のキーはフォームフィールドになります。文字列・数値は文字列化、bool は `true` / `false`、リスト・タプルは `キー[]` の繰り返し、`None` は省略です。dict など展開できない値は `invalid_media` です。
+- 応答 JSON の `text` を返します。`text` が文字列でなければ `LLMError(code="invalid_json_response")` です。
+- 応答キャッシュ・入出力ログ・同時実行のまとめ（singleflight）の**対象外**です。リトライやイベント通知は生レイヤーと同じです。
+- `atranscribe()` はファイルをワーカースレッドで読みます。
+- `segments` や `duration` を含む詳細な応答が欲しいときは、生レイヤーを使います。
+
+```python
+resp = m.client.request(
+    "/audio/transcriptions",
+    files={"file": ("a.wav", wav_bytes, "audio/wav")},
+    form_data=[("model", "whisper-1"), ("response_format", "verbose_json")],
+)
+```
+
+`request()` の `files=`（フィールド名 → `(ファイル名, bytes, media_type)`）と `form_data=`（`(名前, 値)` のリスト。同じ名前を繰り返せる）を指定するときは `body` を `None` にします（そうでなければ `LLMConfigError(code="invalid_option")`）。`Content-Type` は httpx が boundary 付きで付けます。
+
 ## ログとキャッシュの注意
 
 画像は base64 で本文に入るため、入出力ログ（`JSONLLog`）とキャッシュには巨大な base64 文字列が残ることがあります。ログに残したくない場合は `JSONLLog(path, redact=...)` のフックで画像パートを取り除いてください（[io_logs-ja.md](io_logs-ja.md)）。

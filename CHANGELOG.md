@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `LLM.transcribe()` / `atranscribe()` (OpenAI `/audio/transcriptions`; other providers raise `unsupported_modality`) and multipart `files=` / `form_data=` arguments on the raw `request()` (#58).
+
 - Add a keyword-only `images=` argument to `ask()` / `ask_stream()` / `aask()` / `aask_stream()` (file paths, bytes, or http(s) URLs), converted to each provider's image format; invalid input raises `LLMConfigError(code="invalid_media")` (#58).
 
 - Add `schema=` structured output to `LLM.chat()` / `LLM.achat()`: a JSON Schema dict or a pydantic-v2-compatible model class, validated into `ChatResult.parsed`, with `StructuredOutputError` for refusals, incomplete output, and validation failures (#60).

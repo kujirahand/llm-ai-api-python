@@ -283,10 +283,22 @@ class _AsyncBaseClient:
         method: str = "POST",
         headers: Optional[Dict[str, str]] = None,
         timeout: Optional[float] = None,
+        files: Optional[Dict[str, Tuple[str, bytes, str]]] = None,
+        form_data: Optional[List[Tuple[str, str]]] = None,
     ) -> Dict[str, Any]:
-        """Send JSON and return the response JSON (dict) as is."""
+        """Send JSON and return the response JSON (dict) as is.
+
+        With `files` / `form_data` the request is multipart/form-data instead (see the
+        sync `request()`).
+        """
         value, _meta = await self._read_json(
-            path, body, method=method, headers=headers, timeout=timeout
+            path,
+            body,
+            method=method,
+            headers=headers,
+            timeout=timeout,
+            files=files,
+            form_data=form_data,
         )
         return value
 
@@ -298,9 +310,13 @@ class _AsyncBaseClient:
         method: str = "POST",
         headers: Optional[Dict[str, str]] = None,
         timeout: Optional[float] = None,
+        files: Optional[Dict[str, Tuple[str, bytes, str]]] = None,
+        form_data: Optional[List[Tuple[str, str]]] = None,
     ) -> Tuple[Dict[str, Any], _CallMeta]:
         """Like ``request()``, but also return call metadata for ``achat()``."""
-        resp, meta = await self._aopen(method, path, body, headers, timeout, stream=False)
+        resp, meta = await self._aopen(
+            method, path, body, headers, timeout, stream=False, files=files, form_data=form_data
+        )
         try:
             if len(resp.content) > _http._MAX_RESPONSE_BYTES:
                 self._emit_request_error(meta, "response_too_large")
@@ -341,12 +357,16 @@ class _AsyncBaseClient:
 
     # --- internals -------------------------------------------------------------
 
-    def _headers(self, stream: bool, extra: Optional[Dict[str, str]]) -> Dict[str, str]:
+    def _headers(
+        self, stream: bool, extra: Optional[Dict[str, str]], multipart: bool = False
+    ) -> Dict[str, str]:
         h = {
             "Content-Type": "application/json",
             "Accept": "text/event-stream" if stream else "application/json",
             "User-Agent": _user_agent(),
         }
+        if multipart:
+            del h["Content-Type"]  # httpx adds multipart/form-data with the boundary
         return _merge_headers(h, self._auth_headers(), self._extra_headers, extra or {})
 
     def _t(self, msg_id: str, **params: Any) -> str:
@@ -472,20 +492,37 @@ class _AsyncBaseClient:
         headers: Optional[Dict[str, str]],
         timeout: Optional[float],
         stream: bool,
+        files: Optional[Dict[str, Tuple[str, bytes, str]]] = None,
+        form_data: Optional[List[Tuple[str, str]]] = None,
     ) -> Tuple[httpx.Response, _CallMeta]:
         url = self.base_url + "/" + path.lstrip("/")
+        multipart = files is not None or form_data is not None
+        if multipart and body is not None:
+            raise LLMConfigError(self._t("invalid_multipart_body"), code="invalid_option")
         content = (
             None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
         )
         kwargs: Dict[str, Any] = {}
         if timeout is not None:
             kwargs["timeout"] = httpx.Timeout(timeout, connect=self._connect_timeout)
+        if multipart:
+            # httpx builds the multipart body (with its own boundary) for every attempt;
+            # the parts are bytes, so each retry can resend them.
+            fields: Dict[str, List[str]] = {}
+            for field, value in form_data or []:
+                fields.setdefault(field, []).append(value)
+            kwargs["data"] = fields
+            kwargs["files"] = files or {}
         started = time.monotonic()
         attempt = 0
         while True:
             try:
                 req = self._client.build_request(
-                    method, url, content=content, headers=self._headers(stream, headers), **kwargs
+                    method,
+                    url,
+                    content=content,
+                    headers=self._headers(stream, headers, multipart=multipart),
+                    **kwargs,
                 )
             except httpx.InvalidURL as e:
                 raise LLMConfigError(
