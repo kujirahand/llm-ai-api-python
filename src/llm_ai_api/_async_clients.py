@@ -125,6 +125,30 @@ class _AsyncGoogleClient(_AsyncOpenAICompatClient):
     base_url_env = "GOOGLE_BASE_URL"
 
 
+class _AsyncLMStudioClient(_AsyncOpenAICompatClient):
+    provider = "lmstudio"
+    default_base_url = "http://localhost:1234/v1"
+    api_key_env = "LMSTUDIO_API_KEY"
+    base_url_env = "LMSTUDIO_BASE_URL"
+    api_key_default = "lm-studio"
+
+
+class _AsyncOllamaClient(_AsyncOpenAICompatClient):
+    provider = "ollama"
+    default_base_url = "http://localhost:11434/v1"
+    api_key_env = "OLLAMA_API_KEY"
+    base_url_env = "OLLAMA_BASE_URL"
+    api_key_default = "ollama"
+
+
+class _AsyncStrataClient(_AsyncOpenAICompatClient):
+    provider = "strata"
+    default_base_url = "http://127.0.0.1:8080/v1"
+    api_key_env = "STRATA_API_KEY"
+    base_url_env = "STRATA_BASE_URL"
+    api_key_default = "local"
+
+
 class _AsyncAnthropicClient(_AsyncBaseClient):
     """Async client for the Anthropic Messages API."""
 

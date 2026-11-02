@@ -10,7 +10,7 @@ from llm_ai_api import llm
 luna = llm("openai:gpt-6-luna")
 ```
 
-`llm(spec, **options)` は `LLM` インスタンスを返します。`spec` は `"<プロバイダー>:<モデル名>"`（`openai` / `openrouter` / `anthropic`（別名 `claude`） / `google`）です。`LLM(spec, ...)` と直接生成することもできます。
+`llm(spec, **options)` は `LLM` インスタンスを返します。`spec` は `"<プロバイダー>:<モデル名>"`（`openai` / `openrouter` / `anthropic`（別名 `claude`） / `google` / `lmstudio` / `ollama` / `strata`）です。`lmstudio` / `ollama` / `strata` はローカルサーバー向けで、API キーは任意です。`LLM(spec, ...)` と直接生成することもできます。
 
 生成時の主なオプション（キーワード引数）:
 
