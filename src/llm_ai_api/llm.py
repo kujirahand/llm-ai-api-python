@@ -20,8 +20,11 @@ from typing import (
 from ._async_clients import (
     _AsyncAnthropicClient,
     _AsyncGoogleClient,
+    _AsyncLMStudioClient,
+    _AsyncOllamaClient,
     _AsyncOpenAIClient,
     _AsyncOpenRouterClient,
+    _AsyncStrataClient,
 )
 from ._async_http import _AsyncBaseClient
 from ._http import BaseClient, _check_retry_after_max
@@ -39,14 +42,20 @@ from .anthropic import AnthropicClient
 from .errors import LLMConfigError, LLMError
 from .google import GoogleClient
 from .lang import t
+from .lmstudio import LMStudioClient
+from .ollama import OllamaClient
 from .openai import OpenAIClient
 from .openrouter import OpenRouterClient
+from .strata import StrataClient
 from .types import ChatResult
 
 _PROVIDERS = {
     "openai": OpenAIClient,
     "openrouter": OpenRouterClient,
     "google": GoogleClient,
+    "lmstudio": LMStudioClient,
+    "ollama": OllamaClient,
+    "strata": StrataClient,
     "anthropic": AnthropicClient,
     "claude": AnthropicClient,
 }
@@ -56,6 +65,9 @@ _ASYNC_PROVIDERS = {
     "openai": _AsyncOpenAIClient,
     "openrouter": _AsyncOpenRouterClient,
     "google": _AsyncGoogleClient,
+    "lmstudio": _AsyncLMStudioClient,
+    "ollama": _AsyncOllamaClient,
+    "strata": _AsyncStrataClient,
     "anthropic": _AsyncAnthropicClient,
     "claude": _AsyncAnthropicClient,
 }

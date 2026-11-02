@@ -31,7 +31,7 @@ print(luna.ask("可愛い犬の名前を考えて"))
 ```
 
 API キーは環境変数（`OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`（または `GOOGLE_API_KEY`））で渡します。
-モデルは `"<プロバイダー>:<モデル名>"` で指定します（`openai` / `openrouter` / `anthropic`（別名 `claude`） / `google`）。
+モデルは `"<プロバイダー>:<モデル名>"` で指定します（`openai` / `openrouter` / `anthropic`（別名 `claude`） / `google` / `lmstudio` / `ollama` / `strata`）。`lmstudio`（LM Studio、`http://localhost:1234/v1`）、`ollama`（Ollama、`http://localhost:11434/v1`）、`strata`（Strata、`http://127.0.0.1:8080/v1`）はローカルサーバー向けで、API キーは不要です（必要な構成では環境変数 `LMSTUDIO_API_KEY` / `OLLAMA_API_KEY` / `STRATA_API_KEY` で指定できます）。
 Google Gemini は、Google の OpenAI 互換エンドポイント経由で呼び出します。
 API キーの設定方法など、最初から順に試す手順は[チュートリアル](docs/tutorial-ja.md)を参照してください。
 

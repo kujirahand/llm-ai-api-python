@@ -10,7 +10,7 @@ from llm_ai_api import llm
 luna = llm("openai:gpt-6-luna")
 ```
 
-`llm(spec, **options)` returns an `LLM` instance. `spec` is `"<provider>:<model>"` (`openai` / `openrouter` / `anthropic` (alias `claude`) / `google`). You can also construct `LLM(spec, ...)` directly.
+`llm(spec, **options)` returns an `LLM` instance. `spec` is `"<provider>:<model>"` (`openai` / `openrouter` / `anthropic` (alias `claude`) / `google` / `lmstudio` / `ollama` / `strata`). `lmstudio` / `ollama` / `strata` target local servers; an API key is optional. You can also construct `LLM(spec, ...)` directly.
 
 Main options at creation time (keyword arguments):
 

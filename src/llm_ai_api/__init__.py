@@ -23,10 +23,13 @@ from .errors import (
 )
 from .google import GoogleClient
 from .llm import LLM, llm
+from .lmstudio import LMStudioClient
 from .log import JSONLLog, get_log, set_log
 from .lang import get_language, set_language
+from .ollama import OllamaClient
 from .openai import OpenAIClient
 from .openrouter import OpenRouterClient
+from .strata import StrataClient
 from .types import ChatChunk, ChatResult, SSEEvent, Usage
 
 __all__ = [
@@ -49,6 +52,9 @@ __all__ = [
     "OpenRouterClient",
     "AnthropicClient",
     "GoogleClient",
+    "LMStudioClient",
+    "OllamaClient",
+    "StrataClient",
     "ChatResult",
     "ChatChunk",
     "SSEEvent",
