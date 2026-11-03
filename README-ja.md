@@ -2,13 +2,14 @@
 
 [![PyPI](https://img.shields.io/pypi/v/llm-ai-api)](https://pypi.org/project/llm-ai-api/)
 
-OpenAI / OpenRouter / Claude (Anthropic) / Google の API を呼び出す、薄くて壊れにくい HTTP ラッパーです。公式 SDK を使わず、依存は `httpx` のみです。
+OpenAI / OpenRouter / Claude (Anthropic) / Google の API と、Ollama / LM Studio / Strata のローカル LLM を同じ書き方で呼び出せる、薄くて壊れにくい HTTP ラッパーです。公式 SDK を使わず、依存は `httpx` のみです。
 
 [English](README.md)
 
 ## このパッケージを使うメリット
 
 - **プロバイダーごとの切り替えコードが減る**: `llm("openai:gpt-6-luna")`、`llm("openrouter:anthropic/claude-sonnet-5.5")`、`llm("claude:claude-sonnet-5-5")`、`llm("google:gemini-3.8-flash")` のように、モデル文字列を変えるだけで同じ `ask()` / `chat()` / `ask_stream()` が使えます。
+- **ローカル LLM にも対応**: Ollama、LM Studio、Strata の OpenAI 互換サーバーを、クラウドと同じ `llm()` インターフェイスで使えます。
 - **モデルごとのパラメータ回避コードが不要**: 指定していないパラメータは送信しません。さらに v0.4.0 からは、公式仕様で拒否されると確認したパラメータ（`temperature` や `top_p` など）はルール表に従って、明示的に渡しても送信しないため、呼び出し側で回避コード（`_is_no_temperature()` など）を自前で書く必要がありません。
 - **SQLite キャッシュと JSON Lines ログを標準搭載**: `set_cache()`（または `cache=`）による SQLite レスポンスキャッシュ（API キーから作った鍵で暗号化。ストリーミングもキャッシュ可能）や、`set_log()`（または `log=`）による JSON Lines 入出力ログが組み込まれています。
 - **依存が軽い（`httpx` のみ）**: 依存は `httpx` のみで、公式の `openai` や `anthropic` パッケージなどは不要です。インストールが軽く、依存関係の競合が起きにくくなります。
@@ -31,7 +32,7 @@ print(luna.ask("可愛い犬の名前を考えて"))
 ```
 
 API キーは環境変数（`OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`（または `GOOGLE_API_KEY`））で渡します。
-モデルは `"<プロバイダー>:<モデル名>"` で指定します（`openai` / `openrouter` / `anthropic`（別名 `claude`） / `google` / `lmstudio` / `ollama` / `strata`）。`lmstudio`（LM Studio、`http://localhost:1234/v1`）、`ollama`（Ollama、`http://localhost:11434/v1`）、`strata`（Strata、`http://127.0.0.1:47831/v1`）はローカルサーバー向けで、API キーは不要です（必要な構成では環境変数 `LMSTUDIO_API_KEY` / `OLLAMA_API_KEY` / `STRATA_API_KEY` で指定できます）。ローカルサーバーの設定と LAN 越しの接続は、[LM Studio](docs/local_llm-lmstudio-ja.md) / [Ollama](docs/local_llm-ollama-ja.md) / [Strata](docs/local_llm-strata-ja.md) を参照してください。
+モデルは `"<プロバイダー>:<モデル名>"` で指定します（`openai` / `openrouter` / `anthropic`（別名 `claude`） / `google` / `lmstudio` / `ollama` / `strata`）。`lmstudio`（LM Studio、`http://localhost:1234/v1`）、`ollama`（Ollama、`http://localhost:11434/v1`）、`strata`（Strata、`http://127.0.0.1:47831/v1`）はローカルサーバー向けです。認証が必要な構成では環境変数 `LMSTUDIO_API_KEY` / `OLLAMA_API_KEY` / `STRATA_API_KEY` でキーを指定します。ローカルサーバーの設定と LAN 越しの接続は、[LM Studio](docs/local_llm-lmstudio-ja.md) / [Ollama](docs/local_llm-ollama-ja.md) / [Strata](docs/local_llm-strata-ja.md) を参照してください。
 Google Gemini は、Google の OpenAI 互換エンドポイント経由で呼び出します。
 API キーの設定方法など、最初から順に試す手順は[チュートリアル](docs/tutorial-ja.md)を参照してください。ドキュメント全体の一覧は [docs/README-ja.md](docs/README-ja.md) にあります。
 

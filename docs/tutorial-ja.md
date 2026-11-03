@@ -12,7 +12,7 @@ pip install llm-ai-api
 
 Python 3.9 以上が必要です。依存は `httpx` だけです。インポート名は `llm_ai_api` です。
 
-API キーは環境変数で渡します。使うプロバイダーのものだけ設定してください。
+クラウド API のキーは環境変数で渡します。使うプロバイダーのものだけ設定してください。ローカル LLM の設定は後述します。
 
 | プロバイダー | 環境変数 |
 |---|---|
@@ -38,7 +38,7 @@ print(m.ask("可愛い犬の名前を考えて"))
 
 モデルは `"<プロバイダー>:<モデル名>"` で指定します。`ask()` は回答のテキスト（`str`）だけを返します。
 
-API キーが見つからないと、`llm()` を呼んだ時点でエラーになります。
+この OpenAI の例では、API キーが見つからないと `llm()` を呼んだ時点でエラーになります。
 
 ## 3. モデルを変える
 
@@ -67,6 +67,24 @@ print(m.ask("可愛い犬の名前を考えて"))
 この例には `GEMINI_API_KEY`（または `GOOGLE_API_KEY`）が必要です。
 
 定数は例です。載っていないモデルも、`llm("openai:新しいモデル名")` のように文字列でそのまま指定できます。使えるモデル ID は、各プロバイダーのモデル一覧で確認してください。
+
+### ローカル LLM を使う
+
+Ollama、LM Studio、Strata の OpenAI 互換サーバーも同じ `llm()` で使えます。先に使用するサーバーを起動し、モデルをダウンロードまたは読み込んでください。以下はそれぞれの例です。モデル名はサーバーで利用できる名前に置き換えます。
+
+```python
+from llm_ai_api import llm
+
+with llm("ollama:gemma4:e2b") as m:
+    print(m.ask("こんにちは"))
+
+# LM Studio: llm("lmstudio:google/gemma-4-e4b")
+# Strata:    llm("strata:iq3_s")
+```
+
+同じマシン上の既定の接続先は、Ollama が `http://localhost:11434/v1`、LM Studio が `http://localhost:1234/v1`、Strata が `http://127.0.0.1:47831/v1`（共有オフ）です。認証を使わないローカル構成ではキーの設定は不要です。LM Studio や Strata で認証を有効にした場合、または Ollama の前に認証付きプロキシを置いた場合は、それぞれ `LMSTUDIO_API_KEY`、`STRATA_API_KEY`、`OLLAMA_API_KEY` を設定してください。
+
+別のマシンに接続するときは、対応する `OLLAMA_BASE_URL` / `LMSTUDIO_BASE_URL` / `STRATA_BASE_URL` を設定します。Strata は共有オンでポートが `47832` に変わります。起動方法、認証、LAN 接続の詳細は [Ollama](local_llm-ollama-ja.md) / [LM Studio](local_llm-lmstudio-ja.md) / [Strata](local_llm-strata-ja.md) を参照してください。
 
 ## 4. 会話を続ける
 
