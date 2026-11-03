@@ -1,7 +1,7 @@
 """Try ask(), chat(), and ask_stream() with a local Strata API.
 
 Usage:
-    STRATA_BASE_URL=http://127.0.0.1:8080/v1 python examples/local-llm-strata.py MODEL_NAME
+    STRATA_BASE_URL=http://127.0.0.1:47831/v1 python examples/local-llm-strata.py $STRATA_MODEL
 
 Set STRATA_BASE_URL to the server's base URL. STRATA_API_KEY is optional.
 The model can also be set with STRATA_MODEL.
