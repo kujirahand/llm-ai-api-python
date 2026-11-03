@@ -7,8 +7,9 @@ Start the server first (LM Studio's Developer tab, or `lms server start`).
 The library default (http://localhost:1234/v1) matches LM Studio's default
 port, so no settings are needed on the machine that runs LM Studio. Set
 LMSTUDIO_BASE_URL when the server runs on another machine or listens on
-another port. LMSTUDIO_API_KEY is optional: LM Studio accepts any key unless
-you turn authentication on. The model can also be set with LMSTUDIO_MODEL.
+another port. LMSTUDIO_API_KEY is only needed when "Require Authentication"
+is on in LM Studio's server settings (LM Studio's default is off, and then no
+token is required). The model can also be set with LMSTUDIO_MODEL.
 """
 
 import os
