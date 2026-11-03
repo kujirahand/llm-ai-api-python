@@ -31,7 +31,7 @@ print(luna.ask("Come up with a cute name for a dog"))
 ```
 
 Set the API key via an environment variable (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`).
-The model is always `"<provider>:<model>"` (providers: `openai`, `openrouter`, `anthropic` / `claude`, `google`, `lmstudio`, `ollama`, `strata`). `lmstudio` (LM Studio, `http://localhost:1234/v1`), `ollama` (Ollama, `http://localhost:11434/v1`) and `strata` (Strata, `http://127.0.0.1:8080/v1`) target local servers and need no API key (set `LMSTUDIO_API_KEY` / `OLLAMA_API_KEY` / `STRATA_API_KEY` if your setup requires one).
+The model is always `"<provider>:<model>"` (providers: `openai`, `openrouter`, `anthropic` / `claude`, `google`, `lmstudio`, `ollama`, `strata`). `lmstudio` (LM Studio, `http://localhost:1234/v1`), `ollama` (Ollama, `http://localhost:11434/v1`) and `strata` (Strata, `http://127.0.0.1:47831/v1`) target local servers and need no API key (set `LMSTUDIO_API_KEY` / `OLLAMA_API_KEY` / `STRATA_API_KEY` if your setup requires one).
 Google Gemini is called through Google's OpenAI-compatible endpoint.
 For step-by-step setup, including how to configure an API key, see the [Tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md).
 

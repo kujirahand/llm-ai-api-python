@@ -13,13 +13,13 @@ m = llm("strata:iq3_s")  # "strata:<model name>"
 print(m.ask("Suggest a cute name for a dog"))
 ```
 
-Without any settings, the client connects to `http://127.0.0.1:8080/v1` and sends `local` as the API key. Strata does not need a real key unless you turned authentication on.
+Without any settings, the client connects to `http://127.0.0.1:47831/v1` and sends `local` as the API key. That is the port Strata listens on when sharing is off (see note 1), so no environment variable is needed on the machine that runs Strata. Strata does not need a real key unless you turned authentication on.
 
 ## 2. Settings
 
 | Environment variable | Meaning | Default |
 |---|---|---|
-| `STRATA_BASE_URL` | Base URL of the Strata API (include `/v1`) | `http://127.0.0.1:8080/v1` |
+| `STRATA_BASE_URL` | Base URL of the Strata API (include `/v1`) | `http://127.0.0.1:47831/v1` |
 | `STRATA_API_KEY` | API key. Optional: only needed if you set one in Strata | `local` (sent when unset) |
 | `STRATA_MODEL` | Model name. Only used by `examples/local-llm-strata.py`; the library has no default model | none |
 
@@ -53,7 +53,7 @@ python examples/local-llm-strata.py "$STRATA_MODEL"
 ### Notes
 
 1. **The port number changes when you turn on sharing.**
-   With sharing off, Strata listens on port `47831` on the local machine only. When you set the local network to "Share" (see note 2), the port becomes `47832`. So `47831` is for use on the Strata machine itself, and `47832` is for other machines on the LAN. Neither is the library default (`8080`), so set `STRATA_BASE_URL` explicitly. If the port does not match, check the address shown in Strata's settings.
+   With sharing off, Strata listens on port `47831` on the local machine only, and that is also this library's default. When you set the local network to "Share" (see note 2), the port becomes `47832`. So the default URL only works on the Strata machine itself: over the LAN, set `STRATA_BASE_URL` to the server's address with port `47832`. If the port does not match, check the address shown in Strata's settings.
 2. **Set the local network to "Share" in Strata's service settings.**
    By default Strata only listens on the local machine. Until you change the local network setting to **Share** in the service settings, other machines cannot connect (the connection is refused or times out, and you get `APIConnectionError` / `APITimeoutError`). Remember that the port changes from `47831` to `47832` at the same time (note 1).
 3. **The API key is optional.**
@@ -66,7 +66,7 @@ python examples/local-llm-strata.py "$STRATA_MODEL"
 
 | Symptom | What to check |
 |---|---|
-| `APIConnectionError` (`code="connection_error"`) right away | Wrong IP or port (`47831` locally, `47832` with sharing on), the local network is not set to "Share", or a firewall blocks the port. |
+| `APIConnectionError` (`code="connection_error"`) right away | Wrong IP or port. The default `http://127.0.0.1:47831/v1` only reaches Strata on the same machine; over the LAN use the server's address with port `47832`. Also check that the local network is set to "Share" and that a firewall does not block the port. |
 | `APITimeoutError` | The machine is unreachable (different network, sleeping), or the model is still loading. Raise `timeout=` if the model is slow to start. |
 | 401 `AuthenticationError` | You enabled an API key in Strata, and `STRATA_API_KEY` is missing or wrong. |
 | 404 `NotFoundError` | `/v1` is missing from the base URL, or the model name is wrong. Check the name Strata lists. |

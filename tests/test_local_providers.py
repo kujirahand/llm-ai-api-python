@@ -39,7 +39,7 @@ class LocalProviderTest(unittest.TestCase):
         (
             "strata",
             StrataClient,
-            "http://127.0.0.1:8080/v1/chat/completions",
+            "http://127.0.0.1:47831/v1/chat/completions",
             "STRATA_API_KEY",
             "STRATA_BASE_URL",
             "local",
