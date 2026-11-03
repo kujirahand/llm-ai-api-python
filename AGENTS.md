@@ -130,6 +130,8 @@ llm-ai-api-python/
 │   ├── test_hardening.py     # キャッシュのファイル権限・WAL・サイズ上限・一括 XOR（#33）
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
 ├── docs/
+│   ├── README.md        # docs の索引（英語）
+│   ├── README-ja.md     # 同（日本語）
 │   ├── publish.md       # PyPI への公開手順
 │   ├── api.md           # 公開 API の一覧（英語）
 │   ├── api-ja.md        # 同（日本語）
@@ -147,8 +149,14 @@ llm-ai-api-python/
 │   ├── io_cache-ja.md   # 同（日本語）
 │   ├── io_logs.md       # 入出力ログ（英語）
 │   ├── io_logs-ja.md    # 同（日本語）
-│   ├── local_llm-strata.md    # Strata の設定と LAN 越しの接続（英語）
-│   └── local_llm-strata-ja.md # 同（日本語）
+│   ├── tutorial.md      # 最初から試すチュートリアル（英語）
+│   ├── tutorial-ja.md   # 同（日本語）
+│   ├── local_llm-lmstudio.md    # LM Studio の設定（API トークン）と LAN 越しの接続（英語）
+│   ├── local_llm-lmstudio-ja.md # 同（日本語）
+│   ├── local_llm-ollama.md      # Ollama の設定（キー認証が無い点）と LAN 越しの接続（英語）
+│   ├── local_llm-ollama-ja.md   # 同（日本語）
+│   ├── local_llm-strata.md      # Strata の設定と LAN 越しの接続（英語）
+│   └── local_llm-strata-ja.md   # 同（日本語）
 └── examples/                # 使い方のサンプル（コメントは英語。_common.py は共通ヘルパー）
 ```
 
@@ -224,7 +232,7 @@ async with llm("openai:gpt-6-luna") as m:
 - `aask_stream()` / `achat_stream()` は最初の反復で通信を始めるので、接続エラーや HTTP エラーも最初の反復で出る（同期版 `ask_stream()` / `chat_stream()` は呼び出し時）。途中でやめるときは `await stream.aclose()` を呼ぶ。キャンセルされたストリームはレスポンスを閉じ、キャッシュ・ログに残さない。閉じずに捨てられた `_AsyncEventStream` は、最後の手段として `__del__` から生成時のイベントループに `resp.aclose()` を予約する（ループがなければ `ResourceWarning`）。この回収経路は `stream_end` を出さない（await できないため）。`request_id` はヘッダー受信後にイテレータへ入る（5.9）。
 - イベントループをまたいで使わない。`asyncio.run()` ごとに新しい `llm()` を作る。
 - 構造化出力（#60）: `chat()` / `achat()` はキーワード専用の `schema=None` を受け取る。dict は JSON Schema として無加工で送信し、`model_json_schema()` と `model_validate_json()` を持つモデルクラスは strict 用に正規化（object の `additionalProperties=False`、全プロパティ required 化、任意項目の nullable 化、プロパティの `default` 除去）して送信し、応答を検証する。成功時は `ChatResult.parsed` に値を入れる。プロバイダー差分（OpenAI 系は `response_format`、Anthropic は `output_config.format`）は LLM 層（`_structured.py`）で `extra` に注入し、利用者の `extra` が最後に勝つ。拒否・未完了・JSON/検証失敗は `StructuredOutputError`（コードは `output_refused` / `output_incomplete` / `invalid_structured_output`）、不正な schema 引数は `LLMConfigError(code="invalid_schema")`。`ask` 系・ストリーミング系は対応しない。利用者向けの説明は docs/structured.md / structured-ja.md。
-- ローカルプロバイダー（#73 / #74 / #75）: `lmstudio` / `ollama` / `strata` は OpenAI 互換のローカルサーバー向けで、`OpenAICompatClient` の薄いサブクラスとして実装する（各社のネイティブ API は対象外）。API キーは任意: `BaseClient` / `_AsyncBaseClient` のクラス属性 `api_key_default`（既定 None）を、この3プロバイダーだけが設定し、キー解決は「明示引数 → 環境変数 → `api_key_default` → `missing_api_key` エラー」の順。接続先は `LMSTUDIO_BASE_URL` / `OLLAMA_BASE_URL` / `STRATA_BASE_URL` で変更できる。`max_tokens_field` 等は上書きしない（`max_tokens` のまま）。Strata の既定 URL は Strata 本体が共有オフで待ち受けるポートと同じ `http://127.0.0.1:47831/v1`（同じマシンからなら無設定でつながる）。LAN 越し（共有オンでポート `47832`）は `STRATA_BASE_URL` の指定が必須で、既定値ではつながらない（docs/local_llm-strata.md / docs/local_llm-strata-ja.md を参照）。
+- ローカルプロバイダー（#73 / #74 / #75）: `lmstudio` / `ollama` / `strata` は OpenAI 互換のローカルサーバー向けで、`OpenAICompatClient` の薄いサブクラスとして実装する（各社のネイティブ API は対象外）。API キーは任意: `BaseClient` / `_AsyncBaseClient` のクラス属性 `api_key_default`（既定 None）を、この3プロバイダーだけが設定し、キー解決は「明示引数 → 環境変数 → `api_key_default` → `missing_api_key` エラー」の順。接続先は `LMSTUDIO_BASE_URL` / `OLLAMA_BASE_URL` / `STRATA_BASE_URL` で変更できる。`max_tokens_field` 等は上書きしない（`max_tokens` のまま）。Strata の既定 URL は Strata 本体が共有オフで待ち受けるポートと同じ `http://127.0.0.1:47831/v1`（同じマシンからなら無設定でつながる）。LAN 越し（共有オンでポート `47832`）は `STRATA_BASE_URL` の指定が必須で、既定値ではつながらない。LM Studio は「Require Authentication」がオンの構成だと API トークンが必要で、既定の仮キー `lm-studio` は 401 になる。Ollama のローカルサーバーはキーを一切チェックしない（認証をオンにする機能が無い）。利用者向けの説明は docs/local_llm-lmstudio.md / -ja.md、docs/local_llm-ollama.md / -ja.md、docs/local_llm-strata.md / -ja.md。
 - 画像入力（#58）: `ask()` / `ask_stream()` / `aask()` / `aask_stream()`（旧名 `stream()` / `astream()` も）はキーワード専用の `images=None` を受け取る（`chat()` 系にはない。新しい公開名は増やさない）。要素はファイルのパス（`str` / `os.PathLike`）、画像の `bytes`、`http(s)://` で始まる URL 文字列で、リストで渡す。`None` または空なら従来と完全に同じ（content は文字列、キャッシュキーも不変）。非空なら user メッセージの content を `[{"type": "text", ...}, 画像パート...]`（指定順）にする。形式は LLM 層（`_media.py`）で組み立て、プロバイダー層・生レイヤーは無変換: OpenAI 系（`openai` / `openrouter` / `google`）は `image_url`（data URL または URL）、Anthropic は `image` の `source`（`base64` または `url`）。media type は先頭バイトのシグネチャ（PNG / JPEG / GIF / WEBP）、だめなら拡張子で判定し、不明・読めないファイル・リストでない `images`・不正な要素・文字列でない prompt（messages のリスト）との併用は `LLMConfigError(code="invalid_media")`。独自の件数・サイズ上限は設けない。非同期はファイル読み込みだけ `asyncio.to_thread()` で行い、`aask_stream()` は引数の形を呼び出し時に検査して、ファイルは最初の反復で読む。利用者向けの説明は docs/multimodal.md / multimodal-ja.md。
 - 音声の文字起こし（#58）: `LLM.transcribe(file, *, extra=None, timeout=None) -> str` / `atranscribe()`。`file` はパス（`str` / `os.PathLike`）または音声の `bytes`。**OpenAI のみ**で、他のプロバイダーは通信せずに `LLMConfigError(code="unsupported_modality")`。`/audio/transcriptions` へ multipart で送る（`model`、`response_format="json"`、ファイル `file`）。`extra` はフォームフィールドに展開する（スカラーは文字列化、bool は `true` / `false`、リスト・タプルは `キー[]` の繰り返し、`None` は省略、展開できない値は `invalid_media`）。形式は `_media.py` でシグネチャ（WAV / MP3 / FLAC / OGG / WEBM / M4A）→ 拡張子の順に判定し、パスはファイル名をそのまま、`bytes` は `audio.<拡張子>` を送る。判定不能・読めない・型違いは `invalid_media`。応答の `text`（文字列でなければ `invalid_json_response`）を返す。`chat()` の仕組みを通さず `client.request()` を直接使うため、キャッシュ・入出力ログ・singleflight の対象外（イベントは生レイヤーのもの）。非同期はファイル読み込みだけ `asyncio.to_thread()`。生レイヤーの `request()` は `files={フィールド名: (ファイル名, bytes, media_type)}` と `form_data=[(名前, 値), ...]` を受け取れる（同期・非同期とも。指定時は `body` が `None` でなければ `LLMConfigError(code="invalid_option")`。JSON の `Content-Type` は付けず httpx が boundary 付きで付ける。リトライごとに作り直す）。利用者向けの説明は docs/multimodal.md / multimodal-ja.md。
 - 実装は `_async_http.py` / `_async_clients.py`（内部専用）。ボディ生成とパースは同期版の関数を共用する。ストリームは async generator ではなく `__anext__` / `aclose` を持つ通常のクラスで組む（generator の `finally` で `await` しないため）。Python 3.9 互換のため `anext()` / `contextlib.aclosing` / `asyncio.TaskGroup` / `asyncio.timeout` は使わない。
@@ -572,6 +580,7 @@ LLMError                      # 基底
 - ユーザーに見えるメッセージを追加・変更したら、`lang/en.py` と `lang/ja.py` を更新する。
 - 公開 API を変更したら README-ja.md、README.md とこのファイルを同時に更新する。
 - **README-ja.md（日本語）が元で、README.md（英語）はその翻訳**。README-ja.md を変更したら、同じコミットで README.md にも同じ内容を英語で反映する（片方だけの変更はしない）。見出しの順序・コード例・リンクを両者で揃える。PyPI に表示されるのは README.md。そのため README.md 内のリポジトリ内ファイル・ディレクトリへのリンク（日本語 README、docs、examples など）は、PyPI からも開けるよう `https://github.com/kujirahand/llm-ai-api-python/blob/main/...` またはディレクトリ用の `.../tree/main/...` の絶対 URL にする。相対リンクは使わない。
+- **docs のページも README と同じ方針**（`*-ja.md` が元、`*.md` はその翻訳。見出しの順序・コード例・リンクを両者で揃え、各ページは先頭で英日お互いへリンクする。例外: `publish.md` は日本語のみ）。ページを追加・削除・リネームしたら、同じコミットで `docs/` の一覧（4 章）と索引 `docs/README.md` / `docs/README-ja.md` も更新する。
 - フォーマットは PEP 8 に準拠（ツールは強制しない）。
 
 ## 11. 公式 API 仕様の参照先

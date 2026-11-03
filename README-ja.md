@@ -31,9 +31,9 @@ print(luna.ask("可愛い犬の名前を考えて"))
 ```
 
 API キーは環境変数（`OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`（または `GOOGLE_API_KEY`））で渡します。
-モデルは `"<プロバイダー>:<モデル名>"` で指定します（`openai` / `openrouter` / `anthropic`（別名 `claude`） / `google` / `lmstudio` / `ollama` / `strata`）。`lmstudio`（LM Studio、`http://localhost:1234/v1`）、`ollama`（Ollama、`http://localhost:11434/v1`）、`strata`（Strata、`http://127.0.0.1:47831/v1`）はローカルサーバー向けで、API キーは不要です（必要な構成では環境変数 `LMSTUDIO_API_KEY` / `OLLAMA_API_KEY` / `STRATA_API_KEY` で指定できます）。
+モデルは `"<プロバイダー>:<モデル名>"` で指定します（`openai` / `openrouter` / `anthropic`（別名 `claude`） / `google` / `lmstudio` / `ollama` / `strata`）。`lmstudio`（LM Studio、`http://localhost:1234/v1`）、`ollama`（Ollama、`http://localhost:11434/v1`）、`strata`（Strata、`http://127.0.0.1:47831/v1`）はローカルサーバー向けで、API キーは不要です（必要な構成では環境変数 `LMSTUDIO_API_KEY` / `OLLAMA_API_KEY` / `STRATA_API_KEY` で指定できます）。ローカルサーバーの設定と LAN 越しの接続は、[LM Studio](docs/local_llm-lmstudio-ja.md) / [Ollama](docs/local_llm-ollama-ja.md) / [Strata](docs/local_llm-strata-ja.md) を参照してください。
 Google Gemini は、Google の OpenAI 互換エンドポイント経由で呼び出します。
-API キーの設定方法など、最初から順に試す手順は[チュートリアル](docs/tutorial-ja.md)を参照してください。
+API キーの設定方法など、最初から順に試す手順は[チュートリアル](docs/tutorial-ja.md)を参照してください。ドキュメント全体の一覧は [docs/README-ja.md](docs/README-ja.md) にあります。
 
 ### 主なメソッド
 
@@ -210,18 +210,22 @@ m = llm("openai:gpt-6-luna", connection={"max_connections": 5})        # この�
 
 ## サンプル
 
-[`examples/`](examples/) を参照してください。どのスクリプトも、引数 `プロバイダー:モデル`（または環境変数 `LLM_MODEL`）でモデルを指定します。
+[`examples/`](examples/) を参照してください。多くのスクリプトは、引数 `プロバイダー:モデル`（または環境変数 `LLM_MODEL`）でモデルを指定します。`local-llm-*.py` はモデル名だけを受け取り（環境変数 `LMSTUDIO_MODEL` / `OLLAMA_MODEL` / `STRATA_MODEL` でも指定できます）、それぞれのローカルサーバーが起動していることを前提とします。
 
 | スクリプト | 内容 |
 |---|---|
 | `hello.py` | 挨拶を返してもらう |
 | `hello_stream.py` | ストリーミングで返信を表示する |
 | `hello_async.py` | `asyncio.run` と `async with` で `aask()` と `aask_stream()` を使う |
+| `ask.py` | 引数で指定した任意のモデルで `ask()` と `ask_stream()` を試す |
 | `chat_history.py` | チャット履歴に基づいて返信する |
 | `ocr_test.py` | 画像に書かれた文字を読み取る |
 | `image_desc.py` | 画像の内容を説明してもらう |
 | `models_test.py` | `models` の定数を使い、2 つのモデル（GPT-6 Luna と Claude Haiku）に朝食のメニューについて意見交換してもらう（両方の API キーが必要） |
 | `cache_demo.py` | 同じ質問を 2 回して、2 回目がキャッシュから返ることを確かめる |
+| `local-llm-lmstudio.py` | ローカルの LM Studio サーバーで `ask()` / `chat()` / `ask_stream()` を試す（[docs/local_llm-lmstudio-ja.md](docs/local_llm-lmstudio-ja.md)） |
+| `local-llm-ollama.py` | ローカルの Ollama サーバーで `ask()` / `chat()` / `ask_stream()` を試す（[docs/local_llm-ollama-ja.md](docs/local_llm-ollama-ja.md)） |
+| `local-llm-strata.py` | ローカルの Strata サーバーで `ask()` / `chat()` / `ask_stream()` を試す（[docs/local_llm-strata-ja.md](docs/local_llm-strata-ja.md)） |
 
 `ask(prompt, images=[...])` は、画像（ファイルのパス・bytes・http(s) の URL）をプロバイダーごとの形式に組み立てて送ります（[docs/multimodal-ja.md](docs/multimodal-ja.md)）。`chat()` に渡す `content` のネイティブ dict はプロバイダー間で変換されません。
 
