@@ -12,7 +12,7 @@ pip install llm-ai-api
 
 Python 3.9 or later is required. The only dependency is `httpx`. The import name is `llm_ai_api`.
 
-Pass cloud API keys through environment variables. Set only the ones for the providers you use. Local LLM setup is covered below.
+Set environment variables for the providers you use. For local LLMs, set them when using authentication or a non-default address; see the setup below.
 
 | Provider | Environment variable |
 |---|---|
@@ -20,6 +20,9 @@ Pass cloud API keys through environment variables. Set only the ones for the pro
 | `openrouter` | `OPENROUTER_API_KEY` |
 | `anthropic` (alias `claude`) | `ANTHROPIC_API_KEY` |
 | `google` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) |
+| `ollama` (Ollama) | `OLLAMA_API_KEY`, `OLLAMA_BASE_URL` (as needed) |
+| `lmstudio` (LM Studio) | `LMSTUDIO_API_KEY`, `LMSTUDIO_BASE_URL` (as needed) |
+| `strata` (Strata) | `STRATA_API_KEY`, `STRATA_BASE_URL` (as needed) |
 
 ```sh
 export OPENAI_API_KEY="sk-..."

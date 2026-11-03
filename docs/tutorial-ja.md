@@ -12,7 +12,7 @@ pip install llm-ai-api
 
 Python 3.9 以上が必要です。依存は `httpx` だけです。インポート名は `llm_ai_api` です。
 
-クラウド API のキーは環境変数で渡します。使うプロバイダーのものだけ設定してください。ローカル LLM の設定は後述します。
+使うプロバイダーに応じて環境変数を設定します。ローカル LLM では、認証や既定以外の接続先を使う場合に設定してください。詳しくは後述します。
 
 | プロバイダー | 環境変数 |
 |---|---|
@@ -20,6 +20,9 @@ Python 3.9 以上が必要です。依存は `httpx` だけです。インポー
 | `openrouter` | `OPENROUTER_API_KEY` |
 | `anthropic`（別名 `claude`） | `ANTHROPIC_API_KEY` |
 | `google` | `GEMINI_API_KEY`（なければ `GOOGLE_API_KEY`） |
+| `ollama`（Ollama） | `OLLAMA_API_KEY`、`OLLAMA_BASE_URL`（必要に応じて） |
+| `lmstudio`（LM Studio） | `LMSTUDIO_API_KEY`、`LMSTUDIO_BASE_URL`（必要に応じて） |
+| `strata`（Strata） | `STRATA_API_KEY`、`STRATA_BASE_URL`（必要に応じて） |
 
 ```sh
 export OPENAI_API_KEY="sk-..."
