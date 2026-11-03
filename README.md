@@ -31,9 +31,9 @@ print(luna.ask("Come up with a cute name for a dog"))
 ```
 
 Set the API key via an environment variable (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`).
-The model is always `"<provider>:<model>"` (providers: `openai`, `openrouter`, `anthropic` / `claude`, `google`, `lmstudio`, `ollama`, `strata`). `lmstudio` (LM Studio, `http://localhost:1234/v1`), `ollama` (Ollama, `http://localhost:11434/v1`) and `strata` (Strata, `http://127.0.0.1:47831/v1`) target local servers and need no API key (set `LMSTUDIO_API_KEY` / `OLLAMA_API_KEY` / `STRATA_API_KEY` if your setup requires one).
+The model is always `"<provider>:<model>"` (providers: `openai`, `openrouter`, `anthropic` / `claude`, `google`, `lmstudio`, `ollama`, `strata`). `lmstudio` (LM Studio, `http://localhost:1234/v1`), `ollama` (Ollama, `http://localhost:11434/v1`) and `strata` (Strata, `http://127.0.0.1:47831/v1`) target local servers and need no API key (set `LMSTUDIO_API_KEY` / `OLLAMA_API_KEY` / `STRATA_API_KEY` if your setup requires one). For local server settings and LAN access, see [LM Studio](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-lmstudio.md), [Ollama](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-ollama.md) and [Strata](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-strata.md).
 Google Gemini is called through Google's OpenAI-compatible endpoint.
-For step-by-step setup, including how to configure an API key, see the [Tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md).
+For step-by-step setup, including how to configure an API key, see the [Tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md). The full list of documents is in [docs/README.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/README.md).
 
 ### Main methods
 
@@ -210,18 +210,22 @@ The available keys are `max_connections` (default 100), `max_keepalive_connectio
 
 ## Examples
 
-See [`examples/`](https://github.com/kujirahand/llm-ai-api-python/tree/main/examples). Each script takes a `provider:model` argument (or the `LLM_MODEL` env var).
+See [`examples/`](https://github.com/kujirahand/llm-ai-api-python/tree/main/examples). Most scripts take a `provider:model` argument (or the `LLM_MODEL` env var). The `local-llm-*.py` scripts take a model name only (or `LMSTUDIO_MODEL` / `OLLAMA_MODEL` / `STRATA_MODEL`) and expect the matching local server to be running.
 
 | Script | What it shows |
 |---|---|
 | `hello.py` | Ask for a greeting |
 | `hello_stream.py` | Print the reply as it streams |
 | `hello_async.py` | `aask()` and `aask_stream()` with `asyncio.run` and `async with` |
+| `ask.py` | Try `ask()` and `ask_stream()` with any model you pass as an argument |
 | `chat_history.py` | Reply based on a chat history |
 | `ocr_test.py` | Read the text in an image |
 | `image_desc.py` | Describe an image |
 | `models_test.py` | Two models (GPT-6 Luna and Claude Haiku) discuss the breakfast menu, using the `models` constants (needs both API keys) |
 | `cache_demo.py` | Ask the same question twice and see the second answer come from the cache |
+| `local-llm-lmstudio.py` | Try `ask()` / `chat()` / `ask_stream()` against a local LM Studio server ([docs/local_llm-lmstudio.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-lmstudio.md)) |
+| `local-llm-ollama.py` | Try `ask()` / `chat()` / `ask_stream()` against a local Ollama server ([docs/local_llm-ollama.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-ollama.md)) |
+| `local-llm-strata.py` | Try `ask()` / `chat()` / `ask_stream()` against a local Strata server ([docs/local_llm-strata.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-strata.md)) |
 
 `ask(prompt, images=[...])` builds each provider's image format from file paths, bytes, or http(s) URLs ([docs/multimodal.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/multimodal.md)). Native `content` dicts passed to `chat()` are not converted between providers.
 
