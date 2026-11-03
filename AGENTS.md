@@ -146,7 +146,9 @@ llm-ai-api-python/
 │   ├── io_cache.md      # 応答のローカルキャッシュ（英語）
 │   ├── io_cache-ja.md   # 同（日本語）
 │   ├── io_logs.md       # 入出力ログ（英語）
-│   └── io_logs-ja.md    # 同（日本語）
+│   ├── io_logs-ja.md    # 同（日本語）
+│   ├── local_llm-strata.md    # Strata の設定と LAN 越しの接続（英語）
+│   └── local_llm-strata-ja.md # 同（日本語）
 └── examples/                # 使い方のサンプル（コメントは英語。_common.py は共通ヘルパー）
 ```
 
