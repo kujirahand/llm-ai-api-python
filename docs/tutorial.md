@@ -12,7 +12,7 @@ pip install llm-ai-api
 
 Python 3.9 or later is required. The only dependency is `httpx`. The import name is `llm_ai_api`.
 
-Pass API keys through environment variables. Set only the ones for the providers you use.
+Set environment variables for the providers you use. For local LLMs, set them when using authentication or a non-default address; see the setup below.
 
 | Provider | Environment variable |
 |---|---|
@@ -20,6 +20,9 @@ Pass API keys through environment variables. Set only the ones for the providers
 | `openrouter` | `OPENROUTER_API_KEY` |
 | `anthropic` (alias `claude`) | `ANTHROPIC_API_KEY` |
 | `google` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) |
+| `ollama` (Ollama) | `OLLAMA_API_KEY`, `OLLAMA_BASE_URL` (as needed) |
+| `lmstudio` (LM Studio) | `LMSTUDIO_API_KEY`, `LMSTUDIO_BASE_URL` (as needed) |
+| `strata` (Strata) | `STRATA_API_KEY`, `STRATA_BASE_URL` (as needed) |
 
 ```sh
 export OPENAI_API_KEY="sk-..."
@@ -38,7 +41,7 @@ print(m.ask("Come up with a cute name for a dog"))
 
 The model is always `"<provider>:<model>"`. `ask()` returns only the text of the answer (a `str`).
 
-If no API key is found, `llm()` raises an error right away.
+For this OpenAI example, `llm()` raises an error right away if no API key is found.
 
 ## 3. Switch models
 
@@ -67,6 +70,24 @@ print(m.ask("Come up with a cute name for a dog"))
 This example needs `GEMINI_API_KEY` (or `GOOGLE_API_KEY`).
 
 The constants are examples. Any other model works as a plain string, e.g. `llm("openai:some-new-model")`. Check each provider's model list for the model IDs you can use.
+
+### Use a local LLM
+
+The same `llm()` interface works with OpenAI-compatible servers from Ollama, LM Studio, and Strata. Start the server you want to use and download or load a model first. The following examples use one model per server; replace the names with models available on your server.
+
+```python
+from llm_ai_api import llm
+
+with llm("ollama:gemma4:e2b") as m:
+    print(m.ask("Hello"))
+
+# LM Studio: llm("lmstudio:google/gemma-4-e4b")
+# Strata:    llm("strata:iq3_s")
+```
+
+The default addresses on the same machine are `http://localhost:11434/v1` for Ollama, `http://localhost:1234/v1` for LM Studio, and `http://127.0.0.1:47831/v1` for Strata with sharing off. No key needs to be configured for a local setup without authentication. If you enable authentication in LM Studio or Strata, or put an authenticated proxy in front of Ollama, set `LMSTUDIO_API_KEY`, `STRATA_API_KEY`, or `OLLAMA_API_KEY` respectively.
+
+To connect to another machine, set the corresponding `OLLAMA_BASE_URL` / `LMSTUDIO_BASE_URL` / `STRATA_BASE_URL`. Strata changes to port `47832` when sharing is on. For startup, authentication, and LAN details, see [Ollama](local_llm-ollama.md), [LM Studio](local_llm-lmstudio.md), and [Strata](local_llm-strata.md).
 
 ## 4. Continue a conversation
 
