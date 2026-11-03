@@ -4,7 +4,7 @@
 
 Guides for [`llm-ai-api`](../README.md), the thin HTTP wrapper for OpenAI, OpenRouter, Anthropic, Google Gemini, LM Studio, Ollama and Strata.
 
-Every page has an English and a Japanese version (`foo.md` and `foo-ja.md`) and each links to its counterpart at the top. When you change one page, change the other one in the same commit (`publish.md` is the exception: Japanese only).
+The guides have an English and a Japanese version (`foo.md` and `foo-ja.md`) and each links to its counterpart at the top. When you change one page, change the other one in the same commit.
 
 ## Start here
 
@@ -38,12 +38,6 @@ OpenAI-compatible servers on your own machine. No API key is needed unless you t
 | [Strata](local_llm-strata.md) / [Strata](local_llm-strata-ja.md) | `llm("strata:<model>")` on `http://127.0.0.1:47831/v1`, `STRATA_BASE_URL` / `STRATA_API_KEY` / `STRATA_MODEL`, and connecting over the LAN, where the port changes to `47832` when sharing is on. |
 
 Each page ends with a troubleshooting table and a `curl` command to check the connection without this library. Runnable samples: [`examples/local-llm-lmstudio.py`](../examples/local-llm-lmstudio.py), [`examples/local-llm-ollama.py`](../examples/local-llm-ollama.py), [`examples/local-llm-strata.py`](../examples/local-llm-strata.py).
-
-## For maintainers
-
-| Page | What it covers |
-|---|---|
-| [PyPI への公開手順](publish.md) | Releasing a version to PyPI (version bumps in two places, building, `twine upload`). Japanese only. |
 
 ---
 

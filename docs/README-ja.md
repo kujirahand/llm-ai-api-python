@@ -4,7 +4,7 @@ English: [README.md](README.md)
 
 [`llm-ai-api`](../README-ja.md) のガイドです。OpenAI、OpenRouter、Anthropic、Google Gemini、LM Studio、Ollama、Strata を呼ぶ薄い HTTP ラッパーです。
 
-すべてのページは日本語版（`foo-ja.md`）と英語版（`foo.md`）の 2 つがあり、先頭でお互いへリンクしています。一方を変えたら、同じコミットでもう一方も同じ内容にしてください（`publish.md` は例外で、日本語のみ）。
+ガイドには日本語版（`foo-ja.md`）と英語版（`foo.md`）があり、先頭でお互いへリンクしています。一方を変えたら、同じコミットでもう一方も同じ内容にしてください。
 
 ## まず読む
 
@@ -38,12 +38,6 @@ English: [README.md](README.md)
 | [Strata（ローカル / LAN の LLM サーバー）を使う](local_llm-strata-ja.md) / [Using Strata](local_llm-strata.md) | `llm("strata:<モデル名>")` と `http://127.0.0.1:47831/v1`。`STRATA_BASE_URL` / `STRATA_API_KEY` / `STRATA_MODEL`、LAN 越しの接続で共有オンになるときポートが `47832` に変わる点。 |
 
 どのページにも、最後に「うまくいかないとき」の表と、本ライブラリを使わずに接続を確かめる `curl` コマンドがあります。実行できるサンプルは [`examples/local-llm-lmstudio.py`](../examples/local-llm-lmstudio.py)、[`examples/local-llm-ollama.py`](../examples/local-llm-ollama.py)、[`examples/local-llm-strata.py`](../examples/local-llm-strata.py) です。
-
-## 開発者向け
-
-| ページ | 内容 |
-|---|---|
-| [PyPI への公開手順](publish.md) | PyPI への公開の手順（バージョンの 2 か所の更新、ビルド、`twine upload`）。日本語のみ。 |
 
 ---
 
