@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Add local OpenAI-compatible providers: `lmstudio` (LM Studio), `ollama` (Ollama) and `strata` (Strata). An API key is optional for these providers (#73, #74, #75).
+- Add local OpenAI-compatible providers: `lmstudio` (LM Studio), `ollama` (Ollama) and `strata` (Strata). An API key is optional for these providers (#73, #74, #75). `strata` defaults to `http://127.0.0.1:47831/v1`, the port Strata listens on with sharing off, so no `STRATA_BASE_URL` is needed on the machine that runs Strata.
 
 - Add remediation hints to the `StructuredOutputError` messages (`output_refused`, `output_incomplete`, `invalid_structured_output`) in English and Japanese, and refine the per-code table in `docs/structured.md` (#70).
 
