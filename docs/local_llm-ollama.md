@@ -72,7 +72,7 @@ python examples/local-llm-ollama.py "$OLLAMA_MODEL"
 2. **The local server has no authentication.** Anyone who can reach the port can run your models. Before binding `0.0.0.0`, make sure the network is one you trust, and keep a firewall in front of it.
 3. **There is no API key authentication to turn on.** Ollama documents the local API as needing no authentication, and it checks no key: requests with no `Authorization` header, with the placeholder this library sends, and with a random string all succeed (checked against Ollama 0.40.13 on 2026-11-03). There is no flag and no environment variable that makes the local server require one. Set `OLLAMA_API_KEY` only when something in front of Ollama expects one — a proxy (see below) — or when you point the base URL at Ollama's hosted API, which does check keys.
 4. **The first request is slow** because Ollama loads the model into memory. Raise `timeout=` for large models.
-5. **The context window is Ollama's default (4096 tokens) unless you raise it** — for example `OLLAMA_CONTEXT_LENGTH=8192 ollama serve`. Short or cut-off answers usually come from that, not from this library.
+5. **The default context length depends on VRAM.** See [Ollama's documentation](https://docs.ollama.com/context-length). You can change it, for example with `OLLAMA_CONTEXT_LENGTH=8192 ollama serve`; a longer context requires more memory.
 6. **Use the address the server machine reports.** `192.168.1.20` is a placeholder.
 
 ### Putting a key in front of Ollama
@@ -83,6 +83,8 @@ Because the server itself cannot check a key, the usual way to protect a network
 server {
     listen 443 ssl;
     server_name ollama.example.com;
+    ssl_certificate /path/to/fullchain.pem;
+    ssl_certificate_key /path/to/privkey.pem;
 
     location / {
         if ($http_authorization != "Bearer <a long random token>") {
@@ -93,6 +95,8 @@ server {
     }
 }
 ```
+
+Replace the certificate and key paths with the actual files for your server.
 
 Then point the client at the proxy and put the token in the key:
 
@@ -117,7 +121,7 @@ Requests without the token come back as 401 `AuthenticationError`, which is the 
 To test the connection without this library:
 
 ```sh
-curl "$OLLAMA_BASE_URL/models"
+curl "${OLLAMA_BASE_URL:-http://localhost:11434/v1}/models" -H "Authorization: Bearer ${OLLAMA_API_KEY:-ollama}"
 ```
 
 If `curl` fails too, the problem is in the network or Ollama's settings, not in `llm-ai-api`.

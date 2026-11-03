@@ -72,7 +72,7 @@ python examples/local-llm-ollama.py "$OLLAMA_MODEL"
 2. **ローカルのサーバーには認証が無い。** ポートに届く人は誰でもモデルを実行できます。`0.0.0.0` にバインドする前に、信頼できるネットワークであることを確認し、ファイアウォールを前に置いてください。
 3. **API キー認証は、そもそもオンにできない。** Ollama はローカル API について「認証は不要」と明記しており、キーを一切チェックしません。`Authorization` ヘッダーを付けないリクエストも、本ライブラリが送る仮の値も、でたらめな文字列も、すべて成功します（Ollama 0.40.13 で 2026-11-03 に確認）。ローカルのサーバーにキーを必須にするオプションも環境変数もありません。`OLLAMA_API_KEY` を設定するのは、Ollama の前に置くプロキシ（下記）がキーを期望する場合か、ベース URL をキーをチェックする Ollama のホスト済み API に向ける場合だけです。
 4. **最初のリクエストは遅い。** Ollama はモデルをメモリに読み込むためです。大きなモデルでは `timeout=` を大きくしてください。
-5. **コンテキストウィンドウは、上げるまで Ollama の既定（4096 トークン）。** 例えば `OLLAMA_CONTEXT_LENGTH=8192 ollama serve`。回答が短い・途中で切れるのは、これが原因であることが多く、本ライブラリの設定ではありません。
+5. **コンテキスト長の既定値は VRAM に依存します。** [Ollama の説明](https://docs.ollama.com/context-length)を参照してください。例えば `OLLAMA_CONTEXT_LENGTH=8192 ollama serve` で変更できます。長くすると必要なメモリも増えます。
 6. **サーバーのマシンが表示するアドレスを使う。** `192.168.1.20` はプレースホルダーです。
 
 ### プロキシでキーをチェックする
@@ -83,6 +83,8 @@ python examples/local-llm-ollama.py "$OLLAMA_MODEL"
 server {
     listen 443 ssl;
     server_name ollama.example.com;
+    ssl_certificate /path/to/fullchain.pem;
+    ssl_certificate_key /path/to/privkey.pem;
 
     location / {
         if ($http_authorization != "Bearer <長いランダムなトークン>") {
@@ -93,6 +95,8 @@ server {
     }
 }
 ```
+
+証明書と秘密鍵のパスは、サーバー用に用意した実際のファイルに置き換えてください。
 
 そのうえで、クライアントをプロキシに向けます:
 
@@ -117,7 +121,7 @@ export OLLAMA_API_KEY="<長いランダムなトークン>"
 このライブラリを使わずに接続だけ確かめるには:
 
 ```sh
-curl "$OLLAMA_BASE_URL/models"
+curl "${OLLAMA_BASE_URL:-http://localhost:11434/v1}/models" -H "Authorization: Bearer ${OLLAMA_API_KEY:-ollama}"
 ```
 
 `curl` でも失敗するなら、原因は `llm-ai-api` ではなく、ネットワークか Ollama の設定です。

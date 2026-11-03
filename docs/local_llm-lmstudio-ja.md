@@ -15,7 +15,7 @@ print(m.ask("可愛い犬の名前を考えて"))
 
 モデル名は LM Studio が表示する名前です（例: `google/gemma-4-e4b`）。名前に `/` が含まれていても問題ありません。最初の `:` だけがプロバイダーとモデルを区切ります。
 
-何も設定しなければ、`http://localhost:1234/v1` に接続し、API キーとして `lm-studio` を送ります。LM Studio 側で「Require Authentication」を有効にするかぎり（注意点 3）、この値はチェックされません。
+何も設定しなければ、`http://localhost:1234/v1` に接続し、API キーとして `lm-studio` を送ります。LM Studio 側で「Require Authentication」が無効なら、この値はチェックされません（注意点 3）。
 
 ### サーバーを起動する
 
@@ -86,11 +86,23 @@ python examples/local-llm-lmstudio.py "$LMSTUDIO_MODEL"
 このライブラリを使わずに接続だけ確かめるには:
 
 ```sh
-curl "$LMSTUDIO_BASE_URL/models" -H "Authorization: Bearer $LMSTUDIO_API_KEY"
+curl "${LMSTUDIO_BASE_URL:-http://localhost:1234/v1}/models" -H "Authorization: Bearer ${LMSTUDIO_API_KEY:-lm-studio}"
 ```
 
 `curl` でも失敗するなら、原因は `llm-ai-api` ではなく、ネットワークか LM Studio の設定です。
 
 ## 5. そのほかの使い方
 
-ストリーミング、メッセージのリストを渡す `chat()`、生リクエストは、ほかのプロバイダーと同じです。[チュートリアル](tutorial-ja.md)と [API リファレンス](api-ja.md)を参照してください。このプロバイダーは `OpenAICompatClient` で動いており、`max_tokens` は `max_tokens` のまま送られます。LM Studio は独自の REST API や Anthropic 互換のエンドポイントも持っています。それらは生レイヤー（`m.client.request(...)`）で呼べます。
+ストリーミング、メッセージのリストを渡す `chat()`、生リクエストは、ほかのプロバイダーと同じです。[チュートリアル](tutorial-ja.md)と [API リファレンス](api-ja.md)を参照してください。このプロバイダーは `OpenAICompatClient` で動いており、`max_tokens` は `max_tokens` のまま送られます。
+
+LM Studio 独自の [REST API](https://lmstudio.ai/docs/developer/rest) は `/api/v1` にあるため、ホストルートをベース URL にした別のクライアントで呼びます。認証がオンなら `LMSTUDIO_API_KEY` にトークンを設定してください。
+
+```python
+from llm_ai_api import LMStudioClient
+
+with LMStudioClient(base_url="http://localhost:1234") as client:
+    result = client.request("/api/v1/chat", {"model": "google/gemma-4-e4b", "input": "こんにちは"})
+    print(result)
+```
+
+既定の `/v1` を含むベース URL では `/v1/api/v1/chat` になるため使えません。Anthropic 互換エンドポイントも生レイヤーで呼べます。パスに合わせてベース URL を指定してください。

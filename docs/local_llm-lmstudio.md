@@ -86,11 +86,23 @@ python examples/local-llm-lmstudio.py "$LMSTUDIO_MODEL"
 To test the connection without this library:
 
 ```sh
-curl "$LMSTUDIO_BASE_URL/models" -H "Authorization: Bearer $LMSTUDIO_API_KEY"
+curl "${LMSTUDIO_BASE_URL:-http://localhost:1234/v1}/models" -H "Authorization: Bearer ${LMSTUDIO_API_KEY:-lm-studio}"
 ```
 
 If `curl` fails too, the problem is in the network or LM Studio's settings, not in `llm-ai-api`.
 
 ## 5. Other usage
 
-Streaming, `chat()` with a message list, and raw requests work the same as for the other providers. See the [tutorial](tutorial.md) and the [API reference](api.md). The provider runs on `OpenAICompatClient`, so `max_tokens` is sent as `max_tokens`. LM Studio also serves its own REST and Anthropic-compatible endpoints; send them with the raw layer (`m.client.request(...)`).
+Streaming, `chat()` with a message list, and raw requests work the same as for the other providers. See the [tutorial](tutorial.md) and the [API reference](api.md). The provider runs on `OpenAICompatClient`, so `max_tokens` is sent as `max_tokens`.
+
+LM Studio's native [REST API](https://lmstudio.ai/docs/developer/rest) uses `/api/v1`, so call it with a separate client whose base URL is the host root. Set `LMSTUDIO_API_KEY` to a token if authentication is enabled.
+
+```python
+from llm_ai_api import LMStudioClient
+
+with LMStudioClient(base_url="http://localhost:1234") as client:
+    result = client.request("/api/v1/chat", {"model": "google/gemma-4-e4b", "input": "Hello"})
+    print(result)
+```
+
+The default base URL includes `/v1` and would produce `/v1/api/v1/chat`. Anthropic-compatible endpoints can also be called through the raw layer; choose a base URL that matches the path.
