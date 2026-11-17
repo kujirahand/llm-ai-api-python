@@ -29,7 +29,7 @@ Note the two similar names: **cache.md** is about the provider's prompt cache (n
 
 ## Local model servers
 
-OpenAI-compatible servers on your own machine. No API key is needed unless you turned authentication on.
+OpenAI-compatible servers on your own machine. No API key is needed unless you turned authentication on. The default connection is plain HTTP, and the library does not verify the server. On a shared machine, or when handling sensitive data, read the notes on each page.
 
 | Page | What it covers |
 |---|---|

@@ -209,6 +209,14 @@ m = llm("openai:gpt-6-luna", connection={"max_connections": 5})        # この�
 
 指定できるのは `max_connections`（既定 100）、`max_keepalive_connections`（既定 20）、`keepalive_expiry`（秒、既定 5.0）、`connect_timeout`（秒、既定 10.0）、`verify`（bool または CA のパス、既定 True）、`cert`（証明書のパスまたは組）、`proxy`（http/https の URL）です。設定はクライアント生成時に解決され、後から `set_connection()` を呼んでも既存のインスタンスには影響しません。`set_connection()` は置き換え式で、引数なしで呼ぶと既定に戻ります。
 
+## セキュリティ上の注意
+
+次の点は、ライブラリ側では意図的に制限していません。アプリで渡す値には注意してください。
+
+- **`base_url`**: スキームやホストの制限はありません。`http://` の外部ホストにも API キーとリクエスト本文が送られます。信頼できる値だけを渡し、利用者入力をそのまま渡さないでください。ホスト系の API では HTTPS を使ってください（[設定リファレンス](docs/config-ja.md)）。
+- **画像・音声**: `images=` のパスや `bytes`、`transcribe()` の音声は、サイズ上限なく全量読み込みます。アプリ側でサイズを確認し、信頼できないパスやアップロードをそのまま渡さないでください（[画像入力](docs/multimodal-ja.md)）。
+- **ローカルプロバイダー**（`lmstudio` / `ollama` / `strata`）: 既定では固定ポートの平文 HTTP に接続し、サーバーの真正性は確認しません。共有マシンでは、同じポートの別プロセスがプロンプトを受け取れることがあります。認証付きプロキシやトークンは接続先の真正性を確かめるものではないので、機密情報を扱うときは各ページの注意も読んでください（[ローカルの LLM サーバー](docs/README-ja.md)）。
+
 ## サンプル
 
 [`examples/`](examples/) を参照してください。多くのスクリプトは、引数 `プロバイダー:モデル`（または環境変数 `LLM_MODEL`）でモデルを指定します。`local-llm-*.py` はモデル名だけを受け取り（環境変数 `LMSTUDIO_MODEL` / `OLLAMA_MODEL` / `STRATA_MODEL` でも指定できます）、それぞれのローカルサーバーが起動していることを前提とします。

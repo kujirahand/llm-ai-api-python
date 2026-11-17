@@ -72,6 +72,7 @@ python examples/local-llm-lmstudio.py "$LMSTUDIO_MODEL"
 4. **There is no `request_id`.** LM Studio does not send an `x-request-id` header, so `ChatResult.request_id` is `None` and the `response` event carries `None` too.
 5. **Use the address the server machine reports.** `192.168.1.20` is a placeholder; check a firewall if the port is blocked.
 6. **Keep the API key secret.** Do not commit real keys to the repository. Put them in your shell profile or a local `.env` that is not tracked.
+7. **The library does not verify the server.** The default connection is plain HTTP. If the intended server is not running, another process listening on the same port could receive your prompts. Be careful on a shared machine. Note that "Require Authentication" with a real token, and authenticating proxies, verify the client to the server; they do not verify the server to the client. A fake server receives your prompts and any token or key you send. For sensitive data, run on a single-user machine, or put a TLS-terminating proxy in front and connect over HTTPS.
 
 ## 4. Troubleshooting
 
