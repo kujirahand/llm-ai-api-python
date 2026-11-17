@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Clarify the `base_url` caution placement, link README security notes to each local provider page, and correct the full-read wording for paths vs `bytes` (#97).
+
 - Document cautions for unrestricted `base_url` (including plain HTTP), unbounded image/audio reads, and unverified local-provider connections (#88).
 - Tighten existing cache file permissions on POSIX and guard log opens against symlinks and non-regular files (#84).
 - Close synchronous error responses before waiting for a status retry (#85).
