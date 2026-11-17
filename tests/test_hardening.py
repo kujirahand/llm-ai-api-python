@@ -30,17 +30,45 @@ class CacheFileTest(unittest.TestCase):
         self.dir = tmp.name
         self.db = os.path.join(self.dir, "cache.db")
 
+    @unittest.skipUnless(os.name == "posix", "POSIX permissions")
     def test_new_file_is_owner_only_even_with_open_umask(self):
         old = os.umask(0)
         self.addCleanup(os.umask, old)
         SQLiteCache(self.db).put("k", "openai", ChatResult("x", None, None, None, {}))
         self.assertEqual(stat.S_IMODE(os.stat(self.db).st_mode), 0o600)
 
-    def test_existing_file_permissions_are_untouched(self):
+    @unittest.skipUnless(os.name == "posix", "POSIX permissions")
+    def test_existing_file_permissions_are_tightened(self):
+        open(self.db, "wb").close()
+        for initial, expected in ((0o644, 0o600), (0o600, 0o600), (0o700, 0o700)):
+            with self.subTest(mode=initial):
+                os.chmod(self.db, initial)
+                SQLiteCache(self.db)
+                self.assertEqual(stat.S_IMODE(os.stat(self.db).st_mode), expected)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX permissions")
+    def test_chmod_failure_warns_and_cache_works(self):
         open(self.db, "wb").close()
         os.chmod(self.db, 0o644)
-        SQLiteCache(self.db)
+        with mock.patch("llm_ai_api.cache.os.chmod", side_effect=OSError("denied")):
+            with self.assertLogs("llm_ai_api", level="WARNING") as logs:
+                cache = SQLiteCache(self.db)
+        self.assertIn(self.db, logs.output[0])
         self.assertEqual(stat.S_IMODE(os.stat(self.db).st_mode), 0o644)
+        cache.put("k", "openai", ChatResult("x", None, None, None, {}))
+        self.assertEqual(cache.get("k").text, "x")
+
+    @unittest.skipUnless(os.name == "posix", "POSIX permissions")
+    def test_existing_side_files_are_tightened(self):
+        SQLiteCache(self.db)
+        for suffix in ("-wal", "-shm"):
+            path = self.db + suffix
+            open(path, "wb").close()
+            os.chmod(path, 0o644)
+        with mock.patch("llm_ai_api.cache.os.chmod", wraps=os.chmod) as chmod:
+            SQLiteCache(self.db)
+        for suffix in ("-wal", "-shm"):
+            chmod.assert_any_call(self.db + suffix, 0o600)
 
     def test_new_cache_uses_wal_and_works(self):
         c = SQLiteCache(self.db)

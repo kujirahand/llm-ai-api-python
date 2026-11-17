@@ -161,6 +161,44 @@ class LogTest(unittest.TestCase):
 
 
 class LogSecurityTest(unittest.TestCase):
+    @unittest.skipUnless(os.name == "posix" and hasattr(os, "O_NOFOLLOW"), "O_NOFOLLOW required")
+    def test_swapped_symlink_is_not_followed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "log")
+            target = os.path.join(directory, "target")
+            with open(target, "w") as f:
+                f.write("unchanged")
+            os.chmod(target, 0o644)
+            log = JSONLLog(path)
+            os.unlink(path)
+            os.symlink(target, path)
+            with self.assertRaises(OSError):
+                log.write("openai", "m", {}, {})
+            with open(target) as f:
+                self.assertEqual(f.read(), "unchanged")
+            self.assertEqual(os.stat(target).st_mode & 0o777, 0o644)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX symlinks")
+    def test_intentional_symlink_to_regular_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "link")
+            target = os.path.join(directory, "target")
+            open(target, "w").close()
+            os.symlink(target, path)
+            JSONLLog(path).write("openai", "m", {}, {"ok": True})
+            with open(target) as f:
+                self.assertEqual(json.loads(f.readline())["response"], {"ok": True})
+
+    def test_non_regular_file_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(LLMConfigError) as cm:
+                JSONLLog(directory)
+            self.assertEqual(cm.exception.code, "invalid_log")
+            log = JSONLLog(os.path.join(directory, "log"))
+            with patch("llm_ai_api.log.stat.S_ISREG", return_value=False):
+                with self.assertRaises(OSError):
+                    log.write("openai", "m", {}, {})
+
     def test_redact_sync_and_async_without_changing_results(self):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "log")
