@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Report only keys and value types in invalid transcription response errors (#86).
+
 ## 0.6.1
 
 - Add `docs/local_llm-lmstudio.md` / `-ja.md` and `docs/local_llm-ollama.md` / `-ja.md` (starting the server, environment variables, LAN access, troubleshooting), and a `docs/README.md` / `docs/README-ja.md` index of every document. The LM Studio page covers the API token needed when "Require Authentication" is on; the Ollama page notes that the local server has no API-key authentication of its own.

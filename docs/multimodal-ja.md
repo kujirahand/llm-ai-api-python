@@ -64,7 +64,7 @@ print(m.transcribe(wav_bytes, extra={"language": "ja", "timestamp_granularities"
 - 対応は **OpenAI のみ**です。他のプロバイダーでは通信せずに `LLMConfigError(code="unsupported_modality")` を送出します。
 - `file` はパス（`str` / `os.PathLike`）または音声の `bytes` です。パスのときはファイル名をそのまま送り、`bytes` のときは `audio.<拡張子>` を使います。形式は先頭バイトのシグネチャ（WAV / MP3 / FLAC / OGG / WEBM / M4A）、だめなら拡張子で判定します。判定できない・読めない・型が違う場合は `invalid_media` です。
 - フォームには `model`（`llm()` のモデル）、`response_format=json`、ファイル `file` が入ります。`extra` のキーはフォームフィールドになります。文字列・数値は文字列化、bool は `true` / `false`、リスト・タプルは `キー[]` の繰り返し、`None` は省略です。dict など展開できない値は `invalid_media` です。
-- 応答 JSON の `text` を返します。`text` が文字列でなければ `LLMError(code="invalid_json_response")` です。
+- 応答 JSON の `text` を返します。`text` が文字列でなければ `LLMError(code="invalid_json_response")` です。メッセージには応答本文ではなくキーと値の型を表示します。
 - 応答キャッシュ・入出力ログ・同時実行のまとめ（singleflight）の**対象外**です。リトライやイベント通知は生レイヤーと同じです。
 - `atranscribe()` はファイルをワーカースレッドで読みます。
 - `segments` や `duration` を含む詳細な応答が欲しいときは、生レイヤーを使います。

@@ -128,15 +128,46 @@ class TranscribeTest(unittest.TestCase):
         self.assertIsNone(sniff_audio_type(b"RIFF\x00\x00\x00\x00AVI "))
 
     def test_missing_text_is_error(self):
-        m, _ = self.make(rec=Recorder(json_response({"language": "ja"})))
+        m, _ = self.make(rec=Recorder(json_response({"language": "secret transcript"})))
         with self.assertRaises(LLMError) as cm:
             m.transcribe(WAV)
         self.assertEqual(cm.exception.code, "invalid_json_response")
+        self.assertIn("'language': 'str'", str(cm.exception))
+        self.assertNotIn("secret transcript", str(cm.exception))
 
     def test_non_string_text_is_error(self):
-        m, _ = self.make(rec=Recorder(json_response({"text": 3})))
-        with self.assertRaises(LLMError):
+        m, _ = self.make(rec=Recorder(json_response({"text": 3, "language": "secret"})))
+        with self.assertRaises(LLMError) as cm:
             m.transcribe(WAV)
+        self.assertEqual(cm.exception.code, "invalid_json_response")
+        self.assertIn("'text': 'int'", str(cm.exception))
+        self.assertIn("'language': 'str'", str(cm.exception))
+        self.assertNotIn("secret", str(cm.exception))
+        self.assertNotIn("3", str(cm.exception))
+
+    def test_non_dict_response_shape(self):
+        m, _ = self.make()
+        with self.assertRaises(LLMError) as cm:
+            m._transcript_text(["secret transcript"])
+        self.assertEqual(cm.exception.code, "invalid_json_response")
+        self.assertIn("list", str(cm.exception))
+        self.assertNotIn("secret transcript", str(cm.exception))
+
+    def test_async_invalid_response_shape(self):
+        rec = FreshRecorder(lambda: json_response({"text": 3, "language": "secret"}))
+        m, _ = self.make(rec=rec)
+
+        async def run():
+            try:
+                with self.assertRaises(LLMError) as cm:
+                    await m.atranscribe(WAV)
+                self.assertEqual(cm.exception.code, "invalid_json_response")
+                self.assertIn("'text': 'int'", str(cm.exception))
+                self.assertNotIn("secret", str(cm.exception))
+            finally:
+                await m.aclose()
+
+        asyncio.run(run())
 
     def test_unsupported_provider(self):
         for spec in ("anthropic:claude-x", "openrouter:a/b", "google:gemini-x"):
