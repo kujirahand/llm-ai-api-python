@@ -105,6 +105,34 @@ class HttpTest(unittest.TestCase):
         self.assertEqual(c.sleeps, [3.0])
         self.assertEqual(len(rec.requests), 2)
 
+    def test_retry_closes_response_before_sleep(self):
+        rec = Recorder(
+            json_response({}, 429, {"retry-after": "3", "x-request-id": "req_retry"}),
+            json_response({"ok": True}),
+        )
+        c = make(rec)
+        responses = []
+        events = []
+        send = c._client.send
+
+        def record_send(*args, **kwargs):
+            response = send(*args, **kwargs)
+            responses.append(response)
+            return response
+
+        def record_sleep(delay):
+            self.assertTrue(responses[-1].is_closed)
+            c.sleeps.append(delay)
+
+        c._client.send = record_send
+        c._sleep = record_sleep
+        c.add_event_listener("retry", lambda event, payload: events.append(payload))
+        self.assertEqual(c.request("/x", {}), {"ok": True})
+        self.assertEqual(c.sleeps, [3.0])
+        self.assertEqual(len(responses), 2)
+        self.assertEqual(events[0]["status_code"], 429)
+        self.assertEqual(events[0]["request_id"], "req_retry")
+
     def test_retry_exhausted(self):
         rec = Recorder(json_response({}, 500))
         c = make(rec, max_retries=2)

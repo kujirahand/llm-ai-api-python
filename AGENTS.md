@@ -459,7 +459,7 @@ m.remove_event_listener("retry", on_event)       # 同じ event と同一の関�
 - 例外の変換: `httpx.TimeoutException` → `APITimeoutError`、その他の `httpx.RequestError`（`TransportError` や `DecodingError` など）→ `APIConnectionError`（リトライするかどうかは下の「リトライ」の分類による）。リクエスト組み立て時の `httpx.InvalidURL` → `LLMConfigError`（`code="invalid_url"`、URL は `_mask_url()` でマスクして表示）。httpx の例外をそのまま外に出さない。
 - リトライ（自前で実装する。#26）:
   - 生成のリクエストは冪等ではない。送信後に失敗したリクエストをリトライすると、サーバーが処理を始めていた場合に二重課金になる。このため、リトライするのは「サーバーに届いていないことが確実な失敗」と「サーバーが応答したステータス」だけにする。
-  - HTTP ステータス: 408, 409, 429, 500 以上はリトライする（サーバーが応答しているので曖昧さがない）。
+  - HTTP ステータス: 408, 409, 429, 500 以上はリトライする（サーバーが応答しているので曖昧さがない）。同期・非同期ともリトライ待機の前にエラー応答を閉じる。
   - 通信エラー（既定）: 接続段階の失敗 `httpx.ConnectError` / `httpx.ConnectTimeout` / `httpx.PoolTimeout` だけをリトライする。それ以外（`ReadTimeout`, `WriteTimeout`, `ReadError`, `WriteError`, `RemoteProtocolError`, `DecodingError` など）はリトライせず、すぐに `APITimeoutError`（タイムアウト）/ `APIConnectionError` に変換して送出する。
   - `retry_read_timeout=True`（クライアント／`llm()` の引数、`set_config()`）のときだけ、`httpx.ReadTimeout` もリトライする。その他の送信後の失敗は、これを有効にしてもリトライしない。
   - 判定は `_http._is_retryable_transport_error()` に集約し、同期・非同期で共用する。
