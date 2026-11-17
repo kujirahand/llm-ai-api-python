@@ -41,6 +41,7 @@ MESSAGES = {
     "stream_connection_error": "ストリームの読み取りに失敗しました: {detail}",
     "unclosed_stream": "閉じられていないストリームが回収されました。途中でやめるときは aclose() を呼んでください。",
     "invalid_json_response": "レスポンスが正しい JSON ではありません: {preview!r}",
+    "invalid_transcription_response": "文字起こしの応答に文字列の text フィールドがありません（キーと型: {shape}）。",
     "response_too_large": "レスポンスがサイズの上限（{limit} バイト）を超えました",
     # API エラー
     "api_error": "{provider} API がエラーを返しました (HTTP {status})",

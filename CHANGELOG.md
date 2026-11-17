@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Report only keys and value types in invalid transcription response errors (#86).
 - Reject cyclic or excessively deep model schemas with `LLMConfigError(code="invalid_schema")` (#87).
 
 ## 0.6.1
