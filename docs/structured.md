@@ -53,6 +53,8 @@ Schemas taken from a model class are copied and normalized so they pass strict m
 - properties that were optional become nullable
 - property `default` values are removed
 
+A model schema containing a cycle or exceeding the depth limit raises `LLMConfigError(code="invalid_schema")`.
+
 A JSON Schema passed as a dict is sent unchanged.
 
 ## Errors

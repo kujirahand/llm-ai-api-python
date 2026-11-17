@@ -6,11 +6,14 @@ import copy
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 from .errors import LLMConfigError, StructuredOutputError
 from .lang import t
 from .types import ChatResult
+
+
+_MAX_SCHEMA_DEPTH = 128
 
 
 @dataclass(frozen=True)
@@ -40,7 +43,7 @@ def interpret_schema(value: Any, lang: Optional[str] = None) -> Optional[_Schema
             code="invalid_schema",
         )
     return _Schema(
-        normalize_schema(schema),
+        normalize_schema(schema, lang),
         model=value,
         name_source=schema.get("title") or getattr(value, "__name__", None),
     )
@@ -53,55 +56,72 @@ def schema_name(schema: _Schema) -> str:
     return name or "response"
 
 
-def normalize_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_schema(
+    schema: Dict[str, Any], lang: Optional[str] = None
+) -> Dict[str, Any]:
     """Copy and normalize a model-generated schema for strict JSON Schema mode."""
-    result = copy.deepcopy(schema)
-    _normalize_node(result)
-    return result
+    try:
+        result = copy.deepcopy(schema)
+        _normalize_node(result, set(), set(), 1, lang)
+        return result
+    except RecursionError as exc:
+        raise LLMConfigError(t("invalid_schema", lang), code="invalid_schema") from exc
 
 
-def _normalize_node(node: Any) -> None:
+def _normalize_node(
+    node: Any, visiting: Set[int], finished: Set[int], depth: int,
+    lang: Optional[str],
+) -> None:
     if not isinstance(node, dict):
         return
+    identity = id(node)
+    if depth > _MAX_SCHEMA_DEPTH or identity in visiting:
+        raise LLMConfigError(t("invalid_schema", lang), code="invalid_schema")
+    if identity in finished:
+        return
+    visiting.add(identity)
+    try:
+        properties = node.get("properties")
+        if node.get("type") == "object" and isinstance(properties, dict):
+            originally_required = set(node.get("required", []))
+            node["additionalProperties"] = False
+            node["required"] = list(properties.keys())
+            for key, child in list(properties.items()):
+                if isinstance(child, dict):
+                    child.pop("default", None)
+                    if key not in originally_required:
+                        properties[key] = _nullable(child)
 
-    properties = node.get("properties")
-    if node.get("type") == "object" and isinstance(properties, dict):
-        originally_required = set(node.get("required", []))
-        node["additionalProperties"] = False
-        node["required"] = list(properties.keys())
-        for key, child in list(properties.items()):
-            if isinstance(child, dict):
-                child.pop("default", None)
-                if key not in originally_required:
-                    properties[key] = _nullable(child)
+        properties = node.get("properties")
+        if isinstance(properties, dict):
+            for child in properties.values():
+                _normalize_node(child, visiting, finished, depth + 1, lang)
 
-    properties = node.get("properties")
-    if isinstance(properties, dict):
-        for child in properties.values():
-            _normalize_node(child)
+        _normalize_node(node.get("items"), visiting, finished, depth + 1, lang)
+        if isinstance(node.get("items"), list):
+            for child in node["items"]:
+                _normalize_node(child, visiting, finished, depth + 1, lang)
+        if isinstance(node.get("prefixItems"), list):
+            for child in node["prefixItems"]:
+                _normalize_node(child, visiting, finished, depth + 1, lang)
 
-    _normalize_node(node.get("items"))
-    if isinstance(node.get("items"), list):
-        for child in node["items"]:
-            _normalize_node(child)
-    if isinstance(node.get("prefixItems"), list):
-        for child in node["prefixItems"]:
-            _normalize_node(child)
+        for key in ("anyOf", "oneOf", "allOf"):
+            value = node.get(key)
+            if isinstance(value, list):
+                for child in value:
+                    _normalize_node(child, visiting, finished, depth + 1, lang)
 
-    for key in ("anyOf", "oneOf", "allOf"):
-        value = node.get(key)
-        if isinstance(value, list):
-            for child in value:
-                _normalize_node(child)
+        for key in ("$defs", "definitions"):
+            value = node.get(key)
+            if isinstance(value, dict):
+                for child in value.values():
+                    _normalize_node(child, visiting, finished, depth + 1, lang)
 
-    for key in ("$defs", "definitions"):
-        value = node.get(key)
-        if isinstance(value, dict):
-            for child in value.values():
-                _normalize_node(child)
-
-    if isinstance(node.get("additionalProperties"), dict):
-        _normalize_node(node["additionalProperties"])
+        if isinstance(node.get("additionalProperties"), dict):
+            _normalize_node(node["additionalProperties"], visiting, finished, depth + 1, lang)
+    finally:
+        visiting.remove(identity)
+    finished.add(identity)
 
 
 def _nullable(schema: Dict[str, Any]) -> Dict[str, Any]:

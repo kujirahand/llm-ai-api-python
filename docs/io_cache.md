@@ -70,8 +70,8 @@ m = llm("openai:gpt-6-luna", cache=SQLiteCache("./cache.db", max_size=10_000_000
 - Only successful responses are stored. HTTP errors are not.
 - A stream is stored only when it was read up to its terminal event (`[DONE]` or `message_stop`). Streams that were cut off without a terminal event, stopped early or failed are not stored.
 - A corrupt row or a tampered value is treated as a miss (and that row is deleted) and the API is called. A cache read/write failure at run time never fails the call.
-- A newly created cache file is owner-only (0600) from the moment it is created; existing files keep their permissions.
-- The cache file uses SQLite's WAL journal mode (falls back to the default where WAL is unavailable), so several processes can share one file. You may see `-wal` / `-shm` files next to it; they get the same permissions as the main file.
+- A newly created cache file is owner-only (0600) from the moment it is created. On POSIX, existing cache and `-wal` / `-shm` files with group or other access are set to 0600; if this fails, a warning is logged and opening continues. Windows leaves permissions unchanged and relies on OS access controls.
+- The cache file uses SQLite's WAL journal mode (falls back to the default where WAL is unavailable), so several processes can share one file. You may see `-wal` / `-shm` files next to it; new side files get the same permissions as the main file.
 - Entries do not expire by themselves. The same request keeps returning the same response; use `clear_cache()` or turn the cache off to get a fresh one.
 - Do not commit the cache file to a repository.
 

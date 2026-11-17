@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import stat
 import tempfile
 import threading
 import weakref
@@ -111,8 +112,12 @@ class JSONLLog(FailureCounter):
             ) from e
 
     def _open(self) -> Any:
-        fd = os.open(self._normalized_path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        # Use O_NOFOLLOW when available; Windows falls back to the fstat check alone.
+        flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(self._normalized_path, flags, 0o600)
         try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise OSError("log path is not a regular file")
             if os.name == "posix":
                 os.fchmod(fd, 0o600)
             return os.fdopen(fd, "a", encoding="utf-8")
