@@ -1026,22 +1026,19 @@ class BaseClient:
                     },
                 )
                 return resp, meta
+            if (
+                resp.status_code in _RETRY_STATUS or resp.status_code >= 500
+            ) and attempt < self.max_retries:
+                retry_after = resp.headers.get("retry-after")
+                status_code = resp.status_code
+                request_id = request_id_of(resp.headers)
+                resp.close()
+                self._emit_retry(
+                    method, path, stream, attempt, "status", status_code, request_id, retry_after
+                )
+                attempt += 1
+                continue
             try:
-                if (
-                    resp.status_code in _RETRY_STATUS or resp.status_code >= 500
-                ) and attempt < self.max_retries:
-                    self._emit_retry(
-                        method,
-                        path,
-                        stream,
-                        attempt,
-                        "status",
-                        resp.status_code,
-                        request_id_of(resp.headers),
-                        resp.headers.get("retry-after"),
-                    )
-                    attempt += 1
-                    continue
                 err_status = self._make_error(resp)
                 err_status.retries = attempt
                 err_status.latency = time.monotonic() - started

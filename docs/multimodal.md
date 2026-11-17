@@ -64,7 +64,7 @@ print(m.transcribe(wav_bytes, extra={"language": "ja", "timestamp_granularities"
 - **OpenAI only.** Other providers raise `LLMConfigError(code="unsupported_modality")` without sending anything.
 - `file` is a path (`str` / `os.PathLike`) or audio `bytes`. A path's file name is sent as is; for `bytes` the name is `audio.<ext>`. The type comes from the leading signature bytes (WAV / MP3 / FLAC / OGG / WEBM / M4A), then the extension. An unknown type, an unreadable file, or a wrong argument type raises `invalid_media`.
 - The form holds `model` (the model of the `llm()`), `response_format=json`, and the file as `file`. Keys of `extra` become form fields: strings and numbers are stringified, bools become `true` / `false`, lists and tuples repeat `key[]`, `None` is skipped. A value that cannot be expanded (a dict, for example) raises `invalid_media`.
-- The `text` of the response JSON is returned. If `text` is not a string, `LLMError(code="invalid_json_response")` is raised.
+- The `text` of the response JSON is returned. If `text` is not a string, `LLMError(code="invalid_json_response")` is raised; its message reports keys and value types, not the response body.
 - It is **not** covered by the response cache, the I/O log, or singleflight. Retries and events work as in the raw layer.
 - `atranscribe()` reads the file in a worker thread.
 - For the full response (`segments`, `duration`, ...), use the raw layer:
