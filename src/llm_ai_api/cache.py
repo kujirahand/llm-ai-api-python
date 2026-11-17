@@ -14,8 +14,10 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import os
 import sqlite3
+import stat
 import threading
 import time
 from contextlib import contextmanager
@@ -182,14 +184,27 @@ class SQLiteCache(FailureCounter):
             if not os.path.exists(self.path):
                 # Create the file owner-only from the start, so it is never readable by
                 # others (even briefly) as it would be if SQLite created it with the umask.
-                # Existing files keep their permissions. SQLite gives side files
-                # (-wal/-shm) the main file's permissions.
                 try:
                     fd = os.open(self.path, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
                 except FileExistsError:
                     pass  # created concurrently by another process
                 else:
                     os.close(fd)
+            # Windows uses its own access controls; do not inspect Unix modes there.
+            if os.name == "posix":
+                for path in (self.path, self.path + "-wal", self.path + "-shm"):
+                    try:
+                        mode = stat.S_IMODE(os.stat(path).st_mode)
+                    except OSError:
+                        continue  # missing side files, or unreadable; SQLite still decides if the DB is usable
+                    if mode & 0o077:
+                        try:
+                            os.chmod(path, 0o600)
+                        except OSError:
+                            logging.getLogger("llm_ai_api").warning(
+                                "Could not tighten cache file permissions: %s (mode %04o)",
+                                path, mode,
+                            )
             with self._connect() as conn:
                 conn.execute(
                     "CREATE TABLE IF NOT EXISTS llm_cache ("
