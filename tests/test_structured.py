@@ -74,7 +74,30 @@ class SchemaNormalizationTest(unittest.TestCase):
         with self.assertRaises(LLMConfigError) as cm:
             interpret_schema(CyclicModel, lang="ja")
         self.assertEqual(cm.exception.code, "invalid_schema")
-        self.assertEqual(str(cm.exception), t("invalid_schema", "ja"))
+        self.assertEqual(str(cm.exception), t("invalid_schema_cyclic", "ja"))
+
+    def test_cycles_in_other_containers(self):
+        for keyword in ("properties", "$defs", "not", "contains", "if",
+                        "then", "else", "dependentSchemas"):
+            with self.subTest(keyword=keyword):
+                schema = {}
+                schema[keyword] = {"child": schema}
+                with self.assertRaises(LLMConfigError) as cm:
+                    normalize_schema(schema, lang="en")
+                self.assertEqual(cm.exception.code, "invalid_schema")
+                self.assertEqual(str(cm.exception), t("invalid_schema_cyclic", "en"))
+
+        items = []
+        items.append(items)
+        with self.assertRaises(LLMConfigError) as cm:
+            normalize_schema({"not": items}, lang="en")
+        self.assertEqual(cm.exception.code, "invalid_schema")
+        self.assertEqual(str(cm.exception), t("invalid_schema_cyclic", "en"))
+
+    def test_raw_dict_is_not_checked(self):
+        schema = {}
+        schema["not"] = schema
+        self.assertIs(interpret_schema(schema).schema, schema)
 
     def test_depth_limit(self):
         def nested(depth):
@@ -92,16 +115,46 @@ class SchemaNormalizationTest(unittest.TestCase):
                 return nested(_MAX_SCHEMA_DEPTH + 1)
 
         with self.assertRaises(LLMConfigError) as cm:
-            interpret_schema(DeepModel)
+            interpret_schema(DeepModel, lang="en")
         self.assertEqual(cm.exception.code, "invalid_schema")
+        self.assertEqual(str(cm.exception), t(
+            "invalid_schema_too_deep", "en", limit=_MAX_SCHEMA_DEPTH
+        ))
+
+    def test_depth_under_unwalked_keyword(self):
+        schema = {}
+        for _ in range(_MAX_SCHEMA_DEPTH):
+            schema = {"not": [schema]}
+        with self.assertRaises(LLMConfigError) as cm:
+            normalize_schema(schema, lang="en")
+        self.assertEqual(cm.exception.code, "invalid_schema")
+        self.assertEqual(str(cm.exception), t(
+            "invalid_schema_too_deep", "en", limit=_MAX_SCHEMA_DEPTH
+        ))
+
+    def test_real_deepcopy_recursion_error(self):
+        schema = {}
+        for _ in range(2000):
+            schema = {"not": schema}
+        with mock.patch("llm_ai_api._structured._MAX_SCHEMA_DEPTH", 1500):
+            with self.assertRaises(LLMConfigError) as cm:
+                normalize_schema(schema, lang="en")
+        self.assertEqual(cm.exception.code, "invalid_schema")
+        if isinstance(cm.exception.__cause__, RecursionError):
+            self.assertEqual(str(cm.exception), t(
+                "invalid_schema_too_deep", "en", limit=1500
+            ))
 
     def test_deepcopy_recursion_error_is_chained(self):
         with mock.patch(
             "llm_ai_api._structured.copy.deepcopy", side_effect=RecursionError
         ):
             with self.assertRaises(LLMConfigError) as cm:
-                normalize_schema({"type": "object"})
+                normalize_schema({"type": "object"}, lang="en")
         self.assertEqual(cm.exception.code, "invalid_schema")
+        self.assertEqual(str(cm.exception), t(
+            "invalid_schema_too_deep", "en", limit=_MAX_SCHEMA_DEPTH
+        ))
         self.assertIsInstance(cm.exception.__cause__, RecursionError)
 
     def test_shared_node_is_normalized_once(self):

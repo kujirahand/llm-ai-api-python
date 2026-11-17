@@ -53,7 +53,7 @@ OpenAI 系のスキーマ名は、スキーマの `title`、モデルクラス�
 - 元は任意だったプロパティを nullable 化する
 - プロパティの `default` を取り除く
 
-循環を含む、または深さの上限を超えるモデルスキーマは `LLMConfigError(code="invalid_schema")` を送出します。
+循環を含む、または深さの上限を超えるモデルスキーマは `LLMConfigError(code="invalid_schema")` を送出し、メッセージで両者を区別します。検査は正規化で走査しないキーワードを含め、スキーマ全体を対象にします。
 
 dict で渡した JSON Schema は無加工で送ります。
 
