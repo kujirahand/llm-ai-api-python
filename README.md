@@ -209,6 +209,14 @@ m = llm("openai:gpt-6-luna", connection={"max_connections": 5})        # per-ins
 
 The available keys are `max_connections` (default 100), `max_keepalive_connections` (default 20), `keepalive_expiry` (seconds, default 5.0), `connect_timeout` (seconds, default 10.0), `verify` (bool or a CA path, default True), `cert` (a certificate path or pair), and `proxy` (an http/https URL). Settings are resolved when the client is created; calling `set_connection()` later does not affect existing instances. `set_connection()` replaces the whole setting, and calling it with no arguments restores the defaults.
 
+## Security notes
+
+The library intentionally does not restrict the following. Be careful what your application passes in.
+
+- **`base_url`**: There is no restriction on the scheme or host. The API key and the request body are sent even to a plain `http://` host. Pass only trusted values; do not forward user input as-is. Prefer HTTPS for hosted APIs ([Configuration reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/config.md)).
+- **Images and audio**: File paths and `bytes` in `images=`, and audio given to `transcribe()`, are read in full, with no size limit. Check sizes in your application, and do not pass untrusted paths or uploads directly ([Image input](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/multimodal.md)).
+- **Local providers** (`lmstudio` / `ollama` / `strata`): The default is a plain HTTP connection to a fixed port, with no check of the server's authenticity. On a shared machine, another process on the same port could receive your prompts. For sensitive data, use an authenticating proxy or a real token ([Local LLM servers](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/README.md)).
+
 ## Examples
 
 See [`examples/`](https://github.com/kujirahand/llm-ai-api-python/tree/main/examples). Most scripts take a `provider:model` argument (or the `LLM_MODEL` env var). The `local-llm-*.py` scripts take a model name only (or `LMSTUDIO_MODEL` / `OLLAMA_MODEL` / `STRATA_MODEL`) and expect the matching local server to be running.

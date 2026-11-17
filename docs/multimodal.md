@@ -23,7 +23,7 @@ Pass `images` as a **list** (even for one image). Each item is one of:
 - An unreadable file, an `images` value that is not a list, or an item of the wrong type also raises `invalid_media` (the original `OSError` is kept in `__cause__`).
 - Passing `images` with a non-string prompt (a messages list) raises `invalid_media`: the library does not guess which message should get the images.
 - With `images` set to `None` or empty, the request is exactly the same as before (the content stays a string).
-- The library sets no limit on the number or size of images. The provider's API limits apply.
+- The library sets no limit on the number or size of images (this is intentional). The provider's API limits apply. Paths and `bytes` are read in full, so check sizes in your application and do not pass untrusted paths or uploads directly.
 
 ## What is sent
 
@@ -62,7 +62,7 @@ print(m.transcribe(wav_bytes, extra={"language": "ja", "timestamp_granularities"
 ```
 
 - **OpenAI only.** Other providers raise `LLMConfigError(code="unsupported_modality")` without sending anything.
-- `file` is a path (`str` / `os.PathLike`) or audio `bytes`. A path's file name is sent as is; for `bytes` the name is `audio.<ext>`. The type comes from the leading signature bytes (WAV / MP3 / FLAC / OGG / WEBM / M4A), then the extension. An unknown type, an unreadable file, or a wrong argument type raises `invalid_media`.
+- `file` is a path (`str` / `os.PathLike`) or audio `bytes`. A path's file name is sent as is; for `bytes` the name is `audio.<ext>`. The type comes from the leading signature bytes (WAV / MP3 / FLAC / OGG / WEBM / M4A), then the extension. An unknown type, an unreadable file, or a wrong argument type raises `invalid_media`. Paths and `bytes` are read in full, with no size limit, so check sizes in your application and do not pass untrusted input directly.
 - The form holds `model` (the model of the `llm()`), `response_format=json`, and the file as `file`. Keys of `extra` become form fields: strings and numbers are stringified, bools become `true` / `false`, lists and tuples repeat `key[]`, `None` is skipped. A value that cannot be expanded (a dict, for example) raises `invalid_media`.
 - The `text` of the response JSON is returned. If `text` is not a string, `LLMError(code="invalid_json_response")` is raised.
 - It is **not** covered by the response cache, the I/O log, or singleflight. Retries and events work as in the raw layer.

@@ -61,6 +61,7 @@ python examples/local-llm-strata.py "$STRATA_MODEL"
 4. **Include `/v1` in `STRATA_BASE_URL`.** The library appends `/chat/completions` to it.
 5. **Use the address the server shows you.** The `100.x.x.x` form in the example is a private-network address (for example a VPN or overlay network). Use the address that the Strata machine reports, not this placeholder.
 6. **Keep the API key secret.** Do not commit real keys to the repository. Put them in your shell profile or a local `.env` that is not tracked.
+7. **The library does not verify the server.** The default connection is plain HTTP. If the intended server is not running, another process listening on the same port could receive your prompts. Be careful on a shared machine. For sensitive data, enable an API key in Strata, or put an authenticating proxy in front.
 
 ## 4. Troubleshooting
 

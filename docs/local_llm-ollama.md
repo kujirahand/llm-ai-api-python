@@ -74,6 +74,7 @@ python examples/local-llm-ollama.py "$OLLAMA_MODEL"
 4. **The first request is slow** because Ollama loads the model into memory. Raise `timeout=` for large models.
 5. **The default context length depends on VRAM.** See [Ollama's documentation](https://docs.ollama.com/context-length). You can change it, for example with `OLLAMA_CONTEXT_LENGTH=8192 ollama serve`; a longer context requires more memory.
 6. **Use the address the server machine reports.** `192.168.1.20` is a placeholder.
+7. **The library does not verify the server.** The default connection is plain HTTP. If the intended server is not running, another process listening on the same port could receive your prompts. Be careful on a shared machine. For sensitive data, use an authenticating proxy (see below) or an endpoint that checks a key.
 
 ### Putting a key in front of Ollama
 
