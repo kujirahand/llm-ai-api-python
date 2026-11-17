@@ -6,8 +6,11 @@ duck-types on (`model_json_schema` / `model_validate_json`).
 
 import json
 import unittest
+from unittest import mock
 
 from llm_ai_api import LLMConfigError, StructuredOutputError, llm
+from llm_ai_api._structured import _MAX_SCHEMA_DEPTH, interpret_schema, normalize_schema
+from llm_ai_api.lang import t
 
 from .helpers import Recorder, json_response
 
@@ -57,6 +60,60 @@ def anthropic_response(text='{"x":"yes"}', stop_reason="end_turn"):
 def make(spec, response):
     rec = Recorder(json_response(response))
     return llm(spec, api_key="test-key", transport=rec.transport), rec
+
+
+class SchemaNormalizationTest(unittest.TestCase):
+    def test_cyclic_model_schema(self):
+        class CyclicModel(FakeModel):
+            @classmethod
+            def model_json_schema(cls):
+                schema = {}
+                schema["items"] = schema
+                return schema
+
+        with self.assertRaises(LLMConfigError) as cm:
+            interpret_schema(CyclicModel, lang="ja")
+        self.assertEqual(cm.exception.code, "invalid_schema")
+        self.assertEqual(str(cm.exception), t("invalid_schema", "ja"))
+
+    def test_depth_limit(self):
+        def nested(depth):
+            schema = {}
+            for _ in range(depth - 1):
+                schema = {"items": schema}
+            return schema
+
+        self.assertEqual(normalize_schema(nested(_MAX_SCHEMA_DEPTH)),
+                         nested(_MAX_SCHEMA_DEPTH))
+
+        class DeepModel(FakeModel):
+            @classmethod
+            def model_json_schema(cls):
+                return nested(_MAX_SCHEMA_DEPTH + 1)
+
+        with self.assertRaises(LLMConfigError) as cm:
+            interpret_schema(DeepModel)
+        self.assertEqual(cm.exception.code, "invalid_schema")
+
+    def test_deepcopy_recursion_error_is_chained(self):
+        with mock.patch(
+            "llm_ai_api._structured.copy.deepcopy", side_effect=RecursionError
+        ):
+            with self.assertRaises(LLMConfigError) as cm:
+                normalize_schema({"type": "object"})
+        self.assertEqual(cm.exception.code, "invalid_schema")
+        self.assertIsInstance(cm.exception.__cause__, RecursionError)
+
+    def test_shared_node_is_normalized_once(self):
+        shared = {"type": "object", "properties": {"x": {"type": "string"}}}
+        schema = {"allOf": [shared, shared]}
+        result = normalize_schema(schema)
+        first, second = result["allOf"]
+        self.assertIs(first, second)
+        self.assertEqual(first["properties"]["x"], {
+            "anyOf": [{"type": "string"}, {"type": "null"}]
+        })
+        self.assertNotIn("required", shared)
 
 
 class StructuredSyncTest(unittest.TestCase):
