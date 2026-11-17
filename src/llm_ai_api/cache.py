@@ -34,6 +34,7 @@ DEFAULT_MAX_SIZE = 100 * 1024 * 1024  # bytes; above this the oldest third of th
 _NONCE = 16
 _MAC = 32
 _PLAIN, _ENCRYPTED = b"P", b"E"  # first byte of a stored value
+_chmod_warned_paths: set = set()
 
 
 def _keystream(key: bytes, nonce: bytes, length: int) -> bytes:
@@ -194,17 +195,22 @@ class SQLiteCache(FailureCounter):
             if os.name == "posix":
                 for path in (self.path, self.path + "-wal", self.path + "-shm"):
                     try:
-                        mode = stat.S_IMODE(os.stat(path).st_mode)
+                        file_mode = os.lstat(path).st_mode
                     except OSError:
                         continue  # missing side files, or unreadable; SQLite still decides if the DB is usable
+                    if stat.S_ISLNK(file_mode):
+                        continue
+                    mode = stat.S_IMODE(file_mode)
                     if mode & 0o077:
                         try:
                             os.chmod(path, 0o600)
                         except OSError:
-                            logging.getLogger("llm_ai_api").warning(
-                                "Could not tighten cache file permissions: %s (mode %04o)",
-                                path, mode,
-                            )
+                            if path not in _chmod_warned_paths:
+                                _chmod_warned_paths.add(path)
+                                logging.getLogger("llm_ai_api").warning(
+                                    "Could not tighten cache file permissions: %s (mode %04o)",
+                                    path, mode,
+                                )
             with self._connect() as conn:
                 conn.execute(
                     "CREATE TABLE IF NOT EXISTS llm_cache ("

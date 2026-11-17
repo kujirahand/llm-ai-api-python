@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Open logs with `O_NONBLOCK` to avoid FIFO hangs, test `fstat` with a real device, skip cache permission changes on symlinks, and warn at most once per path on chmod failure; document the fallback without `O_NOFOLLOW` (#96).
+
 - Document cautions for unrestricted `base_url` (including plain HTTP), unbounded image/audio reads, and unverified local-provider connections (#88).
 - Tighten existing cache file permissions on POSIX and guard log opens against symlinks and non-regular files (#84).
 - Close synchronous error responses before waiting for a status retry (#85).
