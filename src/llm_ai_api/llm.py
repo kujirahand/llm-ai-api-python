@@ -311,11 +311,16 @@ class LLM:
         check_audio(file, lang)
         return transcription_form(self.model, extra, lang)
 
-    def _transcript_text(self, response: Dict[str, Any]) -> str:
-        text = response.get("text")
+    def _transcript_text(self, response: Any) -> str:
+        text = response.get("text") if isinstance(response, dict) else None
         if not isinstance(text, str):
+            shape = (
+                {key: type(value).__name__ for key, value in response.items()}
+                if isinstance(response, dict)
+                else type(response).__name__
+            )
             raise LLMError(
-                t("invalid_json_response", self.client.lang, preview=str(response)[:200]),
+                t("invalid_transcription_response", self.client.lang, shape=shape),
                 code="invalid_json_response",
             )
         return text
