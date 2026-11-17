@@ -107,7 +107,11 @@ class HttpTest(unittest.TestCase):
 
     def test_retry_closes_response_before_sleep(self):
         rec = Recorder(
-            json_response({}, 429, {"retry-after": "3", "x-request-id": "req_retry"}),
+            httpx.Response(
+                429,
+                stream=httpx.ByteStream(b"{}"),
+                headers={"retry-after": "3", "x-request-id": "req_retry"},
+            ),
             json_response({"ok": True}),
         )
         c = make(rec)
@@ -118,6 +122,15 @@ class HttpTest(unittest.TestCase):
         def record_send(*args, **kwargs):
             response = send(*args, **kwargs)
             responses.append(response)
+            if response.status_code == 429:
+                self.assertFalse(response.is_closed)
+
+                # Real body buffering auto-closes the stream, hiding a missing explicit close.
+                def iter_bytes():
+                    yield b"{}"
+                    self.assertFalse(response.is_closed)
+
+                response.iter_bytes = iter_bytes
             return response
 
         def record_sleep(delay):

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix the retry test to detect a missing response close before sleep (#95).
 - Document cautions for unrestricted `base_url` (including plain HTTP), unbounded image/audio reads, and unverified local-provider connections (#88).
 - Tighten existing cache file permissions on POSIX and guard log opens against symlinks and non-regular files (#84).
 - Close synchronous error responses before waiting for a status retry (#85).
