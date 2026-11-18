@@ -27,7 +27,7 @@ m = llm(
 |---|---|---|
 | first argument | (required) | `"<provider>:<model>"`. Split at the first `:`, so model names may contain `:` and `/` (e.g. `"openrouter:meta-llama/llama-4:free"`). |
 | `api_key` | environment variable | `OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` (or `GOOGLE_API_KEY`). If none is found, `llm()` raises `LLMConfigError`. |
-| `base_url` | environment variable → default | Can be overridden with `OPENAI_BASE_URL` and so on. Use it to go through a proxy or gateway. There is no restriction on the scheme or host, so pass only trusted values and do not forward user input as-is. Prefer HTTPS for hosted APIs. |
+| `base_url` | environment variable → default | Can be overridden with `OPENAI_BASE_URL` and so on. Use it to go through a proxy or gateway. There is no restriction on the scheme or host. The API key and the request body are sent even to a plain `http://` host, so pass only trusted values and do not forward user input as-is. Prefer HTTPS for hosted APIs. |
 | `timeout` | `600.0` | Timeout for one request (seconds). The connect timeout is 10 seconds. |
 | `max_retries` | `2` | Number of retries. `0` disables retries. |
 | `retry_read_timeout` | `False` | When `True`, read timeouts are retried too (see "Retry policy" below). |
@@ -70,7 +70,6 @@ The change also applies to the async methods (`aask()` and so on).
 - In latency-sensitive services, consider `max_retries=0` or a short `timeout`. The default `timeout=600` is meant for long generations; combined with retries, a single call can block for a long time. Retrying in your application, where you know the situation, is easier to control.
 - `retry_read_timeout=True` can double-bill: when a read timeout happens, the server may already be generating. Use it only if you accept that every retry costs money and server time.
 - `Retry-After` accepts seconds or an HTTP date, capped by `retry_after_max` in sync and async calls. Invalid values, NaN, infinity, negative seconds, and past dates are ignored in favor of the normal backoff.
-- The API key and the request body are sent to whatever `base_url` (or the matching environment variable) you set, including plain HTTP. Pass only trusted values.
 
 Non-streaming response bodies and HTTP error bodies (including errors starting a stream) are limited to 64 MiB after decompression. Oversized bodies raise `LLMError` with code `response_too_large`. A declared `Content-Length` over the limit is rejected before reading. Individual decoded chunks and JSON parsing can require additional memory; streaming responses have no total size limit.
 
