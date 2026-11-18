@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.2
+
 - Clarify the `base_url` caution placement, link README security notes to each local provider page, and correct the full-read wording for paths vs `bytes` (#97).
 - Open logs with `O_NONBLOCK` to avoid FIFO hangs, test `fstat` with a real device, skip cache permission changes on symlinks, and warn at most once per path on chmod failure; document the fallback without `O_NOFOLLOW` (#96).
 - Fix the retry test to detect a missing response close before sleep (#95).
