@@ -18,6 +18,11 @@ import weakref
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
+try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None
+
 from .errors import LLMConfigError
 from .lang import t
 
@@ -113,9 +118,17 @@ class JSONLLog(FailureCounter):
 
     def _open(self) -> Any:
         # Use O_NOFOLLOW when available; Windows falls back to the fstat check alone.
-        flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+        # O_NONBLOCK (when available) prevents a FIFO from blocking forever on open.
+        flags = (os.O_WRONLY | os.O_APPEND | os.O_CREAT
+                 | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
         fd = os.open(self._normalized_path, flags, 0o600)
         try:
+            if fcntl is not None and getattr(os, "O_NONBLOCK", 0):
+                try:
+                    current = fcntl.fcntl(fd, fcntl.F_GETFL)
+                    fcntl.fcntl(fd, fcntl.F_SETFL, current & ~os.O_NONBLOCK)
+                except OSError:
+                    pass  # Best effort; still validate the file.
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 raise OSError("log path is not a regular file")
             if os.name == "posix":

@@ -59,6 +59,40 @@ class CacheFileTest(unittest.TestCase):
         self.assertEqual(cache.get("k").text, "x")
 
     @unittest.skipUnless(os.name == "posix", "POSIX permissions")
+    def test_chmod_failure_warns_once_per_path(self):
+        open(self.db, "wb").close()
+        os.chmod(self.db, 0o644)
+        with mock.patch("llm_ai_api.cache._chmod_warned_paths", set()):
+            with mock.patch("llm_ai_api.cache.os.chmod", side_effect=OSError("denied")):
+                with self.assertLogs("llm_ai_api", level="WARNING") as logs:
+                    SQLiteCache(self.db)
+                    cache = SQLiteCache(self.db)
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn(self.db, logs.output[0])
+        cache.put("k", "openai", ChatResult("x", None, None, None, {}))
+        self.assertEqual(cache.get("k").text, "x")
+
+    @unittest.skipUnless(os.name == "posix", "POSIX symlinks and permissions")
+    def test_side_file_symlinks_do_not_tighten_target(self):
+        SQLiteCache(self.db)
+        target = os.path.join(self.dir, "target")
+        open(target, "wb").close()
+        os.chmod(target, 0o644)
+        for suffix in ("-wal", "-shm"):
+            path = self.db + suffix
+            if os.path.lexists(path):
+                os.unlink(path)
+            os.symlink(target, path)
+        # Some SQLite builds refuse symlinked side files independently of tightening.
+        conn = sqlite3.connect(":memory:")
+        try:
+            with mock.patch.object(SQLiteCache, "_connect", return_value=conn):
+                SQLiteCache(self.db)
+        finally:
+            conn.close()
+        self.assertEqual(stat.S_IMODE(os.stat(target).st_mode), 0o644)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX permissions")
     def test_existing_side_files_are_tightened(self):
         SQLiteCache(self.db)
         for suffix in ("-wal", "-shm"):

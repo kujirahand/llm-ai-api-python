@@ -1,6 +1,8 @@
 import asyncio
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -198,6 +200,38 @@ class LogSecurityTest(unittest.TestCase):
             with patch("llm_ai_api.log.stat.S_ISREG", return_value=False):
                 with self.assertRaises(OSError):
                     log.write("openai", "m", {}, {})
+
+    @unittest.skipUnless(os.name == "posix" and os.path.exists("/dev/null"), "POSIX device required")
+    def test_character_device_rejected_by_fstat(self):
+        with self.assertRaises(LLMConfigError) as cm:
+            JSONLLog("/dev/null")
+        self.assertEqual(cm.exception.code, "invalid_log")
+
+    @unittest.skipUnless(os.name == "posix" and hasattr(os, "mkfifo"), "POSIX FIFO required")
+    def test_fifo_without_reader_fails_promptly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "fifo")
+            os.mkfifo(path)
+            code = (
+                "import sys\n"
+                "from llm_ai_api import JSONLLog, LLMConfigError\n"
+                "try:\n"
+                "    JSONLLog(sys.argv[1])\n"
+                "except LLMConfigError as exc:\n"
+                "    assert exc.code == 'invalid_log'\n"
+                "else:\n"
+                "    raise AssertionError('FIFO accepted')\n"
+            )
+            subprocess.run([sys.executable, "-c", code, path], check=True, timeout=5)
+
+    @unittest.skipUnless(os.name == "posix" and hasattr(os, "O_NONBLOCK"), "POSIX flags required")
+    def test_regular_log_descriptor_is_blocking(self):
+        import fcntl
+
+        with tempfile.TemporaryDirectory() as directory:
+            log = JSONLLog(os.path.join(directory, "log"))
+            with log._open() as output:
+                self.assertFalse(fcntl.fcntl(output.fileno(), fcntl.F_GETFL) & os.O_NONBLOCK)
 
     def test_redact_sync_and_async_without_changing_results(self):
         with tempfile.TemporaryDirectory() as directory:

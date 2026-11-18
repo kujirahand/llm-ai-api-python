@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Open logs with `O_NONBLOCK` to avoid FIFO hangs, test `fstat` with a real device, skip cache permission changes on symlinks, and warn at most once per path on chmod failure; document the fallback without `O_NOFOLLOW` (#96).
 - Fix the retry test to detect a missing response close before sleep (#95).
 - Check the whole model schema graph for cycles and excessive depth, with distinct messages (#94).
 - Document cautions for unrestricted `base_url` (including plain HTTP), unbounded image/audio reads, and unverified local-provider connections (#88).
