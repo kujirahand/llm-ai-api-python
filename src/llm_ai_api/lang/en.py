@@ -30,6 +30,8 @@ MESSAGES = {
     "invalid_multipart_body": "body must be None when files= or form_data= is given.",
     "invalid_option": "{name} must be a finite number of 0 or more: {value!r}",
     "invalid_schema": "schema= must be a JSON Schema dict or a pydantic-v2-compatible model.",
+    "invalid_schema_cyclic": "The schema contains a circular reference.",
+    "invalid_schema_too_deep": "The schema exceeds the maximum nesting depth ({limit}).",
     "invalid_event": "Unknown event {event!r}. Known events: {known}.",
     "invalid_listener": "An event listener must be callable.",
     "unknown_provider": "Unknown provider: {provider!r} (supported: {supported})",
