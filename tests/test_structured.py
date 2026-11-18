@@ -121,6 +121,21 @@ class SchemaNormalizationTest(unittest.TestCase):
             "invalid_schema_too_deep", "en", limit=_MAX_SCHEMA_DEPTH
         ))
 
+    def test_shared_subtree_dag_is_not_retraversed(self):
+        # A DAG of shared subtrees must be checked in linear time: without
+        # memoization this depth would need 2**30 subtree visits.
+        node = {"type": "string"}
+        for _ in range(30):
+            node = {"type": "object", "properties": {"a": node, "b": node}}
+
+        class DagModel(FakeModel):
+            @classmethod
+            def model_json_schema(cls):
+                return node
+
+        result = interpret_schema(DagModel, lang="en")
+        self.assertIsNotNone(result)
+
     def test_depth_under_unwalked_keyword(self):
         schema = {}
         for _ in range(_MAX_SCHEMA_DEPTH):

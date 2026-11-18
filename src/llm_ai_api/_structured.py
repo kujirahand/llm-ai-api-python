@@ -74,6 +74,11 @@ def normalize_schema(
 
 def _check_schema_graph(schema: Any, lang: Optional[str]) -> None:
     visiting: Set[int] = set()
+    # id -> shallowest entry depth at which the subtree was fully verified.
+    # Shared (DAG-shaped) subtrees are skipped when re-entered at a depth
+    # that was already verified, so shared nodes cannot cause exponential
+    # re-traversal.
+    finished: Dict[int, int] = {}
     stack = [(schema, 0, False)]
     while stack:
         node, depth, leaving = stack.pop()
@@ -82,6 +87,8 @@ def _check_schema_graph(schema: Any, lang: Optional[str]) -> None:
         identity = id(node)
         if leaving:
             visiting.remove(identity)
+            if identity not in finished or depth < finished[identity]:
+                finished[identity] = depth
             continue
         if identity in visiting:
             raise LLMConfigError(t("invalid_schema_cyclic", lang), code="invalid_schema")
@@ -91,6 +98,8 @@ def _check_schema_graph(schema: Any, lang: Optional[str]) -> None:
                 t("invalid_schema_too_deep", lang, limit=_MAX_SCHEMA_DEPTH),
                 code="invalid_schema",
             )
+        if identity in finished and depth <= finished[identity]:
+            continue
         visiting.add(identity)
         stack.append((node, depth, True))
         children = node.values() if isinstance(node, dict) else node
