@@ -62,10 +62,48 @@ def normalize_schema(
     """Copy and normalize a model-generated schema for strict JSON Schema mode."""
     try:
         result = copy.deepcopy(schema)
+        _check_schema_graph(result, lang)
         _normalize_node(result, set(), set(), 1, lang)
         return result
     except RecursionError as exc:
-        raise LLMConfigError(t("invalid_schema", lang), code="invalid_schema") from exc
+        raise LLMConfigError(
+            t("invalid_schema_too_deep", lang, limit=_MAX_SCHEMA_DEPTH),
+            code="invalid_schema",
+        ) from exc
+
+
+def _check_schema_graph(schema: Any, lang: Optional[str]) -> None:
+    visiting: Set[int] = set()
+    # id -> shallowest entry depth at which the subtree was fully verified.
+    # Shared (DAG-shaped) subtrees are skipped when re-entered at a depth
+    # that was already verified, so shared nodes cannot cause exponential
+    # re-traversal.
+    finished: Dict[int, int] = {}
+    stack = [(schema, 0, False)]
+    while stack:
+        node, depth, leaving = stack.pop()
+        if not isinstance(node, (dict, list, tuple)):
+            continue
+        identity = id(node)
+        if leaving:
+            visiting.remove(identity)
+            if identity not in finished or depth < finished[identity]:
+                finished[identity] = depth
+            continue
+        if identity in visiting:
+            raise LLMConfigError(t("invalid_schema_cyclic", lang), code="invalid_schema")
+        depth += isinstance(node, dict)
+        if depth > _MAX_SCHEMA_DEPTH:
+            raise LLMConfigError(
+                t("invalid_schema_too_deep", lang, limit=_MAX_SCHEMA_DEPTH),
+                code="invalid_schema",
+            )
+        if identity in finished and depth <= finished[identity]:
+            continue
+        visiting.add(identity)
+        stack.append((node, depth, True))
+        children = node.values() if isinstance(node, dict) else node
+        stack.extend((child, depth, False) for child in children)
 
 
 def _normalize_node(
@@ -75,8 +113,13 @@ def _normalize_node(
     if not isinstance(node, dict):
         return
     identity = id(node)
-    if depth > _MAX_SCHEMA_DEPTH or identity in visiting:
-        raise LLMConfigError(t("invalid_schema", lang), code="invalid_schema")
+    if identity in visiting:
+        raise LLMConfigError(t("invalid_schema_cyclic", lang), code="invalid_schema")
+    if depth > _MAX_SCHEMA_DEPTH:
+        raise LLMConfigError(
+            t("invalid_schema_too_deep", lang, limit=_MAX_SCHEMA_DEPTH),
+            code="invalid_schema",
+        )
     if identity in finished:
         return
     visiting.add(identity)

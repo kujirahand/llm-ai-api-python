@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Check the whole model schema graph for cycles and excessive depth, with distinct messages (#94).
 - Document cautions for unrestricted `base_url` (including plain HTTP), unbounded image/audio reads, and unverified local-provider connections (#88).
 - Tighten existing cache file permissions on POSIX and guard log opens against symlinks and non-regular files (#84).
 - Close synchronous error responses before waiting for a status retry (#85).
