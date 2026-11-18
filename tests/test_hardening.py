@@ -67,8 +67,11 @@ class CacheFileTest(unittest.TestCase):
                 with self.assertLogs("llm_ai_api", level="WARNING") as logs:
                     SQLiteCache(self.db)
                     cache = SQLiteCache(self.db)
-        self.assertEqual(len(logs.output), 1)
-        self.assertIn(self.db, logs.output[0])
+        # The DB and its -wal / -shm side files (created by the first instance) are
+        # separate paths, each warned about once; no path may be warned about twice.
+        self.assertEqual(len(logs.output), len(set(logs.output)))
+        main_db = [m for m in logs.output if ": %s (mode" % self.db in m]
+        self.assertEqual(len(main_db), 1)
         cache.put("k", "openai", ChatResult("x", None, None, None, {}))
         self.assertEqual(cache.get("k").text, "x")
 

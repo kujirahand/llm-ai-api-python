@@ -43,7 +43,7 @@
 
 ```sh
 # テスト（実装後）
-python3 -m unittest discover -s tests
+python3 -m unittest discover -s tests -t .
 
 # 古いビルド成果物を消す
 rm -rf dist build src/*.egg-info
