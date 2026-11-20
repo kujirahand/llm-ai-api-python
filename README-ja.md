@@ -11,6 +11,10 @@ OpenAI / OpenRouter / Claude (Anthropic) / Google の API と、Ollama / LM Stud
 
 [English](README.md) | [チュートリアル](docs/tutorial-ja.md) | [ドキュメント一覧](docs/README-ja.md)
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/kujirahand/llm-ai-api-python/main/docs/images/how-it-works.png" width="720" alt="動作原理：Python のコードから llm-ai-api を通じて、OpenAI / OpenRouter / Claude / Google / ローカル LLM へ接続する図">
+</p>
+
 ## 特長
 
 - **モデル文字列を変えるだけ**: `llm("openai:gpt-6-luna")` のような指定でプロバイダーを切り替え。同じコードのまま、クラウドもローカル LLM も使えます
