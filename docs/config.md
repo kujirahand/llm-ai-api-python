@@ -26,7 +26,7 @@ m = llm(
 | Argument | Default | Description |
 |---|---|---|
 | first argument | (required) | `"<provider>:<model>"`. Split at the first `:`, so model names may contain `:` and `/` (e.g. `"openrouter:meta-llama/llama-4:free"`). |
-| `api_key` | environment variable | `OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` (or `GOOGLE_API_KEY`). If none is found, `llm()` raises `LLMConfigError`. |
+| `api_key` | environment variable | `OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) / `XAI_API_KEY` / `MODEL_API_KEY`. If none is found, `llm()` raises `LLMConfigError`. The local providers' `LMSTUDIO_API_KEY` / `OLLAMA_API_KEY` / `STRATA_API_KEY` are optional; without them, a built-in placeholder key is used. |
 | `base_url` | environment variable → default | Can be overridden with `OPENAI_BASE_URL` and so on. Use it to go through a proxy or gateway. There is no restriction on the scheme or host. The API key and the request body are sent even to a plain `http://` host, so pass only trusted values and do not forward user input as-is. Prefer HTTPS for hosted APIs. |
 | `timeout` | `600.0` | Timeout for one request (seconds). The connect timeout is 10 seconds. |
 | `max_retries` | `2` | Number of retries. `0` disables retries. |

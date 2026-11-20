@@ -10,7 +10,7 @@ from llm_ai_api import llm
 luna = llm("openai:gpt-6-luna")
 ```
 
-`llm(spec, **options)` returns an `LLM` instance. `spec` is `"<provider>:<model>"` (`openai` / `openrouter` / `anthropic` (alias `claude`) / `google` / `lmstudio` / `ollama` / `strata`). `lmstudio` / `ollama` / `strata` target local servers; an API key is optional. You can also construct `LLM(spec, ...)` directly.
+`llm(spec, **options)` returns an `LLM` instance. `spec` is `"<provider>:<model>"` (`openai` / `openrouter` / `anthropic` (alias `claude`) / `google` / `grok` / `muse` / `lmstudio` / `ollama` / `strata`). `lmstudio` / `ollama` / `strata` target local servers; an API key is optional. You can also construct `LLM(spec, ...)` directly.
 
 Main options at creation time (keyword arguments):
 
@@ -104,7 +104,7 @@ The cache class is `SQLiteCache` and the log class is `JSONLLog`. Build either w
 
 ## Provider clients (low-level layer)
 
-Use `OpenAIClient` / `OpenRouterClient` / `AnthropicClient` / `GoogleClient` directly. Features the common interface does not cover (tool calls, image input, and so on) are available through `request()` with raw JSON.
+Use `OpenAIClient` / `OpenRouterClient` / `AnthropicClient` / `GoogleClient` / `GrokClient` / `MuseClient` / `LMStudioClient` / `OllamaClient` / `StrataClient` directly. Features the common interface does not cover (tool calls, image input, and so on) are available through `request()` with raw JSON.
 
 | Method | Description |
 |---|---|
