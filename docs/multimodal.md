@@ -31,7 +31,7 @@ The user message `content` becomes an array: the text part first, then the image
 
 | Provider | File / bytes | URL |
 |---|---|---|
-| `openai` / `openrouter` / `google` | `{"type": "image_url", "image_url": {"url": "data:<media_type>;base64,<data>"}}` | `{"type": "image_url", "image_url": {"url": "<URL>"}}` |
+| `openai` / `openrouter` / `google` / `grok` | `{"type": "image_url", "image_url": {"url": "data:<media_type>;base64,<data>"}}` | `{"type": "image_url", "image_url": {"url": "<URL>"}}` |
 | `anthropic` | `{"type": "image", "source": {"type": "base64", "media_type": "...", "data": "..."}}` | `{"type": "image", "source": {"type": "url", "url": "<URL>"}}` |
 
 Whether a URL is accepted is up to each API; the library does not block it.
