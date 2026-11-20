@@ -22,6 +22,7 @@ from ._async_clients import (
     _AsyncGoogleClient,
     _AsyncGrokClient,
     _AsyncLMStudioClient,
+    _AsyncMuseClient,
     _AsyncOllamaClient,
     _AsyncOpenAIClient,
     _AsyncOpenRouterClient,
@@ -45,6 +46,7 @@ from .google import GoogleClient
 from .grok import GrokClient
 from .lang import t
 from .lmstudio import LMStudioClient
+from .muse import MuseClient
 from .ollama import OllamaClient
 from .openai import OpenAIClient
 from .openrouter import OpenRouterClient
@@ -55,6 +57,7 @@ _PROVIDERS = {
     "openai": OpenAIClient,
     "openrouter": OpenRouterClient,
     "grok": GrokClient,
+    "muse": MuseClient,
     "google": GoogleClient,
     "lmstudio": LMStudioClient,
     "ollama": OllamaClient,
@@ -68,6 +71,7 @@ _ASYNC_PROVIDERS = {
     "openai": _AsyncOpenAIClient,
     "openrouter": _AsyncOpenRouterClient,
     "grok": _AsyncGrokClient,
+    "muse": _AsyncMuseClient,
     "google": _AsyncGoogleClient,
     "lmstudio": _AsyncLMStudioClient,
     "ollama": _AsyncOllamaClient,

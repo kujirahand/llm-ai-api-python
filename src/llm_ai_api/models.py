@@ -43,3 +43,6 @@ OPENROUTER_ANTHROPIC_CLAUDE_HAIKU_5_5 = "openrouter:anthropic/claude-haiku-5.5"
 OPENROUTER_GOOGLE_GEMINI_3_8_FLASH = "openrouter:google/gemini-3.8-flash"
 OPENROUTER_DEEPSEEK_DEEPSEEK_V4_PRO = "openrouter:deepseek/deepseek-v4-pro"
 OPENROUTER_META_LLAMA_LLAMA_4_MAVERICK = "openrouter:meta-llama/llama-4-maverick"
+
+# --- Muse (Meta Model API, api.meta.ai) ---------------------------------------
+MUSE_MUSE_WONDER_1_0 = "muse:muse-wonder-1.0"

@@ -124,6 +124,13 @@ class _AsyncGrokClient(_AsyncOpenAICompatClient):
     base_url_env = "XAI_BASE_URL"
 
 
+class _AsyncMuseClient(_AsyncOpenAICompatClient):
+    provider = "muse"
+    default_base_url = "https://api.meta.ai/v1"
+    api_key_env = "MODEL_API_KEY"
+    base_url_env = "MUSE_BASE_URL"
+
+
 class _AsyncGoogleClient(_AsyncOpenAICompatClient):
     provider = "google"
     default_base_url = "https://generativelanguage.googleapis.com/v1beta/openai"

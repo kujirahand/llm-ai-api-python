@@ -27,6 +27,7 @@ from .llm import LLM, llm
 from .lmstudio import LMStudioClient
 from .log import JSONLLog, get_log, set_log
 from .lang import get_language, set_language
+from .muse import MuseClient
 from .ollama import OllamaClient
 from .openai import OpenAIClient
 from .openrouter import OpenRouterClient
@@ -52,6 +53,7 @@ __all__ = [
     "OpenAIClient",
     "OpenRouterClient",
     "GrokClient",
+    "MuseClient",
     "AnthropicClient",
     "GoogleClient",
     "LMStudioClient",

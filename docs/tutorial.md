@@ -21,6 +21,7 @@ Set environment variables for the providers you use. For local LLMs, set them wh
 | `grok` | `XAI_API_KEY`, `XAI_BASE_URL` (as needed) |
 | `anthropic` (alias `claude`) | `ANTHROPIC_API_KEY` |
 | `google` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) |
+| `muse` | `MODEL_API_KEY`, `MUSE_BASE_URL` (as needed) |
 | `ollama` (Ollama) | `OLLAMA_API_KEY`, `OLLAMA_BASE_URL` (as needed) |
 | `lmstudio` (LM Studio) | `LMSTUDIO_API_KEY`, `LMSTUDIO_BASE_URL` (as needed) |
 | `strata` (Strata) | `STRATA_API_KEY`, `STRATA_BASE_URL` (as needed) |
@@ -184,7 +185,7 @@ print(m.ask("What is the capital of Japan?", system="Answer like a pirate.", max
 ```
 
 - Parameters you do not pass are never sent to the API, because newer models may reject even default values such as `temperature`. Set them only when you need them.
-- Parameters the official docs say a model rejects are omitted even when you pass them through `extra`. Models and parameters that are not in that list, and OpenRouter, Google, and Grok, are sent as given. To send a dropped key unchanged, call `m.client.request(path, body)`.
+- Parameters the official docs say a model rejects are omitted even when you pass them through `extra`. Models and parameters that are not in that list, and OpenRouter, Google, Grok, and Muse, are sent as given. To send a dropped key unchanged, call `m.client.request(path, body)`.
 - `max_tokens` is required by the Claude API. When you leave it out, the library fills in 16000. When the API version that is sent is `2026-10-21` (the default), `temperature`, `top_p`, and `top_k` are not sent. On another version, values you pass are sent. A `headers` entry named `anthropic-version` overrides `anthropic_version=`.
 - Any other parameter can go through `extra={...}` (keys that are not in the rejection list are merged into the request body last).
 - Passing `None` for a call disables the `llm()` default for that call only (e.g. `m.ask("q", temperature=None)`).

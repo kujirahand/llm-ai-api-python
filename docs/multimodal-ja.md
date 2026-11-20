@@ -31,7 +31,7 @@ user メッセージの `content` は、テキストのパートに続けて画�
 
 | プロバイダー | ファイル / bytes | URL |
 |---|---|---|
-| `openai` / `openrouter` / `google` / `grok` | `{"type": "image_url", "image_url": {"url": "data:<media_type>;base64,<data>"}}` | `{"type": "image_url", "image_url": {"url": "<URL>"}}` |
+| `openai` / `openrouter` / `google` / `grok` / `muse` | `{"type": "image_url", "image_url": {"url": "data:<media_type>;base64,<data>"}}` | `{"type": "image_url", "image_url": {"url": "<URL>"}}` |
 | `anthropic` | `{"type": "image", "source": {"type": "base64", "media_type": "...", "data": "..."}}` | `{"type": "image", "source": {"type": "url", "url": "<URL>"}}` |
 
 URL をそのまま受け付けるかどうかは各 API の判断です（ライブラリは止めません）。
