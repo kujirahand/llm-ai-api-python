@@ -20,6 +20,7 @@ from typing import (
 from ._async_clients import (
     _AsyncAnthropicClient,
     _AsyncGoogleClient,
+    _AsyncGrokClient,
     _AsyncLMStudioClient,
     _AsyncOllamaClient,
     _AsyncOpenAIClient,
@@ -41,6 +42,7 @@ from ._structured import inject_schema_extra, interpret_schema, parse_structured
 from .anthropic import AnthropicClient
 from .errors import LLMConfigError, LLMError
 from .google import GoogleClient
+from .grok import GrokClient
 from .lang import t
 from .lmstudio import LMStudioClient
 from .ollama import OllamaClient
@@ -52,6 +54,7 @@ from .types import ChatResult
 _PROVIDERS = {
     "openai": OpenAIClient,
     "openrouter": OpenRouterClient,
+    "grok": GrokClient,
     "google": GoogleClient,
     "lmstudio": LMStudioClient,
     "ollama": OllamaClient,
@@ -64,6 +67,7 @@ _PROVIDERS = {
 _ASYNC_PROVIDERS = {
     "openai": _AsyncOpenAIClient,
     "openrouter": _AsyncOpenRouterClient,
+    "grok": _AsyncGrokClient,
     "google": _AsyncGoogleClient,
     "lmstudio": _AsyncLMStudioClient,
     "ollama": _AsyncOllamaClient,
