@@ -1,20 +1,22 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/kujirahand/llm-ai-api-python/main/docs/images/mascot.png" width="180" alt="The llm-ai-api mascot">
+</p>
+
 # llm-ai-api
 
 [![PyPI](https://img.shields.io/pypi/v/llm-ai-api)](https://pypi.org/project/llm-ai-api/)
 
-A thin, stable HTTP wrapper for the OpenAI, OpenRouter, Claude (Anthropic), and Google APIs, with the same interface for local LLMs served by Ollama, LM Studio, and Strata. It does not use the official SDKs; the only dependency is `httpx`.
+**Every LLM, one way to call it.**
+A thin HTTP wrapper that calls the OpenAI, OpenRouter, Claude (Anthropic), and Google APIs — and local LLMs served by Ollama, LM Studio, and Strata — through the same `ask()` / `chat()` interface. It does not use the official SDKs; the only dependency is `httpx`.
 
-[日本語版 (Japanese)](https://github.com/kujirahand/llm-ai-api-python/blob/main/README-ja.md)
+[日本語版 (Japanese)](https://github.com/kujirahand/llm-ai-api-python/blob/main/README-ja.md) | [Tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md) | [All documents](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/README.md)
 
-## Why use this package?
+## Features
 
-- **Unified code across providers**: Switch models simply by changing the model string—such as `llm("openai:gpt-6-luna")`, `llm("openrouter:anthropic/claude-sonnet-5.5")`, `llm("claude:claude-sonnet-5-5")`, or `llm("google:gemini-3.8-flash")`—while using the same `ask()`, `chat()`, and `ask_stream()` methods.
-- **Local LLM support**: Use the same `llm()` interface with OpenAI-compatible servers from Ollama, LM Studio, and Strata.
-- **No boilerplate parameter handling**: Unspecified parameters are never sent. Furthermore, starting in v0.4.0, parameters confirmed to be rejected by official API specs (such as `temperature` and `top_p` on certain models) are automatically omitted according to a rule table, even if explicitly passed, removing the need to write custom workaround functions (such as `_is_no_temperature()`).
-- **Built-in caching and logging**: SQLite response caching (encrypted with a key derived from your API key; streams can be cached too) via `set_cache()` (or `cache=`) and JSON Lines request/response logging via `set_log()` (or `log=`) are built right in.
-- **Lightweight dependencies (`httpx` only)**: The only dependency is `httpx`; official packages like `openai` or `anthropic` are not required, keeping installs small and reducing dependency conflicts.
-
-Header names are case-insensitive; client and per-request headers override earlier values. See the [configuration reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/config.md) for precedence.
+- **Switch by model string**: `llm("openai:gpt-6-luna")` selects the provider, so the same code works with cloud APIs and local LLMs alike
+- **Absorbs model quirks**: Unspecified parameters are never sent. Parameters confirmed to be rejected by official API specs (such as `temperature` on certain models) are automatically omitted according to a rule table, even if explicitly passed, so no workaround code is needed on the caller side
+- **Built-in caching and logging**: SQLite response caching (encrypted with a key derived from your API key) and JSON Lines request/response logging are built right in
+- **`httpx` only**: No official `openai` or `anthropic` packages required, keeping installs small and dependency conflicts unlikely
 
 ## Installation
 
@@ -31,10 +33,31 @@ luna = llm("openai:gpt-6-luna")
 print(luna.ask("Come up with a cute name for a dog"))
 ```
 
-Set the API key via an environment variable (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`).
-The model is always `"<provider>:<model>"` (providers: `openai`, `openrouter`, `anthropic` / `claude`, `google`, `lmstudio`, `ollama`, `strata`). `lmstudio` (LM Studio, `http://localhost:1234/v1`), `ollama` (Ollama, `http://localhost:11434/v1`) and `strata` (Strata, `http://127.0.0.1:47831/v1`) target local servers. Set `LMSTUDIO_API_KEY` / `OLLAMA_API_KEY` / `STRATA_API_KEY` if your setup requires authentication. For local server settings and LAN access, see [LM Studio](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-lmstudio.md), [Ollama](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-ollama.md) and [Strata](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-strata.md).
-Google Gemini is called through Google's OpenAI-compatible endpoint.
-For step-by-step setup, including how to configure an API key, see the [Tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md). The full list of documents is in [docs/README.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/README.md).
+Set the API key via an environment variable. The model is always `"<provider>:<model>"`.
+
+| Provider | Example | API key environment variable |
+|---|---|---|
+| `openai` | `openai:gpt-6-luna` | `OPENAI_API_KEY` |
+| `openrouter` | `openrouter:anthropic/claude-sonnet-5.5` | `OPENROUTER_API_KEY` |
+| `anthropic` (alias `claude`) | `claude:claude-sonnet-5-5` | `ANTHROPIC_API_KEY` |
+| `google` | `google:gemini-3.8-flash` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) |
+| `lmstudio` | `lmstudio:<model>` | `LMSTUDIO_API_KEY` (only when authentication is on) |
+| `ollama` | `ollama:<model>` | `OLLAMA_API_KEY` (only when authentication is on) |
+| `strata` | `strata:<model>` | `STRATA_API_KEY` (only when authentication is on) |
+
+- Local LLMs are reached at `http://localhost:1234/v1` (LM Studio), `http://localhost:11434/v1` (Ollama), and `http://127.0.0.1:47831/v1` (Strata). For settings and LAN access, see [LM Studio](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-lmstudio.md), [Ollama](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-ollama.md), and [Strata](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-strata.md)
+- Google Gemini is called through Google's OpenAI-compatible endpoint
+- Common models are also available as constants (they are just `"provider:model"` strings). Any other model works as a plain string
+
+```python
+from llm_ai_api import llm, models
+
+m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
+```
+
+For step-by-step setup, see the [Tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md).
+
+## Usage
 
 ### Main methods
 
@@ -77,34 +100,15 @@ while True:
     history.append({"role": "assistant", "content": "".join(pieces)})
 ```
 
-`ask()` and `ask_stream()` also accept a non-empty list of message dictionaries. The async `aask()` and `aask_stream()` accept the same inputs. The caller owns the history; a `system=` argument is prepended just as in `chat()`. The stream iterator also has a `request_id`.
+- `ask()` and `ask_stream()` also accept a non-empty list of message dictionaries instead of a prompt string. The async `aask()` and `aask_stream()` accept the same inputs. The caller owns the history; a `system=` argument is prepended just as in `chat()`. The stream iterator also has a `request_id`
+- The old name `stream()` (`astream()` in async code) is deprecated. It remains as an alias of `ask_stream()` (`aask_stream()` in async code)
+- A stream closes its connection by itself when it is read to the end or dropped (for async streams, only while the event loop that created the stream is still running). To stop early, call `close()` (`await stream.aclose()` in async code) to release the connection right away
 
-The old name `stream()` (`astream()` in async code) is deprecated. It remains as an alias of `ask_stream()` (`aask_stream()` in async code).
+### How parameters are handled
 
-A stream closes its connection by itself when it is read to the end or dropped (for async streams, only while the event loop that created the stream is still running). To stop early, call `close()` (`await stream.aclose()` in async code) to release the connection right away.
-
-Parameters you do not pass are never sent (newer models reject even default values such as `temperature`).
-Parameters the official docs say a model rejects are omitted even when you pass them, including through `extra` (for example `temperature`, `top_p`, and `top_k` on Claude API version `2026-10-21`, and `temperature` on some OpenAI models such as `gpt-6-astra`). Models and parameters that are not in that list, and OpenRouter and Google, are sent as given. To send a dropped key unchanged, use the raw layer `luna.client.request(path, body)` (it does not rewrite the body). Anything else can go through `extra={...}`.
-
-#### Per-call timeout
-
-`ask()` / `chat()` / `ask_stream()` / `chat_stream()` (and the async `aask()` / `achat()` / `aask_stream()` / `achat_stream()`) take a keyword argument `timeout` (seconds) that overrides the timeout for that call only. If omitted (`None`), the client's setting is used (default 600 seconds).
-
-```python
-text = luna.ask("A short question", timeout=30)
-```
-
-This is a **per-operation timeout**, not a total deadline (for a stream, it is the time to wait for the next data). Retries (2 by default) extend the total time. This parameter alone cannot guarantee a total deadline in sync code: the wait resets whenever data arrives, so even with `max_retries=0` the total time is unbounded, especially for streams and slow-drip responses. In async code, if you need a hard deadline, wrap the coroutine that consumes the whole stream in `asyncio.wait_for()`, not just the `aask_stream()` call, because the request only starts at the first iteration.
-
-You can also pick from the model constants (they are just `"provider:model"` strings):
-
-```python
-from llm_ai_api import llm, models
-
-m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
-```
-
-The constants are examples. Any other model works as a plain string, e.g. `llm("openai:some-new-model")`.
+- Parameters you do not pass are never sent (newer models reject even default values such as `temperature`)
+- Parameters the official docs say a model rejects are omitted even when you pass them, including through `extra` (for example `temperature`, `top_p`, and `top_k` on Claude API version `2026-10-21`, and `temperature` on some OpenAI models such as `gpt-6-astra`). Models and parameters that are not in that list, and OpenRouter and Google, are sent as given
+- To send a dropped key unchanged, use the raw layer `luna.client.request(path, body)` (it does not rewrite the body). Anything else can go through `extra={...}`
 
 ### Timeouts and retries
 
@@ -113,7 +117,19 @@ m = llm("openai:gpt-6-luna", timeout=60, max_retries=2, retry_read_timeout=False
 m.set_config(max_retries=0)  # change after creation (only the given arguments; async too)
 ```
 
-By default, only connection-stage failures (the request never reached the server) and HTTP 408 / 409 / 429 / 5xx are retried. Failures after the request was sent, such as read timeouts, are not retried, to avoid double billing (`retry_read_timeout=True` retries read timeouts too). `retry_after_max` caps how many seconds to wait when following a `retry-after` header. For the full list of settings and production recommendations, see the [configuration reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/config.md).
+- By default, only connection-stage failures (the request never reached the server) and HTTP 408 / 409 / 429 / 5xx are retried. Failures after the request was sent, such as read timeouts, are not retried, to avoid double billing (`retry_read_timeout=True` retries read timeouts too)
+- `retry_after_max` caps how many seconds to wait when following a `retry-after` header
+- For the full list of settings and production recommendations, see the [configuration reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/config.md)
+
+#### Per-call timeout
+
+`ask()` / `chat()` / `ask_stream()` / `chat_stream()` (and the async variants) take a keyword argument `timeout` (seconds) that overrides the timeout for that call only. If omitted (`None`), the client's setting is used (default 600 seconds).
+
+```python
+text = luna.ask("A short question", timeout=30)
+```
+
+This is a **per-operation timeout**, not a total deadline (for a stream, it is the time to wait for the next data). Retries (2 by default) extend the total time. This parameter alone cannot guarantee a total deadline in sync code: the wait resets whenever data arrives, so even with `max_retries=0` the total time is unbounded, especially for streams and slow-drip responses. In async code, if you need a hard deadline, wrap the coroutine that consumes the whole stream in `asyncio.wait_for()`, not just the `aask_stream()` call, because the request only starts at the first iteration.
 
 ### Call results and events
 
@@ -149,17 +165,19 @@ async def main():
 asyncio.run(main())
 ```
 
-- `aask_stream()` / `achat_stream()` start the request at the first iteration, so connection and HTTP errors are raised there (when `async for` starts), not when the method is called (the sync `ask_stream()` / `chat_stream()` raise on the call). To stop early, call `await stream.aclose()`.
-- Close it with `async with` (or `await m.aclose()`). A closed `LLM` cannot be reused.
-- Do not carry one across event loops: create a new `llm()` for each `asyncio.run()`.
-- Do not call the sync `ask()` / `chat()` / `ask_stream()` / `chat_stream()` from async code (for example, a FastAPI handler running in the event loop): they block the whole loop until the request finishes. Use `aask()` / `achat()` / `aask_stream()` / `achat_stream()` instead.
-- `close()` closes only the sync client, not the async one. If you used the async API, call `await m.aclose()` (or use `async with`), which closes both.
+- `aask_stream()` / `achat_stream()` start the request at the first iteration, so connection and HTTP errors are raised there (when `async for` starts), not when the method is called (the sync `ask_stream()` / `chat_stream()` raise on the call). To stop early, call `await stream.aclose()`
+- Close it with `async with` (or `await m.aclose()`). A closed `LLM` cannot be reused
+- Do not carry one across event loops: create a new `llm()` for each `asyncio.run()`
+- Do not call the sync `ask()` / `chat()` / `ask_stream()` / `chat_stream()` from async code (for example, a FastAPI handler running in the event loop): they block the whole loop until the request finishes. Use `aask()` / `achat()` / `aask_stream()` / `achat_stream()` instead
+- `close()` closes only the sync client, not the async one. If you used the async API, call `await m.aclose()` (or use `async with`), which closes both
 
 The cache and the log work the same way as in the sync API. Only the common interface (`llm()`) is async; there are no async provider clients or raw layer (`request()`).
 
-For reusing and closing the client, see [“Reuse and cleanup” in the tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md#9-reuse-and-cleanup).
+For reusing and closing the client, see ["Reuse and cleanup" in the tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md#9-reuse-and-cleanup).
 
-## Response caching
+## Caching and logging
+
+### Response caching
 
 Off by default. When on, a repeat call with the same provider, model and request (messages and parameters) returns the stored result without calling the API.
 
@@ -172,15 +190,16 @@ m2 = llm("openai:gpt-6-luna", cache="other.db")  # per instance
 m3 = llm("openai:gpt-6-luna", cache=False)       # off for this instance only
 ```
 
-`cache=True` uses the default file `llm_ai_api_cache.db`. A `SQLiteCache` object can also be passed. Setting the environment variable `LLM_AI_API_CACHE_DIR` to a directory turns the cache on as `<dir>/cache.db` without calling `set_cache()`. Streaming (`ask_stream()` / `chat_stream()` / `stream_chat()`) is cached too (stored only when read up to the terminal event).
+- `cache=True` uses the default file `llm_ai_api_cache.db`. A `SQLiteCache` object can also be passed
+- Setting the environment variable `LLM_AI_API_CACHE_DIR` to a directory turns the cache on as `<dir>/cache.db` without calling `set_cache()`
+- Streaming (`ask_stream()` / `chat_stream()` / `stream_chat()`) is cached too (stored only when read up to the terminal event)
+- Stored responses are encrypted with a key derived from the API key. The lookup key is a hash of `{provider}:{model}@{api_key}>>>{input}`, so a different API key means a separate cache
+- Remove old entries with `clear_cache(days)` (`clear_cache(0)` deletes everything). When the file grows past `max_size` (default 100 MB; `set_cache(..., max_size=None)` for unlimited), the oldest third of the rows is deleted automatically
+- While the cache is on, the same request always returns the same stored answer. Clear the cache or turn it off when you want a fresh generation. When the library creates the file, it is owner-only (0600)
 
-Stored responses are encrypted with a key derived from the API key. The lookup key is a hash of `{provider}:{model}@{api_key}>>>{input}`, so a different API key means a separate cache. Remove old entries with `clear_cache(days)` (`clear_cache(0)` deletes everything). When the file grows past `max_size` (default 100 MB; `set_cache(..., max_size=None)` for unlimited), the oldest third of the rows is deleted automatically.
+See [Response caching](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/io_cache.md) for details. For provider-side prompt caching, see [Prompt caching](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/cache.md).
 
-Note that while the cache is on, the same request always returns the same stored answer. Clear the cache or turn it off when you want a fresh generation. When the library creates the file, it is owner-only (0600).
-
-See [docs/io_cache.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/io_cache.md) for details.
-
-## Input/output log
+### Input/output log
 
 Off by default. When enabled, every `ask()` / `chat()` / `ask_stream()` / `chat_stream()` / `stream_chat()` call appends one JSON Lines record with the input (request body) and the output (raw response).
 
@@ -192,9 +211,13 @@ m = llm("openai:gpt-6-luna", log="other.jsonl")  # per instance
 m2 = llm("openai:gpt-6-luna", log=False)         # off for this instance only
 ```
 
-Set the `LLM_AI_API_LOG_DIR` environment variable to a directory to enable it as `<dir>/llm.jsonl`. Each line has `time`, `provider`, `model`, `stream`, `cached`, `request` and `response`. The API key is never recorded. The log is plain text and contains your prompts and the answers, so protect it. `JSONLLog(..., redact=hook)` can filter or skip records; on POSIX, file permissions are set to `0600` before writing. A stream is recorded only after it has been read to the end. When the file grows past `max_size` (default 100 MB; `set_log(..., max_size=None)` for unlimited), the oldest third of the lines is deleted automatically.
+- Set the `LLM_AI_API_LOG_DIR` environment variable to a directory to enable it as `<dir>/llm.jsonl`
+- Each line has `time`, `provider`, `model`, `stream`, `cached`, `request` and `response`. The API key is never recorded
+- The log is plain text and contains your prompts and the answers, so protect it. `JSONLLog(..., redact=hook)` can filter or skip records
+- On POSIX, file permissions are set to `0600` before writing. A stream is recorded only after it has been read to the end
+- When the file grows past `max_size` (default 100 MB; `set_log(..., max_size=None)` for unlimited), the oldest third of the lines is deleted automatically
 
-See [docs/io_logs.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/io_logs.md) for details.
+See [Input/output log](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/io_logs.md) for details.
 
 ## Connection settings
 
@@ -209,13 +232,30 @@ m = llm("openai:gpt-6-luna", connection={"max_connections": 5})        # per-ins
 
 The available keys are `max_connections` (default 100), `max_keepalive_connections` (default 20), `keepalive_expiry` (seconds, default 5.0), `connect_timeout` (seconds, default 10.0), `verify` (bool or a CA path, default True), `cert` (a certificate path or pair), and `proxy` (an http/https URL). Settings are resolved when the client is created; calling `set_connection()` later does not affect existing instances. `set_connection()` replaces the whole setting, and calling it with no arguments restores the defaults.
 
+Header names are case-insensitive; client and per-request headers override earlier values. See the [configuration reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/config.md) for precedence.
+
+## Error messages
+
+Error messages are available in English and Japanese. The language is chosen from `LLM_AI_API_LANG`, then `LANGUAGE` / `LC_ALL` / `LC_MESSAGES` / `LANG`, and falls back to English. You can also set it explicitly:
+
+```python
+from llm_ai_api import llm, set_language
+
+set_language("ja")                       # for the whole process
+m = llm("openai:gpt-6-luna", lang="en")  # or per model
+```
+
+`set_language()` is process-global: it changes the language of error messages for the whole process, including other threads and instances created earlier when they raise (unlike `set_cache()` / `set_log()`, which are resolved when an instance is created). For a per-instance language, use the `lang=` option.
+
+Every exception has a language-independent `code` (e.g. `"missing_api_key"`) you can check instead of the message. Messages returned by the API itself are never translated.
+
 ## Security notes
 
 The library intentionally does not restrict the following. Be careful what your application passes in.
 
-- **`base_url`**: There is no restriction on the scheme or host. The API key and the request body are sent even to a plain `http://` host. Pass only trusted values; do not forward user input as-is. Prefer HTTPS for hosted APIs ([Configuration reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/config.md)).
-- **Images and audio**: File paths in `images=` and `transcribe()` are read in full, with no size limit (`bytes` are already in memory). Images are then encoded as base64 in JSON, which uses about 1.3 times the original size or more. Check sizes in your application, and do not pass untrusted paths or uploads directly ([Image input](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/multimodal.md)).
-- **Local providers** (`lmstudio` / `ollama` / `strata`): The default is a plain HTTP connection to a fixed port, with no check of the server's authenticity. On a shared machine, another process on the same port could receive your prompts. Authenticating proxies and tokens do not verify the server, so for sensitive data also read the notes on each page ([LM Studio](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-lmstudio.md#notes), [Ollama](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-ollama.md#notes), [Strata](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-strata.md#notes)).
+- **`base_url`**: There is no restriction on the scheme or host. The API key and the request body are sent even to a plain `http://` host. Pass only trusted values; do not forward user input as-is. Prefer HTTPS for hosted APIs ([Configuration reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/config.md))
+- **Images and audio**: File paths in `images=` and `transcribe()` are read in full, with no size limit (`bytes` are already in memory). Images are then encoded as base64 in JSON, which uses about 1.3 times the original size or more. Check sizes in your application, and do not pass untrusted paths or uploads directly ([Image input](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/multimodal.md))
+- **Local providers** (`lmstudio` / `ollama` / `strata`): The default is a plain HTTP connection to a fixed port, with no check of the server's authenticity. On a shared machine, another process on the same port could receive your prompts. Authenticating proxies and tokens do not verify the server, so for sensitive data also read the notes on each page ([LM Studio](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-lmstudio.md#notes), [Ollama](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-ollama.md#notes), [Strata](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-strata.md#notes))
 
 ## Examples
 
@@ -238,27 +278,12 @@ See [`examples/`](https://github.com/kujirahand/llm-ai-api-python/tree/main/exam
 
 `ask(prompt, images=[...])` builds each provider's image format from file paths, bytes, or http(s) URLs ([docs/multimodal.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/multimodal.md)). Native `content` dicts passed to `chat()` are not converted between providers.
 
-## Error messages
+## Documents
 
-Error messages are available in English and Japanese. The language is chosen from
-`LLM_AI_API_LANG`, then `LANGUAGE` / `LC_ALL` / `LC_MESSAGES` / `LANG`, and falls back to English.
-You can also set it explicitly:
-
-```python
-from llm_ai_api import llm, set_language
-
-set_language("ja")                       # for the whole process
-m = llm("openai:gpt-6-luna", lang="en")  # or per model
-```
-
-`set_language()` is process-global: it changes the language of error messages for the whole process, including other threads and instances created earlier when they raise (unlike `set_cache()` / `set_log()`, which are resolved when an instance is created). For a per-instance language, use the `lang=` option.
-
-Every exception has a language-independent `code` (e.g. `"missing_api_key"`) you can check instead of the message.
-Messages returned by the API itself are never translated.
-
-## Prompt caching
-
-See [docs/cache.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/cache.md).
+- [Tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md): step-by-step setup
+- [API Reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/api.md): the full list of methods
+- [Configuration reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/config.md): all settings and production recommendations
+- [All documents](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/README.md): links to every document
 
 ## License
 

@@ -1,20 +1,22 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/kujirahand/llm-ai-api-python/main/docs/images/mascot.png" width="180" alt="llm-ai-api のマスコットキャラクター">
+</p>
+
 # llm-ai-api
 
 [![PyPI](https://img.shields.io/pypi/v/llm-ai-api)](https://pypi.org/project/llm-ai-api/)
 
-OpenAI / OpenRouter / Claude (Anthropic) / Google の API と、Ollama / LM Studio / Strata のローカル LLM を同じ書き方で呼び出せる、薄くて壊れにくい HTTP ラッパーです。公式 SDK を使わず、依存は `httpx` のみです。
+**どの LLM も、同じ書き方で。**
+OpenAI / OpenRouter / Claude (Anthropic) / Google の API と、Ollama / LM Studio / Strata のローカル LLM を、同じ `ask()` / `chat()` で呼び出せる薄い HTTP ラッパーです。公式 SDK は使わず、依存は `httpx` のみです。
 
-[English](README.md)
+[English](README.md) | [チュートリアル](docs/tutorial-ja.md) | [ドキュメント一覧](docs/README-ja.md)
 
-## このパッケージを使うメリット
+## 特長
 
-- **プロバイダーごとの切り替えコードが減る**: `llm("openai:gpt-6-luna")`、`llm("openrouter:anthropic/claude-sonnet-5.5")`、`llm("claude:claude-sonnet-5-5")`、`llm("google:gemini-3.8-flash")` のように、モデル文字列を変えるだけで同じ `ask()` / `chat()` / `ask_stream()` が使えます。
-- **ローカル LLM にも対応**: Ollama、LM Studio、Strata の OpenAI 互換サーバーを、クラウドと同じ `llm()` インターフェイスで使えます。
-- **モデルごとのパラメータ回避コードが不要**: 指定していないパラメータは送信しません。さらに v0.4.0 からは、公式仕様で拒否されると確認したパラメータ（`temperature` や `top_p` など）はルール表に従って、明示的に渡しても送信しないため、呼び出し側で回避コード（`_is_no_temperature()` など）を自前で書く必要がありません。
-- **SQLite キャッシュと JSON Lines ログを標準搭載**: `set_cache()`（または `cache=`）による SQLite レスポンスキャッシュ（API キーから作った鍵で暗号化。ストリーミングもキャッシュ可能）や、`set_log()`（または `log=`）による JSON Lines 入出力ログが組み込まれています。
-- **依存が軽い（`httpx` のみ）**: 依存は `httpx` のみで、公式の `openai` や `anthropic` パッケージなどは不要です。インストールが軽く、依存関係の競合が起きにくくなります。
-
-ヘッダー名は大文字・小文字を区別せず、クライアントとリクエストごとのヘッダーが先の値を上書きします。優先順位は[設定リファレンス](docs/config-ja.md)を参照してください。
+- **モデル文字列を変えるだけ**: `llm("openai:gpt-6-luna")` のような指定でプロバイダーを切り替え。同じコードのまま、クラウドもローカル LLM も使えます
+- **モデルのクセを吸収**: 指定していないパラメータは送りません。さらに、公式仕様で拒否されると確認したパラメータ（`temperature` など）は、明示的に渡してもルール表に従って送らないため、呼び出し側の回避コードが不要です
+- **キャッシュとログを標準搭載**: SQLite のレスポンスキャッシュ（API キー由来の鍵で暗号化）と、JSON Lines の入出力ログが組み込みです
+- **依存は `httpx` のみ**: 公式の `openai` / `anthropic` パッケージは不要。インストールが軽く、依存の競合が起きにくい構成です
 
 ## インストール
 
@@ -22,7 +24,7 @@ OpenAI / OpenRouter / Claude (Anthropic) / Google の API と、Ollama / LM Stud
 pip install llm-ai-api
 ```
 
-## 簡単な使い方
+## クイックスタート
 
 ```python
 from llm_ai_api import llm
@@ -31,10 +33,31 @@ luna = llm("openai:gpt-6-luna")
 print(luna.ask("可愛い犬の名前を考えて"))
 ```
 
-API キーは環境変数（`OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`（または `GOOGLE_API_KEY`））で渡します。
-モデルは `"<プロバイダー>:<モデル名>"` で指定します（`openai` / `openrouter` / `anthropic`（別名 `claude`） / `google` / `lmstudio` / `ollama` / `strata`）。`lmstudio`（LM Studio、`http://localhost:1234/v1`）、`ollama`（Ollama、`http://localhost:11434/v1`）、`strata`（Strata、`http://127.0.0.1:47831/v1`）はローカルサーバー向けです。認証が必要な構成では環境変数 `LMSTUDIO_API_KEY` / `OLLAMA_API_KEY` / `STRATA_API_KEY` でキーを指定します。ローカルサーバーの設定と LAN 越しの接続は、[LM Studio](docs/local_llm-lmstudio-ja.md) / [Ollama](docs/local_llm-ollama-ja.md) / [Strata](docs/local_llm-strata-ja.md) を参照してください。
-Google Gemini は、Google の OpenAI 互換エンドポイント経由で呼び出します。
-API キーの設定方法など、最初から順に試す手順は[チュートリアル](docs/tutorial-ja.md)を参照してください。ドキュメント全体の一覧は [docs/README-ja.md](docs/README-ja.md) にあります。
+API キーは環境変数で渡します。モデルは `"<プロバイダー>:<モデル名>"` で指定します。
+
+| プロバイダー | 指定の例 | API キーの環境変数 |
+|---|---|---|
+| `openai` | `openai:gpt-6-luna` | `OPENAI_API_KEY` |
+| `openrouter` | `openrouter:anthropic/claude-sonnet-5.5` | `OPENROUTER_API_KEY` |
+| `anthropic`（別名 `claude`） | `claude:claude-sonnet-5-5` | `ANTHROPIC_API_KEY` |
+| `google` | `google:gemini-3.8-flash` | `GEMINI_API_KEY`（または `GOOGLE_API_KEY`） |
+| `lmstudio` | `lmstudio:<モデル名>` | `LMSTUDIO_API_KEY`（認証が必要な構成のみ） |
+| `ollama` | `ollama:<モデル名>` | `OLLAMA_API_KEY`（認証が必要な構成のみ） |
+| `strata` | `strata:<モデル名>` | `STRATA_API_KEY`（認証が必要な構成のみ） |
+
+- ローカル LLM の接続先は、`lmstudio` が `http://localhost:1234/v1`、`ollama` が `http://localhost:11434/v1`、`strata` が `http://127.0.0.1:47831/v1` です。設定と LAN 越しの接続は各ページを参照してください（[LM Studio](docs/local_llm-lmstudio-ja.md) / [Ollama](docs/local_llm-ollama-ja.md) / [Strata](docs/local_llm-strata-ja.md)）
+- Google Gemini は、Google の OpenAI 互換エンドポイント経由で呼び出します
+- 代表的なモデルは定数でも指定できます（中身は `"プロバイダー:モデル"` の文字列です）。載っていないモデルも文字列でそのまま使えます
+
+```python
+from llm_ai_api import llm, models
+
+m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
+```
+
+最初から順に試す手順は[チュートリアル](docs/tutorial-ja.md)を参照してください。
+
+## 使い方
 
 ### 主なメソッド
 
@@ -77,34 +100,15 @@ while True:
     history.append({"role": "assistant", "content": "".join(pieces)})
 ```
 
-`ask()` と `ask_stream()` には空でないメッセージ辞書のリストも渡せます。非同期の `aask()` / `aask_stream()` も同じです。履歴は呼び出し側で管理し、`system=` は `chat()` と同じく先頭に追加されます。ストリームイテレーターには `request_id` も設定されます。
+- `ask()` と `ask_stream()` には、質問の文字列ではなく、空でないメッセージ辞書のリストも渡せます（非同期の `aask()` / `aask_stream()` も同じ）。履歴は呼び出し側で管理し、`system=` は `chat()` と同じく先頭に追加されます。ストリームのイテレーターには `request_id` も設定されます
+- 旧名の `stream()`（非同期は `astream()`）は非推奨です。`ask_stream()`（非同期は `aask_stream()`）の別名として残してあります
+- ストリームは、最後まで読むか、捨てられたときに自動で接続を閉じます（非同期では、ストリームを作ったイベントループがまだ動いている場合に限ります）。途中でやめるときは `close()`（非同期では `await stream.aclose()`）を呼ぶと、すぐに接続を解放できます
 
-旧名の `stream()`（非同期は `astream()`）は非推奨です。`ask_stream()`（非同期は `aask_stream()`）の別名として残してあります。
+### パラメータの扱い
 
-ストリームは、最後まで読むか、捨てられたときに自動で接続を閉じます（非同期では、ストリームを作ったイベントループがまだ動いている場合に限ります）。途中でやめるときは `close()`（非同期では `await stream.aclose()`）を呼ぶと、すぐに接続を解放できます。
-
-指定していないパラメータは送りません（新しいモデルは `temperature` などをデフォルト値でも拒否することがあるため）。
-公式仕様で拒否されると確認したパラメータは、明示しても、`extra` で渡しても送りません（例: Claude の API バージョン `2026-10-21` では `temperature` / `top_p` / `top_k`。OpenAI の `gpt-6-astra` など、一部のモデルでは `temperature` も）。表にないモデルとパラメータ、および OpenRouter と Google はそのまま送ります。落とすキーをそのまま送りたいときは、生レイヤー `luna.client.request(path, body)` を使います（こちらはボディを加工しません）。それ以外のパラメータは `extra={...}` で渡せます。
-
-#### 呼び出しごとのタイムアウト
-
-`ask()` / `chat()` / `ask_stream()` / `chat_stream()`（非同期の `aask()` / `achat()` / `aask_stream()` / `achat_stream()` も同じ）は、キーワード引数 `timeout`（秒）でその呼び出しだけタイムアウトを変えられます。省略（`None`）するとクライアントの設定（既定 600 秒）を使います。
-
-```python
-text = luna.ask("短い質問", timeout=30)
-```
-
-これは **操作ごとのタイムアウト** で、合計の期限ではありません（ストリームでは「次のデータが届くまでの時間」）。リトライ（既定 2 回）の分だけ全体の時間は延びます。この引数だけでは、同期コードで合計の期限を保証できません（データが届くたびに待ち時間がリセットされるため、`max_retries=0` にしても、特にストリームや少しずつ返る応答では全体の時間に上限がありません）。非同期コードで厳密な期限が必要なときは、`aask_stream()` の呼び出しだけではなく、ストリームを読み切る処理全体のコルーチンを `asyncio.wait_for()` で包んでください（通信は最初の反復で始まるため）。
-
-代表的なモデルは定数でも指定できます（中身は `"プロバイダー:モデル"` の文字列です）。
-
-```python
-from llm_ai_api import llm, models
-
-m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
-```
-
-定数は例です。載っていないモデルも `llm("openai:新しいモデル名")` のように文字列でそのまま使えます。
+- 指定していないパラメータは送りません（新しいモデルは `temperature` などをデフォルト値でも拒否することがあるため）
+- 公式仕様で拒否されると確認したパラメータは、明示しても、`extra` で渡しても送りません（例: Claude の API バージョン `2026-10-21` では `temperature` / `top_p` / `top_k`。OpenAI の `gpt-6-astra` など、一部のモデルでは `temperature` も）。表にないモデルとパラメータ、および OpenRouter と Google はそのまま送ります
+- 落とすキーをそのまま送りたいときは、生レイヤー `luna.client.request(path, body)` を使います（こちらはボディを加工しません）。それ以外のパラメータは `extra={...}` で渡せます
 
 ### タイムアウトとリトライ
 
@@ -113,7 +117,19 @@ m = llm("openai:gpt-6-luna", timeout=60, max_retries=2, retry_read_timeout=False
 m.set_config(max_retries=0)  # 生成後に変更する（渡した引数だけが変わる。非同期にも反映）
 ```
 
-既定では、接続段階の失敗（サーバーに届いていないもの）と HTTP 408 / 409 / 429 / 5xx だけをリトライします。読み取りタイムアウトなど送信後の失敗は、二重課金を避けるためリトライしません（`retry_read_timeout=True` で読み取りタイムアウトもリトライします）。`retry_after_max` は `retry-after` ヘッダーに従って待つ秒数の上限です。設定の一覧と本番環境での推奨は、[設定リファレンス](docs/config-ja.md) を参照してください。
+- 既定では、接続段階の失敗（サーバーに届いていないもの）と HTTP 408 / 409 / 429 / 5xx だけをリトライします。読み取りタイムアウトなど送信後の失敗は、二重課金を避けるためリトライしません（`retry_read_timeout=True` で読み取りタイムアウトもリトライします）
+- `retry_after_max` は `retry-after` ヘッダーに従って待つ秒数の上限です
+- 設定の一覧と本番環境での推奨は、[設定リファレンス](docs/config-ja.md) を参照してください
+
+#### 呼び出しごとのタイムアウト
+
+`ask()` / `chat()` / `ask_stream()` / `chat_stream()`（非同期も同じ）は、キーワード引数 `timeout`（秒）でその呼び出しだけタイムアウトを変えられます。省略（`None`）するとクライアントの設定（既定 600 秒）を使います。
+
+```python
+text = luna.ask("短い質問", timeout=30)
+```
+
+これは **操作ごとのタイムアウト** で、合計の期限ではありません（ストリームでは「次のデータが届くまでの時間」）。リトライ（既定 2 回）の分だけ全体の時間は延びます。この引数だけでは、同期コードで合計の期限を保証できません（データが届くたびに待ち時間がリセットされるため、`max_retries=0` にしても、特にストリームや少しずつ返る応答では全体の時間に上限がありません）。非同期コードで厳密な期限が必要なときは、`aask_stream()` の呼び出しだけではなく、ストリームを読み切る処理全体のコルーチンを `asyncio.wait_for()` で包んでください（通信は最初の反復で始まるため）。
 
 ### 呼び出しの結果とイベント
 
@@ -149,17 +165,19 @@ async def main():
 asyncio.run(main())
 ```
 
-- `aask_stream()` / `achat_stream()` は最初の反復で通信を始めるため、接続エラーや HTTP エラーも最初の反復（`async for` の開始時）に発生します（同期版の `ask_stream()` / `chat_stream()` は呼び出し時に発生します）。途中でやめるときは `await stream.aclose()` を呼んでください。
-- `async with`（または `await m.aclose()`）で閉じてください。閉じた後は再利用できません。
-- イベントループをまたいで使わないでください。`asyncio.run()` のたびに新しい `llm()` を作ります。
-- 非同期コード（FastAPI のハンドラーなど、イベントループの中）で同期版の `ask()` / `chat()` / `ask_stream()` / `chat_stream()` を呼ばないでください。リクエストが終わるまでイベントループ全体が止まります。`aask()` / `achat()` / `aask_stream()` / `achat_stream()` を使います。
-- `close()` が閉じるのは同期クライアントだけで、非同期クライアントは閉じません。非同期 API を使った場合は `await m.aclose()`（または `async with`）で、非同期・同期の両方を閉じます。
+- `aask_stream()` / `achat_stream()` は最初の反復で通信を始めるため、接続エラーや HTTP エラーも最初の反復（`async for` の開始時）に発生します（同期版の `ask_stream()` / `chat_stream()` は呼び出し時に発生します）。途中でやめるときは `await stream.aclose()` を呼んでください
+- `async with`（または `await m.aclose()`）で閉じてください。閉じた後は再利用できません
+- イベントループをまたいで使わないでください。`asyncio.run()` のたびに新しい `llm()` を作ります
+- 非同期コード（FastAPI のハンドラーなど、イベントループの中）で同期版の `ask()` / `chat()` / `ask_stream()` / `chat_stream()` を呼ばないでください。リクエストが終わるまでイベントループ全体が止まります。`aask()` / `achat()` / `aask_stream()` / `achat_stream()` を使います
+- `close()` が閉じるのは同期クライアントだけで、非同期クライアントは閉じません。非同期 API を使った場合は `await m.aclose()`（または `async with`）で、非同期・同期の両方を閉じます
 
 キャッシュとログは非同期でも同期版と同じように働きます。非同期に対応しているのは共通インターフェイス（`llm()`）だけで、プロバイダークライアントや生レイヤー（`request()`）の非同期版はありません。
 
 接続の使い回しと終了処理については、[チュートリアルの「使い回しと後片付け」](docs/tutorial-ja.md#9-使い回しと後片付け) を参照してください。
 
-## API応答のキャッシュ
+## キャッシュとログ
+
+### API応答のキャッシュ
 
 デフォルトではオフです。オンにすると、同じプロバイダー・モデル・リクエスト（メッセージとパラメータ）で再び呼び出したとき、API を呼ばずに保存済みの結果を返します。
 
@@ -172,15 +190,16 @@ m2 = llm("openai:gpt-6-luna", cache="other.db")  # インスタンスごとの�
 m3 = llm("openai:gpt-6-luna", cache=False)       # このインスタンスだけオフ
 ```
 
-`cache=True` は既定のファイル `llm_ai_api_cache.db` を使います。`SQLiteCache` オブジェクトを渡すこともできます。環境変数 `LLM_AI_API_CACHE_DIR` にディレクトリを指定すると、`set_cache()` を呼ばなくても `<ディレクトリ>/cache.db` でオンになります。ストリーミング（`ask_stream()` / `chat_stream()` / `stream_chat()`）もキャッシュされます（終端イベントまで読み切ったときだけ保存）。
+- `cache=True` は既定のファイル `llm_ai_api_cache.db` を使います。`SQLiteCache` オブジェクトを渡すこともできます
+- 環境変数 `LLM_AI_API_CACHE_DIR` にディレクトリを指定すると、`set_cache()` を呼ばなくても `<ディレクトリ>/cache.db` でオンになります
+- ストリーミング（`ask_stream()` / `chat_stream()` / `stream_chat()`）もキャッシュされます（終端イベントまで読み切ったときだけ保存）
+- 保存される応答は、API キーから作った鍵で暗号化されます。キーは `{プロバイダー}:{モデル}@{APIキー}>>>{入力}` のハッシュなので、API キーが違えば別のキャッシュになります
+- 古いエントリは `clear_cache(days)` で削除できます（`clear_cache(0)` で全削除）。ファイルサイズが `max_size`（既定 100 MB。`set_cache(..., max_size=None)` で無制限）を超えると、古いほうから 1/3 の行が自動で削除されます
+- キャッシュが有効な間は、同じリクエストには常に同じ保存済みの応答が返ります。新しい応答が欲しい場合は、キャッシュを空にするかオフにしてください。ファイルを新規作成するときは、所有者のみがアクセスできる権限（0600）になります
 
-保存される応答は、API キーから作った鍵で暗号化されます。キーは `{プロバイダー}:{モデル}@{APIキー}>>>{入力}` のハッシュなので、API キーが違えば別のキャッシュになります。古いエントリは `clear_cache(days)` で削除できます（`clear_cache(0)` で全削除）。ファイルサイズが `max_size`（既定 100 MB。`set_cache(..., max_size=None)` で無制限）を超えると、古いほうから 1/3 の行が自動で削除されます。
+詳しくは、[キャッシュ](docs/io_cache-ja.md) を参照してください。プロバイダー側のプロンプトキャッシュについては、[プロンプトキャッシュ](docs/cache-ja.md) を参照してください。
 
-なお、キャッシュが有効な間は、同じリクエストには常に同じ保存済みの応答が返ります。新しい応答が欲しい場合は、キャッシュを空にするかオフにしてください。ファイルを新規作成するときは、所有者のみがアクセスできる権限（0600）になります。
-
-詳しくは、[こちら](docs/io_cache-ja.md) を参照してください。
-
-## 入出力のログ
+### 入出力のログ
 
 デフォルトではオフです。オンにすると、`ask()` / `chat()` / `ask_stream()` / `chat_stream()` / `stream_chat()` の呼び出しごとに、入力（リクエストボディ）と出力（生の応答）を JSON Lines 形式で 1 行ずつ追記します。
 
@@ -192,9 +211,13 @@ m = llm("openai:gpt-6-luna", log="other.jsonl")  # インスタンスごとの�
 m2 = llm("openai:gpt-6-luna", log=False)         # このインスタンスだけオフ
 ```
 
-環境変数 `LLM_AI_API_LOG_DIR` にディレクトリを指定すると、`<ディレクトリ>/llm.jsonl` でオンになります。1 行には `time`, `provider`, `model`, `stream`, `cached`, `request`, `response` が入ります。API キーは記録されません。ログは平文で、プロンプトと回答がそのまま入るので、取り扱いに注意してください。`JSONLLog(..., redact=hook)` で記録を加工・省略できます。POSIX では書き込み前にファイル権限を `0600` にします。ストリーミングは最後まで読み切ったときだけ記録されます。ファイルサイズが `max_size`（既定 100 MB。`set_log(..., max_size=None)` で無制限）を超えると、古いほうから 1/3 の行が自動で削除されます。
+- 環境変数 `LLM_AI_API_LOG_DIR` にディレクトリを指定すると、`<ディレクトリ>/llm.jsonl` でオンになります
+- 1 行には `time`, `provider`, `model`, `stream`, `cached`, `request`, `response` が入ります。API キーは記録されません
+- ログは平文で、プロンプトと回答がそのまま入るので、取り扱いに注意してください。`JSONLLog(..., redact=hook)` で記録を加工・省略できます
+- POSIX では書き込み前にファイル権限を `0600` にします。ストリーミングは最後まで読み切ったときだけ記録されます
+- ファイルサイズが `max_size`（既定 100 MB。`set_log(..., max_size=None)` で無制限）を超えると、古いほうから 1/3 の行が自動で削除されます
 
-詳しくは、[こちら](docs/io_logs-ja.md) を参照してください。
+詳しくは、[入出力のログ](docs/io_logs-ja.md) を参照してください。
 
 ## 接続設定
 
@@ -209,13 +232,30 @@ m = llm("openai:gpt-6-luna", connection={"max_connections": 5})        # この�
 
 指定できるのは `max_connections`（既定 100）、`max_keepalive_connections`（既定 20）、`keepalive_expiry`（秒、既定 5.0）、`connect_timeout`（秒、既定 10.0）、`verify`（bool または CA のパス、既定 True）、`cert`（証明書のパスまたは組）、`proxy`（http/https の URL）です。設定はクライアント生成時に解決され、後から `set_connection()` を呼んでも既存のインスタンスには影響しません。`set_connection()` は置き換え式で、引数なしで呼ぶと既定に戻ります。
 
+ヘッダー名は大文字・小文字を区別せず、クライアントとリクエストごとのヘッダーが先の値を上書きします。優先順位は[設定リファレンス](docs/config-ja.md)を参照してください。
+
+## エラーメッセージ
+
+エラーメッセージは日本語と英語に対応しています。言語は環境変数 `LLM_AI_API_LANG`、`LANGUAGE` / `LC_ALL` / `LC_MESSAGES` / `LANG` の順に判定し、判定できなければ英語です。明示的に指定することもできます。
+
+```python
+from llm_ai_api import llm, set_language
+
+set_language("ja")                       # プロセス全体
+m = llm("openai:gpt-6-luna", lang="en")  # モデルごと
+```
+
+`set_language()` はプロセス全体の設定です。他のスレッドや、すでに作成済みのインスタンスが例外を出すときのメッセージの言語も変わります（生成時に設定を解決する `set_cache()` / `set_log()` とは異なります）。インスタンスごとに言語を変えたいときは `lang=` を使ってください。
+
+すべての例外は、言語に依存しない `code`（例: `"missing_api_key"`）を持っています。メッセージの文面ではなく `code` で判定してください。API 自身が返したメッセージは翻訳しません。
+
 ## セキュリティ上の注意
 
 次の点は、ライブラリ側では意図的に制限していません。アプリで渡す値には注意してください。
 
-- **`base_url`**: スキームやホストの制限はありません。`http://` の外部ホストにも API キーとリクエスト本文が送られます。信頼できる値だけを渡し、利用者入力をそのまま渡さないでください。ホスト系の API では HTTPS を使ってください（[設定リファレンス](docs/config-ja.md)）。
-- **画像・音声**: `images=` と `transcribe()` のパスは、サイズ上限なく全量読み込みます（`bytes` はすでにメモリ上にあります）。画像はさらに base64 と JSON で、元のサイズの約 1.3 倍以上のメモリを使います。アプリ側でサイズを確認し、信頼できないパスやアップロードをそのまま渡さないでください（[画像入力](docs/multimodal-ja.md)）。
-- **ローカルプロバイダー**（`lmstudio` / `ollama` / `strata`）: 既定では固定ポートの平文 HTTP に接続し、サーバーの真正性は確認しません。共有マシンでは、同じポートの別プロセスがプロンプトを受け取れることがあります。認証付きプロキシやトークンは接続先の真正性を確かめるものではないので、機密情報を扱うときは各ページの注意も読んでください（[LM Studio](docs/local_llm-lmstudio-ja.md#注意点)、[Ollama](docs/local_llm-ollama-ja.md#注意点)、[Strata](docs/local_llm-strata-ja.md#注意点)）。
+- **`base_url`**: スキームやホストの制限はありません。`http://` の外部ホストにも API キーとリクエスト本文が送られます。信頼できる値だけを渡し、利用者入力をそのまま渡さないでください。ホスト系の API では HTTPS を使ってください（[設定リファレンス](docs/config-ja.md)）
+- **画像・音声**: `images=` と `transcribe()` のパスは、サイズ上限なく全量読み込みます（`bytes` はすでにメモリ上にあります）。画像はさらに base64 と JSON で、元のサイズの約 1.3 倍以上のメモリを使います。アプリ側でサイズを確認し、信頼できないパスやアップロードをそのまま渡さないでください（[画像入力](docs/multimodal-ja.md)）
+- **ローカルプロバイダー**（`lmstudio` / `ollama` / `strata`）: 既定では固定ポートの平文 HTTP に接続し、サーバーの真正性は確認しません。共有マシンでは、同じポートの別プロセスがプロンプトを受け取れることがあります。認証付きプロキシやトークンは接続先の真正性を確かめるものではないので、機密情報を扱うときは各ページの注意も読んでください（[LM Studio](docs/local_llm-lmstudio-ja.md#注意点)、[Ollama](docs/local_llm-ollama-ja.md#注意点)、[Strata](docs/local_llm-strata-ja.md#注意点)）
 
 ## サンプル
 
@@ -238,27 +278,12 @@ m = llm("openai:gpt-6-luna", connection={"max_connections": 5})        # この�
 
 `ask(prompt, images=[...])` は、画像（ファイルのパス・bytes・http(s) の URL）をプロバイダーごとの形式に組み立てて送ります（[docs/multimodal-ja.md](docs/multimodal-ja.md)）。`chat()` に渡す `content` のネイティブ dict はプロバイダー間で変換されません。
 
-## エラーメッセージ
+## ドキュメント
 
-エラーメッセージは日本語と英語に対応しています。言語は環境変数 `LLM_AI_API_LANG`、
-`LANGUAGE` / `LC_ALL` / `LC_MESSAGES` / `LANG` の順に判定し、判定できなければ英語です。
-明示的に指定することもできます。
-
-```python
-from llm_ai_api import llm, set_language
-
-set_language("ja")                       # プロセス全体
-m = llm("openai:gpt-6-luna", lang="en")  # モデルごと
-```
-
-`set_language()` はプロセス全体の設定です。他のスレッドや、すでに作成済みのインスタンスが例外を出すときのメッセージの言語も変わります（生成時に設定を解決する `set_cache()` / `set_log()` とは異なります）。インスタンスごとに言語を変えたいときは `lang=` を使ってください。
-
-すべての例外は、言語に依存しない `code`（例: `"missing_api_key"`）を持っています。メッセージの文面ではなく `code` で判定してください。
-API 自身が返したメッセージは翻訳しません。
-
-## プロンプトキャッシュについて
-
-詳しくは、[こちら](docs/cache-ja.md) を参照してください。
+- [チュートリアル](docs/tutorial-ja.md): 最初から順に試す手順
+- [API リファレンス](docs/api-ja.md): 全メソッドの一覧
+- [設定リファレンス](docs/config-ja.md): 設定の一覧と本番環境での推奨
+- [ドキュメント一覧](docs/README-ja.md): すべてのドキュメントへのリンク
 
 ## ライセンス
 
