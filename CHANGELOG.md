@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reorganize the READMEs around a quick start and provider table, and add a how-it-works diagram featuring the project mascot to the README header.
+
 ## 0.6.2
 
 - Clarify the `base_url` caution placement, link README security notes to each local provider page, and correct the full-read wording for paths vs `bytes` (#97).
