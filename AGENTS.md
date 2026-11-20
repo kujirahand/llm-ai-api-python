@@ -135,6 +135,8 @@ llm-ai-api-python/
 │   ├── publish.md       # PyPI への公開手順
 │   ├── api.md           # 公開 API の一覧（英語）
 │   ├── api-ja.md        # 同（日本語）
+│   ├── api-keys.md      # プロバイダーごとの API キーの取得方法（英語）
+│   ├── api-keys-ja.md   # 同（日本語）
 │   ├── structured.md    # 構造化出力（schema=）（英語）
 │   ├── structured-ja.md # 同（日本語）
 │   ├── multimodal.md    # 画像入力 images=（英語）

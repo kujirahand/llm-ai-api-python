@@ -11,6 +11,7 @@ The guides have an English and a Japanese version (`foo.md` and `foo-ja.md`) and
 | Page | What it covers |
 |---|---|
 | [Tutorial](tutorial.md) / [チュートリアル](tutorial-ja.md) | Installation and API keys, the first question, switching models, continuing a conversation, streaming, per-call options, async (`aask` / `achat` / `aask_stream`), handling errors, reusing and closing clients. Start with this one. |
+| [Getting an API key](api-keys.md) / [API キーの取得方法](api-keys-ja.md) | For each provider, where its key is issued and which environment variable this library reads, with a note on how billing works (such as prepaid credits). |
 | [API reference](api.md) / [API リファレンス](api-ja.md) | The public API as a list: `llm()`, the `LLM` methods and their async versions, return types (`ChatResult`, `ChatChunk`, `Usage`), module functions, provider clients and the low-level `request()` / `request_stream()` layers, model name constants, and every exception with its `code`. |
 | [Configuration reference](config.md) / [設定リファレンス](config-ja.md) | Every setting you can pass to `llm()` (`timeout`, `max_retries`, `retry_read_timeout`, `retry_after_max`, `base_url`, `headers`, `lang`, …), the retry policy — which failures are retried and why — and the settings that matter in production (connection pool, TLS, proxy). |
 

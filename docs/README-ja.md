@@ -11,6 +11,7 @@ English: [README.md](README.md)
 | ページ | 内容 |
 |---|---|
 | [チュートリアル](tutorial-ja.md) / [Tutorial](tutorial.md) | インストールと API キー、最初の一問一答、モデルの切り替え、会話の続き、ストリーミング、呼び出しごとのオプション、非同期（`aask` / `achat` / `aask_stream`）、エラー処理、クライアントの再利用と閉じ方。ここから読んでください。 |
+| [API キーの取得方法](api-keys-ja.md) / [Getting an API key](api-keys.md) | プロバイダーごとに、キーをどこで発行するかと、このライブラリが読む環境変数の対応メモ。課金の方式（プリペイドかどうか）も添えています。 |
 | [API リファレンス](api-ja.md) / [API reference](api.md) | 公開 API の一覧。`llm()`、`LLM` のメソッドとその非同期版、戻り値の型（`ChatResult`、`ChatChunk`、`Usage`）、モジュールの関数、プロバイダークライアントと生レイヤーの `request()` / `request_stream()`、モデル名の定数、例外クラスとその `code` すべて。 |
 | [設定リファレンス](config-ja.md) / [Configuration reference](config.md) | `llm()` に渡せる設定（`timeout`、`max_retries`、`retry_read_timeout`、`retry_after_max`、`base_url`、`headers`、`lang` など）、どの失敗をリトライするかとその理由（リトライの方針）、本番で効いてくる設定（接続プール、TLS、プロキシ）。 |
 
