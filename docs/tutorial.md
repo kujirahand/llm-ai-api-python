@@ -32,6 +32,8 @@ export OPENAI_API_KEY="sk-..."
 
 You can also pass a key directly with `llm(..., api_key="...")`, but environment variables are recommended so the key stays out of your code.
 
+See [Getting an API key](api-keys.md) for how to obtain each provider's key.
+
 ## 2. Your first question
 
 ```python
