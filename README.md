@@ -13,10 +13,10 @@ A thin HTTP wrapper that calls the OpenAI, OpenRouter, Claude (Anthropic), and G
 
 ## Features
 
-- **Switch by model string**: `llm("openai:gpt-6-luna")` selects the provider, so the same code works with cloud APIs and local LLMs alike
-- **Absorbs model quirks**: Unspecified parameters are never sent. Parameters confirmed to be rejected by official API specs (such as `temperature` on certain models) are automatically omitted according to a rule table, even if explicitly passed, so no workaround code is needed on the caller side
-- **Built-in caching and logging**: SQLite response caching (encrypted with a key derived from your API key) and JSON Lines request/response logging are built right in
-- **`httpx` only**: No official `openai` or `anthropic` packages required, keeping installs small and dependency conflicts unlikely
+- **Switch with just the model name**: OpenAI, Claude, Gemini, OpenRouter, and local LLMs — all called the same way
+- **Model quirks handled**: Parameters a model would reject are left out automatically. No workaround code needed
+- **Caching and logging built in**: A cache that keeps you from paying twice for the same question, plus request and response logging
+- **Minimal dependencies**: No official SDKs. httpx is the only dependency, so installs stay light
 
 ## Installation
 
