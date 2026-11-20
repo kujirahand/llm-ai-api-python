@@ -1,3 +1,4 @@
+import asyncio
 import os
 import unittest
 from unittest import mock
@@ -6,7 +7,7 @@ from llm_ai_api import LLMConfigError, MuseClient, llm, models
 from llm_ai_api.llm import _ASYNC_PROVIDERS, _PROVIDERS
 from llm_ai_api._async_clients import _AsyncMuseClient
 
-from .helpers import Recorder, json_response
+from .helpers import FreshRecorder, Recorder, json_response
 
 REPLY = {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
 MSGS = [{"role": "user", "content": "q"}]
@@ -68,6 +69,21 @@ class MuseTest(unittest.TestCase):
         self.assertEqual(_AsyncMuseClient.api_key_env, "MODEL_API_KEY")
         self.assertEqual(_AsyncMuseClient.base_url_env, "MUSE_BASE_URL")
         self.assertEqual(_AsyncMuseClient.default_base_url, "https://api.meta.ai/v1")
+
+    def test_async_round_trip(self):
+        async def run():
+            with mock.patch.dict(os.environ, {"MODEL_API_KEY": "k"}, clear=True):
+                rec = FreshRecorder(lambda: json_response(REPLY))
+                m = llm("muse:muse-wonder-1.0", transport=rec.transport)
+                try:
+                    self.assertEqual(await m.aask("q"), "ok")
+                finally:
+                    await m.aclose()
+            self.assertEqual(
+                str(rec.requests[0].url), "https://api.meta.ai/v1/chat/completions"
+            )
+
+        asyncio.run(run())
 
 
 if __name__ == "__main__":
