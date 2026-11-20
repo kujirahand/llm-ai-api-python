@@ -117,6 +117,13 @@ class _AsyncOpenRouterClient(_AsyncOpenAICompatClient):
                 self._extra_headers["X-Title"] = app_name
 
 
+class _AsyncGrokClient(_AsyncOpenAICompatClient):
+    provider = "grok"
+    default_base_url = "https://api.x.ai/v1"
+    api_key_env = "XAI_API_KEY"
+    base_url_env = "XAI_BASE_URL"
+
+
 class _AsyncMuseClient(_AsyncOpenAICompatClient):
     provider = "muse"
     default_base_url = "https://api.meta.ai/v1"

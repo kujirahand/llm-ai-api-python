@@ -22,6 +22,7 @@ from .errors import (
     StructuredOutputError,
 )
 from .google import GoogleClient
+from .grok import GrokClient
 from .llm import LLM, llm
 from .lmstudio import LMStudioClient
 from .log import JSONLLog, get_log, set_log
@@ -51,6 +52,7 @@ __all__ = [
     "LLM",
     "OpenAIClient",
     "OpenRouterClient",
+    "GrokClient",
     "MuseClient",
     "AnthropicClient",
     "GoogleClient",

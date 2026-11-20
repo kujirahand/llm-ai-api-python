@@ -20,6 +20,7 @@ from typing import (
 from ._async_clients import (
     _AsyncAnthropicClient,
     _AsyncGoogleClient,
+    _AsyncGrokClient,
     _AsyncLMStudioClient,
     _AsyncMuseClient,
     _AsyncOllamaClient,
@@ -42,6 +43,7 @@ from ._structured import inject_schema_extra, interpret_schema, parse_structured
 from .anthropic import AnthropicClient
 from .errors import LLMConfigError, LLMError
 from .google import GoogleClient
+from .grok import GrokClient
 from .lang import t
 from .lmstudio import LMStudioClient
 from .muse import MuseClient
@@ -54,6 +56,7 @@ from .types import ChatResult
 _PROVIDERS = {
     "openai": OpenAIClient,
     "openrouter": OpenRouterClient,
+    "grok": GrokClient,
     "muse": MuseClient,
     "google": GoogleClient,
     "lmstudio": LMStudioClient,
@@ -67,6 +70,7 @@ _PROVIDERS = {
 _ASYNC_PROVIDERS = {
     "openai": _AsyncOpenAIClient,
     "openrouter": _AsyncOpenRouterClient,
+    "grok": _AsyncGrokClient,
     "muse": _AsyncMuseClient,
     "google": _AsyncGoogleClient,
     "lmstudio": _AsyncLMStudioClient,

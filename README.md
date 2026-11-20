@@ -39,6 +39,7 @@ Set the API key via an environment variable. The model is always `"<provider>:<m
 |---|---|---|
 | `openai` | `openai:gpt-6-luna` | `OPENAI_API_KEY` |
 | `openrouter` | `openrouter:anthropic/claude-sonnet-5.5` | `OPENROUTER_API_KEY` |
+| `grok` | `grok:grok-4.7` | `XAI_API_KEY` |
 | `anthropic` (alias `claude`) | `claude:claude-sonnet-5-5` | `ANTHROPIC_API_KEY` |
 | `google` | `google:gemini-3.8-flash` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) |
 | `muse` | `muse:muse-wonder-1.0` | `MODEL_API_KEY` |
@@ -108,7 +109,7 @@ while True:
 ### How parameters are handled
 
 - Parameters you do not pass are never sent (newer models reject even default values such as `temperature`)
-- Parameters the official docs say a model rejects are omitted even when you pass them, including through `extra` (for example `temperature`, `top_p`, and `top_k` on Claude API version `2026-10-21`, and `temperature` on some OpenAI models such as `gpt-6-astra`). Models and parameters that are not in that list, and OpenRouter, Google, and Muse, are sent as given
+- Parameters the official docs say a model rejects are omitted even when you pass them, including through `extra` (for example `temperature`, `top_p`, and `top_k` on Claude API version `2026-10-21`, and `temperature` on some OpenAI models such as `gpt-6-astra`). Models and parameters that are not in that list, and OpenRouter, Google, Grok, and Muse, are sent as given
 - To send a dropped key unchanged, use the raw layer `luna.client.request(path, body)` (it does not rewrite the body). Anything else can go through `extra={...}`
 
 ### Timeouts and retries
