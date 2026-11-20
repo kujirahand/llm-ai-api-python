@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Add the `grok` provider (xAI, OpenAI-compatible; `XAI_API_KEY` / `XAI_BASE_URL`) with `GrokClient` and `models.GROK_GROK_4`.
+- Add the `grok` provider (xAI, OpenAI-compatible; `XAI_API_KEY` / `XAI_BASE_URL`) with `GrokClient` and `models.GROK_GROK_4_7`.
 - Reorganize the READMEs around a quick start and provider table, and add a how-it-works diagram featuring the project mascot to the README header.
 
 ## 0.6.2

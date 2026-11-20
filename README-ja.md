@@ -39,7 +39,7 @@ API キーは環境変数で渡します。モデルは `"<プロバイダー>:<
 |---|---|---|
 | `openai` | `openai:gpt-6-luna` | `OPENAI_API_KEY` |
 | `openrouter` | `openrouter:anthropic/claude-sonnet-5.5` | `OPENROUTER_API_KEY` |
-| `grok` | `grok:grok-4` | `XAI_API_KEY` |
+| `grok` | `grok:grok-4.7` | `XAI_API_KEY` |
 | `anthropic`（別名 `claude`） | `claude:claude-sonnet-5-5` | `ANTHROPIC_API_KEY` |
 | `google` | `google:gemini-3.8-flash` | `GEMINI_API_KEY`（または `GOOGLE_API_KEY`） |
 | `lmstudio` | `lmstudio:<モデル名>` | `LMSTUDIO_API_KEY`（認証が必要な構成のみ） |

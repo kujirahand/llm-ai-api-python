@@ -39,7 +39,7 @@ Set the API key via an environment variable. The model is always `"<provider>:<m
 |---|---|---|
 | `openai` | `openai:gpt-6-luna` | `OPENAI_API_KEY` |
 | `openrouter` | `openrouter:anthropic/claude-sonnet-5.5` | `OPENROUTER_API_KEY` |
-| `grok` | `grok:grok-4` | `XAI_API_KEY` |
+| `grok` | `grok:grok-4.7` | `XAI_API_KEY` |
 | `anthropic` (alias `claude`) | `claude:claude-sonnet-5-5` | `ANTHROPIC_API_KEY` |
 | `google` | `google:gemini-3.8-flash` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) |
 | `lmstudio` | `lmstudio:<model>` | `LMSTUDIO_API_KEY` (only when authentication is on) |
