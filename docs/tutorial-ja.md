@@ -20,6 +20,7 @@ Python 3.9 以上が必要です。依存は `httpx` だけです。インポー
 | `openrouter` | `OPENROUTER_API_KEY` |
 | `anthropic`（別名 `claude`） | `ANTHROPIC_API_KEY` |
 | `google` | `GEMINI_API_KEY`（なければ `GOOGLE_API_KEY`） |
+| `muse` | `MODEL_API_KEY`、`MUSE_BASE_URL`（必要に応じて） |
 | `ollama`（Ollama） | `OLLAMA_API_KEY`、`OLLAMA_BASE_URL`（必要に応じて） |
 | `lmstudio`（LM Studio） | `LMSTUDIO_API_KEY`、`LMSTUDIO_BASE_URL`（必要に応じて） |
 | `strata`（Strata） | `STRATA_API_KEY`、`STRATA_BASE_URL`（必要に応じて） |
@@ -183,7 +184,7 @@ print(m.ask("日本の首都は？", system="関西弁で答えてください�
 ```
 
 - 指定していないパラメータは API に送りません。新しいモデルは、デフォルト値の `temperature` などでも拒否することがあるためです。必要なときだけ指定してください。
-- 公式仕様で拒否されると確認したパラメータは、明示しても `extra` で渡しても送りません。表にないモデルとパラメータ、および OpenRouter と Google はそのまま送ります。落とすキーをそのまま送りたいときは `m.client.request(path, body)` を使います。
+- 公式仕様で拒否されると確認したパラメータは、明示しても `extra` で渡しても送りません。表にないモデルとパラメータ、および OpenRouter、Google、Muse はそのまま送ります。落とすキーをそのまま送りたいときは `m.client.request(path, body)` を使います。
 - Claude の `max_tokens` は API の必須項目です。未指定のときはライブラリが 16000 を補います。送る API バージョンが `2026-10-21`（既定）のときは `temperature` / `top_p` / `top_k` を送りません。別のバージョンでは、指定した値を送ります。`headers` の `anthropic-version` は `anthropic_version=` を上書きします。
 - ここにないパラメータは `extra={...}` で渡せます（拒否表に載っていないキーは、リクエストボディの最後にマージされます）。
 - 呼び出しごとに `None` を渡すと、その呼び出しだけ `llm()` の既定値を使いません（例: `m.ask("q", temperature=None)`）。

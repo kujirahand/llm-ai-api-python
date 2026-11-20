@@ -41,6 +41,7 @@ API キーは環境変数で渡します。モデルは `"<プロバイダー>:<
 | `openrouter` | `openrouter:anthropic/claude-sonnet-5.5` | `OPENROUTER_API_KEY` |
 | `anthropic`（別名 `claude`） | `claude:claude-sonnet-5-5` | `ANTHROPIC_API_KEY` |
 | `google` | `google:gemini-3.8-flash` | `GEMINI_API_KEY`（または `GOOGLE_API_KEY`） |
+| `muse` | `muse:muse-wonder-1.0` | `MODEL_API_KEY` |
 | `lmstudio` | `lmstudio:<モデル名>` | `LMSTUDIO_API_KEY`（認証が必要な構成のみ） |
 | `ollama` | `ollama:<モデル名>` | `OLLAMA_API_KEY`（認証が必要な構成のみ） |
 | `strata` | `strata:<モデル名>` | `STRATA_API_KEY`（認証が必要な構成のみ） |
@@ -107,7 +108,7 @@ while True:
 ### パラメータの扱い
 
 - 指定していないパラメータは送りません（新しいモデルは `temperature` などをデフォルト値でも拒否することがあるため）
-- 公式仕様で拒否されると確認したパラメータは、明示しても、`extra` で渡しても送りません（例: Claude の API バージョン `2026-10-21` では `temperature` / `top_p` / `top_k`。OpenAI の `gpt-6-astra` など、一部のモデルでは `temperature` も）。表にないモデルとパラメータ、および OpenRouter と Google はそのまま送ります
+- 公式仕様で拒否されると確認したパラメータは、明示しても、`extra` で渡しても送りません（例: Claude の API バージョン `2026-10-21` では `temperature` / `top_p` / `top_k`。OpenAI の `gpt-6-astra` など、一部のモデルでは `temperature` も）。表にないモデルとパラメータ、および OpenRouter、Google、Muse はそのまま送ります
 - 落とすキーをそのまま送りたいときは、生レイヤー `luna.client.request(path, body)` を使います（こちらはボディを加工しません）。それ以外のパラメータは `extra={...}` で渡せます
 
 ### タイムアウトとリトライ

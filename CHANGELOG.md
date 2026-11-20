@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add the `muse` provider (Muse, Meta Model API) as an OpenAI-compatible client: `MuseClient`, default base URL `https://api.meta.ai/v1`, API key from `MODEL_API_KEY`, base URL override via `MUSE_BASE_URL`, and the `models.MUSE_MUSE_WONDER_1_0` constant.
 - Reorganize the READMEs around a quick start and provider table, and add a how-it-works diagram featuring the project mascot to the README header.
 
 ## 0.6.2

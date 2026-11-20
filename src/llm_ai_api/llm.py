@@ -21,6 +21,7 @@ from ._async_clients import (
     _AsyncAnthropicClient,
     _AsyncGoogleClient,
     _AsyncLMStudioClient,
+    _AsyncMuseClient,
     _AsyncOllamaClient,
     _AsyncOpenAIClient,
     _AsyncOpenRouterClient,
@@ -43,6 +44,7 @@ from .errors import LLMConfigError, LLMError
 from .google import GoogleClient
 from .lang import t
 from .lmstudio import LMStudioClient
+from .muse import MuseClient
 from .ollama import OllamaClient
 from .openai import OpenAIClient
 from .openrouter import OpenRouterClient
@@ -52,6 +54,7 @@ from .types import ChatResult
 _PROVIDERS = {
     "openai": OpenAIClient,
     "openrouter": OpenRouterClient,
+    "muse": MuseClient,
     "google": GoogleClient,
     "lmstudio": LMStudioClient,
     "ollama": OllamaClient,
@@ -64,6 +67,7 @@ _PROVIDERS = {
 _ASYNC_PROVIDERS = {
     "openai": _AsyncOpenAIClient,
     "openrouter": _AsyncOpenRouterClient,
+    "muse": _AsyncMuseClient,
     "google": _AsyncGoogleClient,
     "lmstudio": _AsyncLMStudioClient,
     "ollama": _AsyncOllamaClient,
