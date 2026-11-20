@@ -10,7 +10,7 @@ from llm_ai_api import llm
 luna = llm("openai:gpt-6-luna")
 ```
 
-`llm(spec, **options)` は `LLM` インスタンスを返します。`spec` は `"<プロバイダー>:<モデル名>"`（`openai` / `openrouter` / `anthropic`（別名 `claude`） / `google` / `lmstudio` / `ollama` / `strata`）です。`lmstudio` / `ollama` / `strata` はローカルサーバー向けで、API キーは任意です。`LLM(spec, ...)` と直接生成することもできます。
+`llm(spec, **options)` は `LLM` インスタンスを返します。`spec` は `"<プロバイダー>:<モデル名>"`（`openai` / `openrouter` / `anthropic`（別名 `claude`） / `google` / `grok` / `muse` / `lmstudio` / `ollama` / `strata`）です。`lmstudio` / `ollama` / `strata` はローカルサーバー向けで、API キーは任意です。`LLM(spec, ...)` と直接生成することもできます。
 
 生成時の主なオプション（キーワード引数）:
 
@@ -104,7 +104,7 @@ luna = llm("openai:gpt-6-luna")
 
 ## プロバイダークライアント（低レベル層）
 
-`OpenAIClient` / `OpenRouterClient` / `AnthropicClient` / `GoogleClient` を直接使う層です。共通インターフェイスで対応していない機能（ツール呼び出し、画像入力など）は、こちらの `request()` で生の JSON を送って使えます。
+`OpenAIClient` / `OpenRouterClient` / `AnthropicClient` / `GoogleClient` / `GrokClient` / `MuseClient` / `LMStudioClient` / `OllamaClient` / `StrataClient` を直接使う層です。共通インターフェイスで対応していない機能（ツール呼び出し、画像入力など）は、こちらの `request()` で生の JSON を送って使えます。
 
 | メソッド | 説明 |
 |---|---|

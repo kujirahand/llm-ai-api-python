@@ -26,7 +26,7 @@ m = llm(
 | 引数 | 既定値 | 内容 |
 |---|---|---|
 | 第 1 引数 | （必須） | `"<プロバイダー>:<モデル名>"`。最初の `:` で分割するので、モデル名に `:` や `/` を含んでもかまいません（例: `"openrouter:meta-llama/llama-4:free"`）。 |
-| `api_key` | 環境変数 | `OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`（なければ `GOOGLE_API_KEY`）。見つからなければ `llm()` の時点で `LLMConfigError` になります。 |
+| `api_key` | 環境変数 | `OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`（なければ `GOOGLE_API_KEY`） / `XAI_API_KEY` / `MODEL_API_KEY`。見つからなければ `llm()` の時点で `LLMConfigError` になります。ローカルプロバイダーの `LMSTUDIO_API_KEY` / `OLLAMA_API_KEY` / `STRATA_API_KEY` は任意で、未設定でも既定の仮キーで接続できます。 |
 | `base_url` | 環境変数 → 既定値 | `OPENAI_BASE_URL` などで上書きできます。プロキシやゲートウェイを通すときに使います。スキームやホストの制限はありません。`http://` のホストにも API キーとリクエスト本文が送られるので、信頼できる値だけを渡し、利用者入力をそのまま渡さないでください。ホスト系の API では HTTPS を使ってください。 |
 | `timeout` | `600.0` | 1 回のリクエストのタイムアウト（秒）。接続のタイムアウトは 10 秒です。 |
 | `max_retries` | `2` | リトライの回数。`0` でリトライしません。 |
