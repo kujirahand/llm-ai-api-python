@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/kujirahand/llm-ai-api-python/main/docs/images/mascot.png" width="180" alt="llm-ai-api のマスコットキャラクター">
-</p>
-
 # llm-ai-api
 
 [![PyPI](https://img.shields.io/pypi/v/llm-ai-api)](https://pypi.org/project/llm-ai-api/)

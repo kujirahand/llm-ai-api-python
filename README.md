@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/kujirahand/llm-ai-api-python/main/docs/images/mascot.png" width="180" alt="The llm-ai-api mascot">
-</p>
-
 # llm-ai-api
 
 [![PyPI](https://img.shields.io/pypi/v/llm-ai-api)](https://pypi.org/project/llm-ai-api/)
@@ -12,7 +8,7 @@ A thin HTTP wrapper that calls the OpenAI, OpenRouter, Claude (Anthropic), and G
 [日本語版 (Japanese)](https://github.com/kujirahand/llm-ai-api-python/blob/main/README-ja.md) | [Tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md) | [All documents](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/README.md)
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/kujirahand/llm-ai-api-python/main/docs/images/how-it-works-en.png" width="720" alt="How it works: from your Python code, through llm-ai-api, to OpenAI / OpenRouter / Claude / Google / local LLMs">
+  <img src="https://raw.githubusercontent.com/kujirahand/llm-ai-api-python/main/docs/images/how-it-works.png" width="720" alt="How it works: from your Python code, through llm-ai-api, to OpenAI / OpenRouter / Claude / Google / local LLMs">
 </p>
 
 ## Features

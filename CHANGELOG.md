@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Reorganize the READMEs around a quick start and provider table, and add the project mascot and a how-it-works diagram to the README header.
+- Reorganize the READMEs around a quick start and provider table, and add a how-it-works diagram featuring the project mascot to the README header.
 
 ## 0.6.2
 
