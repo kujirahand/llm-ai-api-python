@@ -45,6 +45,7 @@ Set the API key via an environment variable. The model is always `"<provider>:<m
 | `ollama` | `ollama:<model>` | `OLLAMA_API_KEY` (only when authentication is on) |
 | `strata` | `strata:<model>` | `STRATA_API_KEY` (only when authentication is on) |
 
+- How to get each provider's key is summarized in [Getting an API key](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/api-keys.md)
 - Local LLMs are reached at `http://localhost:1234/v1` (LM Studio), `http://localhost:11434/v1` (Ollama), and `http://127.0.0.1:47831/v1` (Strata). For settings and LAN access, see [LM Studio](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-lmstudio.md), [Ollama](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-ollama.md), and [Strata](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-strata.md)
 - Google Gemini is called through Google's OpenAI-compatible endpoint
 - Common models are also available as constants (they are just `"provider:model"` strings). Any other model works as a plain string

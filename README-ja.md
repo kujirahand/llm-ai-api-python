@@ -45,6 +45,7 @@ API キーは環境変数で渡します。モデルは `"<プロバイダー>:<
 | `ollama` | `ollama:<モデル名>` | `OLLAMA_API_KEY`（認証が必要な構成のみ） |
 | `strata` | `strata:<モデル名>` | `STRATA_API_KEY`（認証が必要な構成のみ） |
 
+- API キーの取得方法は、[API キーの取得方法](docs/api-keys-ja.md) にプロバイダーごとにまとめています
 - ローカル LLM の接続先は、`lmstudio` が `http://localhost:1234/v1`、`ollama` が `http://localhost:11434/v1`、`strata` が `http://127.0.0.1:47831/v1` です。設定と LAN 越しの接続は各ページを参照してください（[LM Studio](docs/local_llm-lmstudio-ja.md) / [Ollama](docs/local_llm-ollama-ja.md) / [Strata](docs/local_llm-strata-ja.md)）
 - Google Gemini は、Google の OpenAI 互換エンドポイント経由で呼び出します
 - 代表的なモデルは定数でも指定できます（中身は `"プロバイダー:モデル"` の文字列です）。載っていないモデルも文字列でそのまま使えます
