@@ -70,7 +70,7 @@ class OpenAICompatClient(BaseClient):
     stream_include_usage = False
 
     def _auth_headers(self) -> Dict[str, str]:
-        return {"Authorization": "Bearer " + self._api_key}
+        return {"Authorization": "Bearer " + self._api_key} if self._api_key else {}
 
     def _build_body(
         self,

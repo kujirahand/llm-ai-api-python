@@ -30,6 +30,7 @@ from ._async_clients import (
 )
 from ._async_http import _AsyncBaseClient
 from ._http import BaseClient, _check_retry_after_max
+from ._model_list import ModelPages
 from ._media import (
     check_audio,
     check_images,
@@ -356,6 +357,18 @@ class LLM:
         )
         return self._transcript_text(response)
 
+    def models(self, *, raw: bool = False, timeout: Optional[float] = None) -> List[Any]:
+        """List the provider's model IDs, or raw model objects when ``raw`` is true.
+
+        Uses the configured API key and ``base_url``. Not cached or logged.
+        ``timeout`` (seconds) overrides the client setting for these requests.
+        """
+        pages = ModelPages(self.provider, self.client, raw)
+        while pages.path is not None:
+            response = self.client.request(pages.path, None, method="GET", headers=pages.headers, timeout=timeout)
+            pages.accept(response)
+        return pages.items
+
     def chat_stream(
         self,
         messages: List[Dict[str, Any]],
@@ -443,6 +456,7 @@ class LLM:
             for name in _RETRY_SETTINGS:
                 options[name] = getattr(self.client, name)
             client = _ASYNC_PROVIDERS[self._provider_key](**options)
+            client._api_key = self.client._api_key  # retain even an absent optional key
             # One listener list for sync and async calls on this LLM.
             client._events = self.client._events
             self._async_client_instance = client
@@ -550,6 +564,15 @@ class LLM:
             timeout=timeout,
         )
         return self._transcript_text(response)
+
+    async def amodels(self, *, raw: bool = False, timeout: Optional[float] = None) -> List[Any]:
+        """Async version of :meth:`models`."""
+        client = self._get_async_client()
+        pages = ModelPages(self.provider, client, raw)
+        while pages.path is not None:
+            response = await client.request(pages.path, None, method="GET", headers=pages.headers, timeout=timeout)
+            pages.accept(response)
+        return pages.items
 
     async def aask(
         self,

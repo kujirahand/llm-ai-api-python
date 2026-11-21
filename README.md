@@ -72,6 +72,7 @@ For step-by-step setup, see the [Tutorial](https://github.com/kujirahand/llm-ai-
 | `ask_stream(prompt)` | `aask_stream(prompt)` | Get the LLM response as a stream |
 | `chat(messages)` | `achat(messages)` | Give the LLM a conversation and get a response |
 | `chat_stream(messages)` | `achat_stream(messages)` | Give the LLM a conversation and get the response as a stream |
+| `models()` | `amodels()` | List available model IDs |
 
 For the full list of methods, see the [API Reference](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/api.md).
 
