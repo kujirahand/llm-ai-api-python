@@ -105,9 +105,9 @@ class InsufficientCreditsError(APIStatusError):
     """Credit, billing, or quota exhaustion.
 
     Raised for HTTP 402, and for other 4xx responses whose body has a
-    machine-readable billing or quota code, an OpenRouter budget
-    ``limit_source``, an xAI ``permission-denied`` 403 that mentions credits,
-    or a documented Anthropic credit or spend-limit sentence.
+    machine-readable billing or quota code, an OpenRouter budget 403, an xAI
+    ``permission-denied`` 403 that says credits are exhausted, or a documented
+    Anthropic 400 ``invalid_request_error`` credit or spend-limit sentence.
     Ordinary permission errors and temporary rate limits, including a Google
     429 ``RESOURCE_EXHAUSTED``, keep their existing classes.
     """
@@ -205,7 +205,6 @@ _CREDIT_LIMIT_SOURCES = frozenset(
         "openrouter-guardrail-budget",
         "openrouter-workspace-budget",
         "openrouter-key-limit",
-        "openrouter-credits",
     }
 )
 # 4xx message text, used only where the provider publishes no distinct code.
@@ -214,17 +213,25 @@ _CREDIT_LIMIT_SOURCES = frozenset(
 # page gives these prefixes and no error_code.
 # https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers
 # https://platform.claude.com/docs/en/api/rate-limits
-_CREDIT_MESSAGE_PHRASES = (
+_ANTHROPIC_CREDIT_MESSAGE_PREFIXES = (
+    "your credit balance is too low",
     "credit balance is too low",
     "credit balance too low",
     "you have reached your specified api usage limits",
     "you have reached your specified workspace api usage limits",
 )
 # xAI keeps using 403 permission-denied for a team with no credits, and the
-# debugging page does not publish a separate code. Match the word so a
-# reworded sentence still counts, but not "accredited", a "/credits" URL
-# path, or "non-credit". The code alone is a normal permission error.
+# debugging page does not publish a separate code. Require both the standalone
+# credit word and an exhaustion expression. This accepts reworded shortage
+# messages but not "accredited", a "/credits" URL, "non-credit", or a normal
+# denial of access to credit-based billing.
 _CREDIT_WORD = re.compile(r"(?<!non-)(?<![/\w])credits?\b")
+_CREDIT_FAILURE = re.compile(
+    r"\b(?:no|without|insufficient|depleted|exhausted|zero)\b"
+    r"|(?:does|do)(?:n't| not) have any"
+    r"|\b(?:out of|used all)\b"
+    r"|\b0+(?:\.0+)?\s+credits?\b"
+)
 
 
 def _normalized_token(value: Any) -> Optional[str]:
@@ -295,22 +302,25 @@ def is_insufficient_credits(status_code: int, body: Any = None) -> bool:
     """Return True when the HTTP error is credit, billing, or quota exhaustion.
 
     HTTP 402 always matches (Meta, OpenRouter credits, Google prepay, Anthropic
-    ``billing_error``). Other statuses match only on a code or limit_source
-    from the tables above, an xAI ``permission-denied`` 403 whose message
-    contains the word "credit(s)", or a documented Anthropic 4xx sentence.
+    ``billing_error``). Other 4xx responses match only on a code from the table
+    above, an OpenRouter budget ``limit_source`` on 403, an xAI
+    ``permission-denied`` 403 whose message says credits are exhausted, or a
+    documented Anthropic 400 ``invalid_request_error`` sentence.
     """
     if status_code == 402:
         return True
     codes, message = _codes_and_message(body)
-    if codes & _CREDIT_CODES:
+    if 400 <= status_code < 500 and (codes & _CREDIT_CODES):
         return True
-    if _limit_sources(body) & _CREDIT_LIMIT_SOURCES:
+    if status_code == 403 and (_limit_sources(body) & _CREDIT_LIMIT_SOURCES):
         return True
     if status_code == 403 and (codes & _PERMISSION_DENIED_CODES):
-        if _CREDIT_WORD.search(message):
+        if _CREDIT_WORD.search(message) and _CREDIT_FAILURE.search(message):
             return True
-    if 400 <= status_code < 500 and any(
-        phrase in message for phrase in _CREDIT_MESSAGE_PHRASES
+    if (
+        status_code == 400
+        and "invalid-request-error" in codes
+        and message.lstrip().startswith(_ANTHROPIC_CREDIT_MESSAGE_PREFIXES)
     ):
         return True
     return False

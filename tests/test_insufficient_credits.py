@@ -341,7 +341,22 @@ class DetectTest(unittest.TestCase):
             "code": "permission-denied",
             "error": "Your newly created team doesn't have any credits or licenses yet.",
         }
-        for body in (XAI_NO_CREDITS, XAI_NO_CREDITS_NESTED, newly_created, reworded):
+        used_all = {
+            "code": "permission-denied",
+            "error": "This team has used all available credits.",
+        }
+        zero = {
+            "code": "permission-denied",
+            "error": "This team has 0 credits.",
+        }
+        for body in (
+            XAI_NO_CREDITS,
+            XAI_NO_CREDITS_NESTED,
+            newly_created,
+            reworded,
+            used_all,
+            zero,
+        ):
             self.assertTrue(is_insufficient_credits(403, body))
             self.assertIs(status_error_class(403, body), InsufficientCreditsError)
         upper = {
@@ -379,6 +394,8 @@ class DetectTest(unittest.TestCase):
             "The model is not accredited for this key.",
             "See https://console.x.ai/credits before retrying.",
             "This key is limited to non-credit operations.",
+            "This key cannot use credit-based billing.",
+            "Credits are available only for another model.",
         ):
             body = {"code": "permission-denied", "error": message}
             self.assertFalse(is_insufficient_credits(403, body), message)
@@ -399,8 +416,13 @@ class DetectTest(unittest.TestCase):
                 "message": "upstream said: Your credit balance is too low to access the Anthropic API."
             }
         }
+        quoted["error"]["type"] = "invalid_request_error"
+        self.assertFalse(is_insufficient_credits(400, quoted))
+        self.assertIs(status_error_class(400, quoted), BadRequestError)
         self.assertFalse(is_insufficient_credits(500, quoted))
         self.assertFalse(is_insufficient_credits(503, quoted))
+        for body in (OPENAI_CREDIT_BALANCE, ANTHROPIC_SPEND_CAP):
+            self.assertFalse(is_insufficient_credits(500, body))
 
     def test_openai_billing_codes_match_and_slow_down_does_not(self):
         for body in (
@@ -480,7 +502,6 @@ class DetectTest(unittest.TestCase):
             "openrouter_guardrail_budget",
             "openrouter_workspace_budget",
             "openrouter_key_limit",
-            "openrouter_credits",
         ):
             body = {
                 "error": {
@@ -506,6 +527,23 @@ class DetectTest(unittest.TestCase):
         }
         self.assertFalse(is_insufficient_credits(403, inflight_403))
         self.assertIs(status_error_class(403, inflight_403), PermissionDeniedError)
+        credits_403 = {
+            "error": {
+                "code": 403,
+                "message": "Credit metadata from an upstream response.",
+                "metadata": {"limit_source": "openrouter_credits"},
+            }
+        }
+        self.assertFalse(is_insufficient_credits(403, credits_403))
+        self.assertIs(status_error_class(403, credits_403), PermissionDeniedError)
+        server_error = {
+            "error": {
+                "code": 500,
+                "message": "Failed while reading budget metadata.",
+                "metadata": {"limit_source": "openrouter_guardrail_budget"},
+            }
+        }
+        self.assertFalse(is_insufficient_credits(500, server_error))
 
 
 class SyncRequestTest(unittest.TestCase):
@@ -650,6 +688,16 @@ class SyncRequestTest(unittest.TestCase):
                 self.assertEqual(c.request("/x", {}), {"ok": True})
                 self.assertEqual(len(rec.requests), 2)
                 self.assertEqual(c.sleeps, [3.0])
+
+    def test_500_with_embedded_credit_code_is_still_retried(self):
+        rec = Recorder(
+            json_response(OPENAI_CREDIT_BALANCE, 500, {"retry-after": "3"}),
+            json_response({"ok": True}),
+        )
+        c = make_sync(rec, max_retries=2)
+        self.assertEqual(c.request("/x", {}), {"ok": True})
+        self.assertEqual(len(rec.requests), 2)
+        self.assertEqual(c.sleeps, [3.0])
 
     def test_stream_open_raises_credits_error(self):
         cases = (
