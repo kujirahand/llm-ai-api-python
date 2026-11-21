@@ -129,9 +129,10 @@ luna = llm("openai:gpt-6-luna")
 | `APIStatusError` | HTTP エラー応答（基底クラス） |
 | `BadRequestError` | 400 |
 | `AuthenticationError` | 401 |
-| `PermissionDeniedError` | 403 |
+| `PermissionDeniedError` | 403（クレジット・課金不足は除く。`InsufficientCreditsError` を参照） |
 | `NotFoundError` | 404 |
-| `RateLimitError` | 429 |
+| `RateLimitError` | 429（クォータ不足は除く。`InsufficientCreditsError` を参照） |
+| `InsufficientCreditsError` | クレジット・課金・クォータ不足。HTTP 402、本文が `permission-denied` でクレジットやライセンスがない旨を含む xAI の 403、または code/type が `insufficient_quota` の OpenAI 429。これらはリトライしません。 |
 | `InternalServerError` | 5xx |
 | `APIStreamError` | ストリーミング中のエラー（`provider` / `request_id` 属性付き） |
 | `StructuredOutputError` | `schema=` の構造化出力が拒否・未完了・検証失敗になった（`result` に元の `ChatResult`） |

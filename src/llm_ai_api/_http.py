@@ -35,6 +35,7 @@ from .errors import (
     APIStatusError,
     LLMConfigError,
     LLMError,
+    is_insufficient_credits,
     status_error_class,
 )
 from .lang import t
@@ -303,6 +304,21 @@ def _user_agent() -> str:
     from . import __version__
 
     return "llm-ai-api-python/" + __version__
+
+
+def error_body(resp: httpx.Response) -> Any:
+    """Parse an already-buffered error response: JSON if possible, otherwise text."""
+    try:
+        return resp.json()
+    except ValueError:
+        return resp.text
+
+
+def _should_retry_status(status_code: int, body: Any = None) -> bool:
+    """Return True when this HTTP status should be retried, unless it is a credit error."""
+    if not (status_code in _RETRY_STATUS or status_code >= 500):
+        return False
+    return not is_insufficient_credits(status_code, body)
 
 
 def error_message(body: Any) -> Optional[str]:
@@ -792,7 +808,9 @@ class BaseClient:
     def _t(self, msg_id: str, **params: Any) -> str:
         return t(msg_id, self.lang, **params)
 
-    def _hint(self, status: int) -> Optional[str]:
+    def _hint(self, status: int, body: Any = None) -> Optional[str]:
+        if is_insufficient_credits(status, body):
+            return self._t("hint_credits")
         if status >= 500:
             return self._t("hint_server")
         if status in (400, 401, 403, 404, 429):
@@ -1026,9 +1044,7 @@ class BaseClient:
                     },
                 )
                 return resp, meta
-            if (
-                resp.status_code in _RETRY_STATUS or resp.status_code >= 500
-            ) and attempt < self.max_retries:
+            if _should_retry_status(resp.status_code, error_body(resp)) and attempt < self.max_retries:
                 retry_after = resp.headers.get("retry-after")
                 status_code = resp.status_code
                 request_id = request_id_of(resp.headers)
@@ -1061,18 +1077,15 @@ class BaseClient:
                 resp.close()
 
     def _make_error(self, resp: httpx.Response) -> APIStatusError:
-        try:
-            body: Any = resp.json()
-        except ValueError:
-            body = resp.text
+        body = error_body(resp)
         msg = error_message(body)
         message = self._t("api_error", provider=self.provider, status=resp.status_code)
         if msg:
             message += ": " + msg  # the API's own message is not translated
-        hint = self._hint(resp.status_code)
+        hint = self._hint(resp.status_code, body)
         if hint:
             message += "\n" + hint
-        return status_error_class(resp.status_code)(
+        return status_error_class(resp.status_code, body)(
             message,
             status_code=resp.status_code,
             body=body,

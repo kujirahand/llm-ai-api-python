@@ -33,16 +33,17 @@ from ._events import (
 )
 from ._http import (
     _DEFAULT_RETRY_AFTER_MAX,
-    _RETRY_STATUS,
     _check_retry_after_max,
     _is_retryable_transport_error,
     _mask_url,
     _merge_headers,
     _is_terminal_event,
     _retry_after_delay,
+    _should_retry_status,
     _transport_reason,
     _SSEDecoder,
     _user_agent,
+    error_body,
     error_message,
 )
 from ._connection import build_httpx_kwargs, resolve_connection
@@ -54,6 +55,7 @@ from .errors import (
     APITimeoutError,
     LLMConfigError,
     LLMError,
+    is_insufficient_credits,
     status_error_class,
 )
 from .lang import t
@@ -374,7 +376,9 @@ class _AsyncBaseClient:
     def _t(self, msg_id: str, **params: Any) -> str:
         return t(msg_id, self.lang, **params)
 
-    def _hint(self, status: int) -> Optional[str]:
+    def _hint(self, status: int, body: Any = None) -> Optional[str]:
+        if is_insufficient_credits(status, body):
+            return self._t("hint_credits")
         if status >= 500:
             return self._t("hint_server")
         if status in (400, 401, 403, 404, 429):
@@ -614,9 +618,7 @@ class _AsyncBaseClient:
                     },
                 )
                 return resp, meta
-            if (
-                resp.status_code in _RETRY_STATUS or resp.status_code >= 500
-            ) and attempt < self.max_retries:
+            if _should_retry_status(resp.status_code, error_body(resp)) and attempt < self.max_retries:
                 retry_after = resp.headers.get("retry-after")
                 status_code = resp.status_code
                 request_id = request_id_of(resp.headers)
@@ -649,18 +651,15 @@ class _AsyncBaseClient:
                 await resp.aclose()
 
     def _make_error(self, resp: httpx.Response) -> APIStatusError:
-        try:
-            body: Any = resp.json()
-        except ValueError:
-            body = resp.text
+        body = error_body(resp)
         msg = error_message(body)
         message = self._t("api_error", provider=self.provider, status=resp.status_code)
         if msg:
             message += ": " + msg  # the API's own message is not translated
-        hint = self._hint(resp.status_code)
+        hint = self._hint(resp.status_code, body)
         if hint:
             message += "\n" + hint
-        return status_error_class(resp.status_code)(
+        return status_error_class(resp.status_code, body)(
             message,
             status_code=resp.status_code,
             body=body,

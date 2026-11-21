@@ -224,7 +224,7 @@ asyncio.run(main())
 
 ## 8. Handle errors
 
-Every exception derives from `LLMError`. HTTP errors (4xx / 5xx) are `APIStatusError`, which has `status_code` and `body`.
+Every exception derives from `LLMError`. HTTP errors (4xx / 5xx) are `APIStatusError`, which has `status_code` and `body`. Credit, billing, or quota exhaustion (HTTP 402, an xAI 403 about missing credits or licenses, or OpenAI's 429 `insufficient_quota`) raises `InsufficientCreditsError`, a subclass of `APIStatusError`.
 
 ```python
 from llm_ai_api import llm, LLMError, APIStatusError
@@ -242,7 +242,7 @@ except LLMError as e:
 
 Every exception has a language-independent `code` attribute (e.g. `"missing_api_key"`). Check `code` rather than the message text, which changes with translation.
 
-Failed requests are retried automatically, up to `max_retries` times (2 by default). Only connection-stage failures (the request never reached the server) and HTTP 408 / 409 / 429 / 5xx are retried. Failures after the request was sent, such as read timeouts, are not retried (to avoid running and paying for the same generation twice). In latency-sensitive services, consider `llm(..., max_retries=0)` or a short `timeout`. See the [configuration reference](config.md) for details.
+Failed requests are retried automatically, up to `max_retries` times (2 by default). Only connection-stage failures (the request never reached the server) and HTTP 408 / 409 / 429 / 5xx are retried. Credit and quota errors (`InsufficientCreditsError`, including OpenAI's 429 `insufficient_quota`) are not retried. Failures after the request was sent, such as read timeouts, are not retried (to avoid running and paying for the same generation twice). In latency-sensitive services, consider `llm(..., max_retries=0)` or a short `timeout`. See the [configuration reference](config.md) for details.
 
 Connection failures (`APIConnectionError` / `APITimeoutError`) and mid-stream errors (`APIStreamError`) also have `provider` and `request_id`. `request_id` is `None` when the failure happened before response headers. They also have `retries` and `latency` (seconds). HTTP errors (`APIStatusError`) have `retries` and `latency` too.
 

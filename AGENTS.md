@@ -129,6 +129,7 @@ llm-ai-api-python/
 │   ├── test_cache_crypto.py
 │   ├── test_stream_close.py  # ストリームの閉じ忘れ（#25）
 │   ├── test_retry_policy.py  # リトライの分類、retry_after_max、set_config()（#26）
+│   ├── test_insufficient_credits.py  # InsufficientCreditsError の判定・ヒント・非リトライ（#120）
 │   ├── test_events.py        # イベントリスナーと request_id / latency / retries（#30）
 │   ├── test_structured.py    # schema= の構造化出力（#60）
 │   ├── test_multimodal.py    # ask 系の images=（#58）
@@ -468,7 +469,7 @@ m.remove_event_listener("retry", on_event)       # 同じ event と同一の関�
 - 例外の変換: `httpx.TimeoutException` → `APITimeoutError`、その他の `httpx.RequestError`（`TransportError` や `DecodingError` など）→ `APIConnectionError`（リトライするかどうかは下の「リトライ」の分類による）。リクエスト組み立て時の `httpx.InvalidURL` → `LLMConfigError`（`code="invalid_url"`、URL は `_mask_url()` でマスクして表示）。httpx の例外をそのまま外に出さない。
 - リトライ（自前で実装する。#26）:
   - 生成のリクエストは冪等ではない。送信後に失敗したリクエストをリトライすると、サーバーが処理を始めていた場合に二重課金になる。このため、リトライするのは「サーバーに届いていないことが確実な失敗」と「サーバーが応答したステータス」だけにする。
-  - HTTP ステータス: 408, 409, 429, 500 以上はリトライする（サーバーが応答しているので曖昧さがない）。同期・非同期ともリトライ待機の前にエラー応答を閉じる。
+  - HTTP ステータス: 408, 409, 429, 500 以上はリトライする（サーバーが応答しているので曖昧さがない）。ただしクレジット・課金・クォータ不足（`InsufficientCreditsError`。OpenAI の 429 `insufficient_quota` を含む）はリトライしない。同期・非同期ともリトライ待機の前にエラー応答を閉じる。判定は `_http._should_retry_status()` に集約し、同期・非同期で共用する。
   - 通信エラー（既定）: 接続段階の失敗 `httpx.ConnectError` / `httpx.ConnectTimeout` / `httpx.PoolTimeout` だけをリトライする。それ以外（`ReadTimeout`, `WriteTimeout`, `ReadError`, `WriteError`, `RemoteProtocolError`, `DecodingError` など）はリトライせず、すぐに `APITimeoutError`（タイムアウト）/ `APIConnectionError` に変換して送出する。
   - `retry_read_timeout=True`（クライアント／`llm()` の引数、`set_config()`）のときだけ、`httpx.ReadTimeout` もリトライする。その他の送信後の失敗は、これを有効にしてもリトライしない。
   - 判定は `_http._is_retryable_transport_error()` に集約し、同期・非同期で共用する。
@@ -509,6 +510,7 @@ LLMError                      # 基底
 │   ├── PermissionDeniedError # 403
 │   ├── NotFoundError         # 404
 │   ├── RateLimitError        # 429
+│   ├── InsufficientCreditsError  # 402、またはクレジット・課金・クォータ不足の 403/429
 │   └── InternalServerError   # 500 以上
 └── APIStreamError            # ストリーム途中の error イベント
         属性: body, provider, request_id, retries, latency
@@ -550,7 +552,7 @@ LLMError                      # 基底
 - **言語の追加**: `lang/<コード>.py` を 1 つ作るだけでよい（登録は不要。初回に `importlib` で自動的に読み込まれる）。言語コードは 2〜3 文字の小文字。
 - **言語の決め方**（優先順）: `lang=` 引数（`llm(..., lang="en")`、各クライアント） → `set_language()` → 環境変数 `LLM_AI_API_LANG` → `LANGUAGE`（`ja:en` のようなコロン区切りで、対応している最初のもの） → `LC_ALL` → `LC_MESSAGES` → `LANG`（最初に設定されているもの。`C` / `POSIX` は英語） → `locale.getlocale()` → 英語。macOS の GUI の言語設定を読むための外部コマンドは使わない。
 - **翻訳しないもの**: API が返した `error.message`、プロバイダー名、モデル名、パラメータ名。
-- **ヒント**: HTTP エラーには、原因の見当がつくものだけ、メッセージの 2 行目に `ヒント: ...` を付ける（400 / 401 / 403 / 404 / 429 / 5xx）。
+- **ヒント**: HTTP エラーには、原因の見当がつくものだけ、メッセージの 2 行目に `ヒント: ...` を付ける（400 / 401 / 403 / 404 / 429 / 5xx）。クレジット・課金・クォータ不足（`InsufficientCreditsError`）はステータスにかかわらず `hint_credits` を付ける。
 - メッセージは `t(msg_id, lang, **params)` で作る。例外クラスや呼び出し側に、文章を直接書かない。
 - 公開 API: `set_language(lang)`, `get_language()`（`llm_ai_api` から import できる）。
 - `set_language()` はプロセス全体の設定で、他のスレッドや作成済みのインスタンスが例外を出すときの言語も変わる（`set_cache()` / `set_log()` は生成時に解決される点が異なる）。インスタンスごとに変えたいときは、生成時に `lang=` を渡す（呼び出しごとの `lang=` はない）。
