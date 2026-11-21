@@ -246,6 +246,8 @@ async with llm("openai:gpt-6-luna") as m:
 - 音声の文字起こし（#58）: `LLM.transcribe(file, *, extra=None, timeout=None) -> str` / `atranscribe()`。`file` はパス（`str` / `os.PathLike`）または音声の `bytes`。**OpenAI のみ**で、他のプロバイダーは通信せずに `LLMConfigError(code="unsupported_modality")`。`/audio/transcriptions` へ multipart で送る（`model`、`response_format="json"`、ファイル `file`）。`extra` はフォームフィールドに展開する（スカラーは文字列化、bool は `true` / `false`、リスト・タプルは `キー[]` の繰り返し、`None` は省略、展開できない値は `invalid_media`）。形式は `_media.py` でシグネチャ（WAV / MP3 / FLAC / OGG / WEBM / M4A）→ 拡張子の順に判定し、パスはファイル名をそのまま、`bytes` は `audio.<拡張子>` を送る。判定不能・読めない・型違いは `invalid_media`。応答の `text`（文字列でなければ `invalid_json_response`）を返す。`chat()` の仕組みを通さず `client.request()` を直接使うため、キャッシュ・入出力ログ・singleflight の対象外（イベントは生レイヤーのもの）。非同期はファイル読み込みだけ `asyncio.to_thread()`。生レイヤーの `request()` は `files={フィールド名: (ファイル名, bytes, media_type)}` と `form_data=[(名前, 値), ...]` を受け取れる（同期・非同期とも。指定時は `body` が `None` でなければ `LLMConfigError(code="invalid_option")`。JSON の `Content-Type` は付けず httpx が boundary 付きで付ける。リトライごとに作り直す）。利用者向けの説明は docs/multimodal.md / multimodal-ja.md。
 - 実装は `_async_http.py` / `_async_clients.py`（内部専用）。ボディ生成とパースは同期版の関数を共用する。ストリームは async generator ではなく `__anext__` / `aclose` を持つ通常のクラスで組む（generator の `finally` で `await` しないため）。Python 3.10 互換のため `asyncio.TaskGroup` / `asyncio.timeout`（3.11+）は使わない。
 
+- `models(*, raw=False, timeout=None)` / `amodels()` は設定済みクライアントの生リクエストでプロバイダーのモデル一覧を全ページ取得する。`raw=True` では生のモデル辞書を返し、キャッシュ・入出力ログは使わない。OpenRouter は API キーなしでもクライアント生成・一覧取得できる。
+
 ### 5.2.1 モデル定数（`models.py`）
 
 ```python

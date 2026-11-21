@@ -43,6 +43,9 @@ MESSAGES = {
     "stream_connection_error": "ストリームの読み取りに失敗しました: {detail}",
     "unclosed_stream": "閉じられていないストリームが回収されました。途中でやめるときは aclose() を呼んでください。",
     "invalid_json_response": "レスポンスが正しい JSON ではありません: {preview!r}",
+    "unsupported_models": "プロバイダー {provider} はモデル一覧に対応していません。",
+    "invalid_models_response": "モデル一覧の応答の {field!r} はリストである必要があります（受信した型: {kind}）。",
+    "models_page_limit": "モデル一覧のページ数が上限（{limit} ページ）を超えました。",
     "invalid_transcription_response": "文字起こしの応答に文字列の text フィールドがありません（キーと型: {shape}）。",
     "response_too_large": "レスポンスがサイズの上限（{limit} バイト）を超えました",
     # API エラー

@@ -35,7 +35,7 @@ luna = llm("openai:gpt-6-luna")
 
 ## LLM のメソッド
 
-すべての呼び出しメソッドには、呼び出し単位で上書きできるキーワード引数 `system` / `max_tokens` / `temperature` / `extra`（生成時の値を上書き）と `timeout`（この呼び出しだけのタイムアウト、秒）があります。指定しない場合は生成時の値が使われます。
+質問と応答のメソッドには、呼び出し単位で上書きできるキーワード引数 `system` / `max_tokens` / `temperature` / `extra`（生成時の値を上書き）と `timeout`（この呼び出しだけのタイムアウト、秒）があります。指定しない場合は生成時の値が使われます。
 
 ### 質問と応答
 
@@ -53,6 +53,12 @@ luna = llm("openai:gpt-6-luna")
 - `ask()` / `ask_stream()` / `aask()` / `aask_stream()` には `images=`（ファイルのパス、`bytes`、http(s) URL のリスト）も渡せます。詳細は [マルチモーダル](multimodal-ja.md) を参照してください。
 - 同期のストリームは通常のイテレータ、非同期のストリームは非同期イテレータ（`async for` で使う。`await` は不要）です。ストリームのイテレータには、レスポンスヘッダー受信後に `request_id` と `retries` が設定されます。最後まで読み切るか、同期は `close()`、非同期は `aclose()` を呼ぶと接続が解放されます。
 - 旧名 `stream()` / `astream()` は非推奨のエイリアスとして残っています（`ask_stream()` / `aask_stream()` と同じ動作）。新規のコードでは新しい名前を使ってください。
+
+### モデル一覧
+
+`models(*, raw=False, timeout=None)` と `await amodels(*, raw=False, timeout=None)` は、プロバイダーの順序でモデル ID の文字列を返します。`raw=True` では全ページのモデル辞書を無加工で返します。`timeout` は秒単位で、`None` ならクライアントの設定を使います。この呼び出しはキャッシュや入出力ログの対象外です。
+
+OpenAI 互換プロバイダー（OpenRouter、Grok、Muse、LM Studio、Ollama、Strata を含む）は設定済みのベース URL の `/models`、Anthropic は `/v1/models` を使います。Google はベース URL が `/openai` で終わる場合に隣接するネイティブの `/models` を使い、それ以外は OpenAI 互換の `/models` を使います。OpenRouter の生成と一覧取得に API キーは不要です。設定されたキーは送信され、キーなしのチャットはリクエスト時にプロバイダーの HTTP エラーになります。
 
 ### 後片付けと設定
 

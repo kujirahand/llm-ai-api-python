@@ -427,6 +427,7 @@ class BaseClient:
     api_key_env_fallbacks: Tuple[str, ...] = ()  # tried after `api_key_env`
     base_url_env = ""
     api_key_default: Optional[str] = None  # used when no key is given (local providers)
+    api_key_optional = False
 
     def __init__(
         self,
@@ -471,7 +472,7 @@ class BaseClient:
         for name in (self.api_key_env,) + self.api_key_env_fallbacks:
             key = key or os.environ.get(name)
         key = key or self.api_key_default
-        if not key:
+        if not key and not self.api_key_optional:
             raise LLMConfigError(
                 t("missing_api_key", lang, provider=self.provider, env=self.api_key_env),
                 code="missing_api_key",

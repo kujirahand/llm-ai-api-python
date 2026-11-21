@@ -27,7 +27,7 @@ class _AsyncOpenAICompatClient(_AsyncBaseClient):
     stream_include_usage = False
 
     def _auth_headers(self) -> Dict[str, str]:
-        return {"Authorization": "Bearer " + self._api_key}
+        return {"Authorization": "Bearer " + self._api_key} if self._api_key else {}
 
     def _build_body(
         self,
@@ -97,6 +97,7 @@ class _AsyncOpenAIClient(_AsyncOpenAICompatClient):
 class _AsyncOpenRouterClient(_AsyncOpenAICompatClient):
     provider = "openrouter"
     default_base_url = "https://openrouter.ai/api/v1"
+    api_key_optional = True
     api_key_env = "OPENROUTER_API_KEY"
     base_url_env = "OPENROUTER_BASE_URL"
 

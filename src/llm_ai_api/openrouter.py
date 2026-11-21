@@ -12,6 +12,7 @@ class OpenRouterClient(OpenAICompatClient):
 
     provider = "openrouter"
     default_base_url = "https://openrouter.ai/api/v1"
+    api_key_optional = True
     api_key_env = "OPENROUTER_API_KEY"
     base_url_env = "OPENROUTER_BASE_URL"
 

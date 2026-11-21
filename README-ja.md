@@ -72,6 +72,7 @@ m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 | `ask_stream(質問)` | `aask_stream(質問)` | LLMからの応答をストリームで得る |
 | `chat(会話履歴)` | `achat(会話履歴)` | LLMに会話を与えて応答を得る |
 | `chat_stream(会話履歴)` | `achat_stream(会話履歴)` | LLMに会話を与えて応答をストリームで得る |
+| `models()` | `amodels()` | 利用可能なモデル ID を一覧する |
 
 全メソッドの一覧は [API リファレンス](docs/api-ja.md) を参照してください。
 
