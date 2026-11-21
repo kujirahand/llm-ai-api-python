@@ -132,7 +132,17 @@ luna = llm("openai:gpt-6-luna")
 | `PermissionDeniedError` | 403（クレジット・課金不足は除く。`InsufficientCreditsError` を参照） |
 | `NotFoundError` | 404 |
 | `RateLimitError` | 429（クォータ不足は除く。`InsufficientCreditsError` を参照） |
-| `InsufficientCreditsError` | クレジット・課金・クォータ不足。HTTP 402、本文が `permission-denied` でクレジットやライセンスがない旨を含む xAI の 403、または code/type が `insufficient_quota` の OpenAI 429。これらはリトライしません。 |
+| `InsufficientCreditsError` | クレジット・課金・クォータ不足。HTTP 402、機械可読な課金・支出・クォータのコード、OpenRouter の予算系 `limit_source`、xAI の 403 `permission-denied` で本文に単語 credit(s) があるもの、Anthropic のクレジット残高不足など文書にある文言。これらはリトライしません。通常の 403 / 429（Google の 429 `RESOURCE_EXHAUSTED` を含む）は対象外です。 |
 | `InternalServerError` | 5xx |
 | `APIStreamError` | ストリーミング中のエラー（`provider` / `request_id` 属性付き） |
 | `StructuredOutputError` | `schema=` の構造化出力が拒否・未完了・検証失敗になった（`result` に元の `ChatResult`） |
+
+`InsufficientCreditsError` に含めるものと、含めないものは次のとおりです。判定に使うコードは、`error.code` / `error.type` / `error.status` と、Anthropic の `error.details.error_code` です（`_` と `-` は同一視します）。
+
+- HTTP 402 は本文にかかわらず対象です。Meta の `billing_error`、OpenRouter のクレジット不足、Google の前払いクレジット枯渇（本文の `status` が `RESOURCE_EXHAUSTED` でも HTTP ステータスは 402）、Anthropic の `billing_error` がここに入ります。OpenRouter の in-flight 予算も 402 なので同じ扱いで、自動ではリトライしません。
+- コードで区別できるものは対象です。OpenAI の `insufficient_quota`、`credit_balance_exhausted`、`organization_spend_limit_exceeded`、`project_spend_limit_exceeded`、`organization_usage_limit_exceeded`。Anthropic の月間支出上限 `enforced_spend_limit_reached`（`rate_limit_error` だけでは判定しません）。Google Interactions API の `quota_exceeded` と `payment_required`。Meta の `billing_not_configured`。
+- OpenRouter の 403 は、`error.metadata.limit_source` が `openrouter_guardrail_budget`、`openrouter_workspace_budget`、`openrouter_key_limit`、`openrouter_credits` のときだけ対象です。コンテンツフィルタの 403 は `PermissionDeniedError` のままです。
+- xAI の 403 は、コードが `permission-denied` で、本文に単語としての credit / credits があるときだけ対象です。公式のデバッグ文書はこの文言を別コードとして公開していないため、単語で見ます。コードだけでは権限エラーのままです。
+- Anthropic のクレジット残高不足（`Your credit balance is too low...`）と、利用者が設定した支出上限（`You have reached your specified API usage limits` / `... workspace API usage limits`）は、タイプが通常の 400 `invalid_request_error` と同じです。文書にある文言のときだけ対象にします。
+
+次は対象にしません。一時的な 429（OpenAI の `slow_down` や `rate_limit_exceeded`、Google Interactions API の `rate_limit_exceeded` と `too_many_requests`、Anthropic の支出上限コードが無い `rate_limit_error`）と、通常の 403 です。Google の OpenAI 互換エンドポイントが返す 429 `RESOURCE_EXHAUSTED` は、短時間のレート制限でも、待ってリトライする支出ペースの制限でも同じステータスで、本文だけでは区別できないため `RateLimitError` のままリトライします。`failed_precondition` も、課金停止はその説明の一例にすぎないため対象にしません。

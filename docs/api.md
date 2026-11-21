@@ -132,7 +132,17 @@ Every exception is a subclass of `LLMError`. Configuration mistakes raise `LLMCo
 | `PermissionDeniedError` | 403 (except credit/billing exhaustion; see `InsufficientCreditsError`) |
 | `NotFoundError` | 404 |
 | `RateLimitError` | 429 (except quota exhaustion; see `InsufficientCreditsError`) |
-| `InsufficientCreditsError` | Credit, billing, or quota exhaustion: HTTP 402, an xAI 403 whose body is `permission-denied` and mentions missing credits or licenses, or OpenAI 429 with code/type `insufficient_quota`. These responses are not retried. |
+| `InsufficientCreditsError` | Credit, billing, or quota exhaustion: HTTP 402, a machine-readable billing, spend, or quota code, an OpenRouter budget `limit_source`, an xAI 403 `permission-denied` whose message contains the word credit(s), or a documented Anthropic credit-balance or spend-limit sentence. These responses are not retried. Ordinary 403 / 429 responses, including Google 429 `RESOURCE_EXHAUSTED`, are not included. |
 | `InternalServerError` | 5xx |
 | `APIStreamError` | An error during streaming (carries `provider` / `request_id` attributes) |
 | `StructuredOutputError` | The `schema=` structured output was refused, incomplete, or failed validation (`result` holds the original `ChatResult`) |
+
+`InsufficientCreditsError` is not retried. Codes are read from `error.code`, `error.type`, `error.status`, and Anthropic's `error.details.error_code` (`_` and `-` are treated as the same).
+
+- HTTP 402 matches for any body. That covers Meta `billing_error`, OpenRouter insufficient credits, Google prepay depletion (the body's `status` may still say `RESOURCE_EXHAUSTED`; the HTTP status is 402), and Anthropic `billing_error`. OpenRouter's in-flight budget is also a 402, so it is classified the same way and is not retried automatically.
+- A distinct code matches. OpenAI: `insufficient_quota`, `credit_balance_exhausted`, `organization_spend_limit_exceeded`, `project_spend_limit_exceeded`, `organization_usage_limit_exceeded`. Anthropic's monthly spend cap: `enforced_spend_limit_reached` (the `rate_limit_error` type alone does not match). Google Interactions API: `quota_exceeded` and `payment_required`. Meta: `billing_not_configured`.
+- An OpenRouter 403 matches only when `error.metadata.limit_source` is `openrouter_guardrail_budget`, `openrouter_workspace_budget`, `openrouter_key_limit`, or `openrouter_credits`. A content-filter 403 stays `PermissionDeniedError`.
+- An xAI 403 matches only when the code is `permission-denied` and the message contains the word credit or credits. The debugging page does not publish a separate code for that sentence, so the word is the signal. The code alone stays a permission error.
+- Anthropic's empty credit balance (`Your credit balance is too low...`) and a spend limit the caller set (`You have reached your specified API usage limits` / `... workspace API usage limits`) use the same 400 `invalid_request_error` type as a bad request. Only those documented sentences match.
+
+These do not match. Temporary 429s (OpenAI `slow_down` or `rate_limit_exceeded`, Google Interactions `rate_limit_exceeded` and `too_many_requests`, and an Anthropic `rate_limit_error` without the spend-cap code) and ordinary 403s. A Google OpenAI-compatible 429 `RESOURCE_EXHAUSTED` is the same status for a short-lived rate limit and for a spend-based limit that Google says to retry, and the body has no separate code, so it stays `RateLimitError` and is retried. `failed_precondition` is not included either: disabled billing is only one example of that code.
