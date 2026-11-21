@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Optional, Tuple
 
 
@@ -103,10 +104,12 @@ class RateLimitError(APIStatusError):
 class InsufficientCreditsError(APIStatusError):
     """Credit, billing, or quota exhaustion.
 
-    Raised for HTTP 402, and for 403/429 responses whose body reports a
-    credit, billing, or quota failure (for example xAI ``permission-denied``
-    with a credits/licenses message, or OpenAI ``insufficient_quota``).
-    Ordinary permission and rate-limit errors keep their existing classes.
+    Raised for HTTP 402, and for other 4xx responses whose body has a
+    machine-readable billing or quota code, an OpenRouter budget 403, an xAI
+    ``permission-denied`` 403 that says credits are exhausted, or a documented
+    Anthropic 400 ``invalid_request_error`` credit or spend-limit sentence.
+    Ordinary permission errors and temporary rate limits, including a Google
+    429 ``RESOURCE_EXHAUSTED``, keep their existing classes.
     """
 
 
@@ -162,28 +165,72 @@ class StructuredOutputError(LLMError):
 
 
 # Fold "_" and "-" so "insufficient_quota" and "insufficient-quota" match.
+# These are machine-readable codes, not message text. A temporary rate-limit
+# code (OpenAI ``slow_down``, Google ``rate_limit_exceeded`` /
+# ``too_many_requests``, Anthropic ``rate_limit_error`` with no spend-cap
+# code) is intentionally absent. Google's legacy / OpenAI-compatible
+# ``RESOURCE_EXHAUSTED`` is also absent: that status is used for short-lived
+# rate limits and for spend-based limits the rate-limits page says to retry,
+# and the body does not carry a separate quota code.
+# https://developers.openai.com/api/docs/guides/error-codes
+# https://platform.claude.com/docs/en/api/rate-limits
+# https://ai.google.dev/gemini-api/docs/api-errors
+# https://ai.google.dev/gemini-api/docs/rate-limits
+# https://dev.meta.ai/docs/error-handling
 _CREDIT_CODES = frozenset(
     {
+        # OpenAI. ``insufficient_quota`` is the broad type; the others are error.code.
         "insufficient-quota",
+        "credit-balance-exhausted",
+        "organization-spend-limit-exceeded",
+        "project-spend-limit-exceeded",
+        "organization-usage-limit-exceeded",
+        # Anthropic billing_error, and the tier spend cap's details.error_code.
         "billing-error",
+        "enforced-spend-limit-reached",
+        # Meta Model API.
         "billing-not-configured",
+        # Google Interactions API. Not the legacy RESOURCE_EXHAUSTED status.
+        "quota-exceeded",
+        "payment-required",
     }
 )
 _PERMISSION_DENIED_CODES = frozenset({"permission-denied"})
-_CREDIT_PHRASES = (
-    "credits or licenses",
-    "credit or license",
-    "doesn't have any credits",
-    "does not have any credits",
-    "don't have any credits",
-    "do not have any credits",
-    "has no credits",
-    "have no credits",
-    "out of credits",
-    "out of credit",
-    "insufficient credits",
-    "insufficient credit",
-    "no credits or licenses",
+# OpenRouter 403 budget exhaustion. ``openrouter_in_flight_budget`` is not
+# here: that case is a transient HTTP 402, which is classified separately.
+# Content-filter 403s have no limit_source and stay permission errors.
+# https://openrouter.ai/docs/api_reference/errors-and-debugging
+_CREDIT_LIMIT_SOURCES = frozenset(
+    {
+        "openrouter-guardrail-budget",
+        "openrouter-workspace-budget",
+        "openrouter-key-limit",
+    }
+)
+# 4xx message text, used only where the provider publishes no distinct code.
+# Anthropic's empty balance is 400 invalid_request_error (same type as a bad
+# request). A spend limit the caller set is also that type; the rate-limits
+# page gives these prefixes and no error_code.
+# https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers
+# https://platform.claude.com/docs/en/api/rate-limits
+_ANTHROPIC_CREDIT_MESSAGE_PREFIXES = (
+    "your credit balance is too low",
+    "credit balance is too low",
+    "credit balance too low",
+    "you have reached your specified api usage limits",
+    "you have reached your specified workspace api usage limits",
+)
+# xAI keeps using 403 permission-denied for a team with no credits, and the
+# debugging page does not publish a separate code. Require both the standalone
+# credit word and an exhaustion expression. This accepts reworded shortage
+# messages but not "accredited", a "/credits" URL, "non-credit", or a normal
+# denial of access to credit-based billing.
+_CREDIT_WORD = re.compile(r"(?<!non-)(?<![/\w])credits?\b")
+_CREDIT_FAILURE = re.compile(
+    r"\b(?:no|without|insufficient|depleted|exhausted|zero)\b"
+    r"|(?:does|do)(?:n't| not) have any"
+    r"|\b(?:out of|used all)\b"
+    r"|\b0+(?:\.0+)?\s+credits?\b"
 )
 
 
@@ -192,6 +239,18 @@ def _normalized_token(value: Any) -> Optional[str]:
         return None
     token = value.strip().lower().replace("_", "-")
     return token or None
+
+
+def _add_error_codes(obj: Any, add_code) -> None:
+    """Record code/type/status, plus Anthropic's ``details.error_code``."""
+    if not isinstance(obj, dict):
+        return
+    add_code(obj.get("code"))
+    add_code(obj.get("type"))
+    add_code(obj.get("status"))
+    details = obj.get("details")
+    if isinstance(details, dict):
+        add_code(details.get("error_code"))
 
 
 def _codes_and_message(body: Any) -> Tuple[set, str]:
@@ -211,31 +270,59 @@ def _codes_and_message(body: Any) -> Tuple[set, str]:
     if isinstance(body, dict):
         err = body.get("error")
         if isinstance(err, dict):
-            add_code(err.get("code"))
-            add_code(err.get("type"))
-            add_code(err.get("status"))
+            _add_error_codes(err, add_code)
             add_message(err.get("message"))
         elif isinstance(err, str):
             add_message(err)
-        add_code(body.get("code"))
-        add_code(body.get("type"))
-        add_code(body.get("status"))
+        _add_error_codes(body, add_code)
         add_message(body.get("message"))
     elif isinstance(body, str):
         add_message(body)
     return codes, " ".join(parts).lower()
 
 
+def _limit_sources(body: Any) -> set:
+    """OpenRouter ``error.metadata.limit_source`` values, normalized."""
+    sources: set = set()
+    if not isinstance(body, dict):
+        return sources
+    err = body.get("error")
+    if not isinstance(err, dict):
+        return sources
+    meta = err.get("metadata")
+    if not isinstance(meta, dict):
+        return sources
+    token = _normalized_token(meta.get("limit_source"))
+    if token is not None:
+        sources.add(token)
+    return sources
+
+
 def is_insufficient_credits(status_code: int, body: Any = None) -> bool:
-    """Return True when the HTTP error is credit, billing, or quota exhaustion."""
+    """Return True when the HTTP error is credit, billing, or quota exhaustion.
+
+    HTTP 402 always matches (Meta, OpenRouter credits, Google prepay, Anthropic
+    ``billing_error``). Other 4xx responses match only on a code from the table
+    above, an OpenRouter budget ``limit_source`` on 403, an xAI
+    ``permission-denied`` 403 whose message says credits are exhausted, or a
+    documented Anthropic 400 ``invalid_request_error`` sentence.
+    """
     if status_code == 402:
         return True
     codes, message = _codes_and_message(body)
-    if codes & _CREDIT_CODES:
+    if 400 <= status_code < 500 and (codes & _CREDIT_CODES):
+        return True
+    if status_code == 403 and (_limit_sources(body) & _CREDIT_LIMIT_SOURCES):
         return True
     if status_code == 403 and (codes & _PERMISSION_DENIED_CODES):
-        if any(phrase in message for phrase in _CREDIT_PHRASES):
+        if _CREDIT_WORD.search(message) and _CREDIT_FAILURE.search(message):
             return True
+    if (
+        status_code == 400
+        and "invalid-request-error" in codes
+        and message.lstrip().startswith(_ANTHROPIC_CREDIT_MESSAGE_PREFIXES)
+    ):
+        return True
     return False
 
 

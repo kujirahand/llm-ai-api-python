@@ -45,7 +45,7 @@ There are provider-specific settings too: Anthropic takes `anthropic_version` (d
 |---|---|---|
 | Connection failure (cannot connect, connect timeout, connection pool timeout) | retried | retried |
 | HTTP 408 / 409 / 429 / 5xx | retried (honoring `retry-after`) | retried |
-| Credit / billing / quota exhaustion (`InsufficientCreditsError`, including 429 `insufficient_quota`) | not retried | not retried |
+| Credit / billing / quota exhaustion (`InsufficientCreditsError`, including 429 `insufficient_quota` and spend-limit codes) | not retried | not retried |
 | Read timeout | not retried | retried |
 | Other transport errors (disconnect while sending or receiving, protocol errors, etc.) | not retried | not retried |
 
