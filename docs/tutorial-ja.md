@@ -10,7 +10,7 @@ English: [tutorial.md](tutorial.md)
 pip install llm-ai-api
 ```
 
-Python 3.9 以上が必要です。依存は `httpx` だけです。インポート名は `llm_ai_api` です。
+Python 3.10 以上が必要です。依存は `httpx` だけです。インポート名は `llm_ai_api` です。
 
 使うプロバイダーに応じて環境変数を設定します。ローカル LLM では、認証や既定以外の接続先を使う場合に設定してください。詳しくは後述します。
 

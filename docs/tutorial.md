@@ -10,7 +10,7 @@ This tutorial walks through `llm-ai-api` step by step: asking a question, contin
 pip install llm-ai-api
 ```
 
-Python 3.9 or later is required. The only dependency is `httpx`. The import name is `llm_ai_api`.
+Python 3.10 or later is required. The only dependency is `httpx`. The import name is `llm_ai_api`.
 
 Set environment variables for the providers you use. For local LLMs, set them when using authentication or a non-default address; see the setup below.
 
