@@ -62,5 +62,6 @@ MESSAGES = {
     "hint_403": "Hint: this API key may not have permission to use this model or feature.",
     "hint_404": "Hint: check the model name and the base URL.",
     "hint_429": "Hint: rate limit or quota exceeded. Wait a while and retry, or check your plan and billing.",
+    "hint_credits": "Hint: check your billing and credit settings.",
     "hint_server": "Hint: the service may be having trouble. Wait a while and retry.",
 }

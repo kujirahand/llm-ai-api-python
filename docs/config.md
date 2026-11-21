@@ -45,6 +45,7 @@ There are provider-specific settings too: Anthropic takes `anthropic_version` (d
 |---|---|---|
 | Connection failure (cannot connect, connect timeout, connection pool timeout) | retried | retried |
 | HTTP 408 / 409 / 429 / 5xx | retried (honoring `retry-after`) | retried |
+| Credit / billing / quota exhaustion (`InsufficientCreditsError`, including 429 `insufficient_quota`) | not retried | not retried |
 | Read timeout | not retried | retried |
 | Other transport errors (disconnect while sending or receiving, protocol errors, etc.) | not retried | not retried |
 
@@ -66,7 +67,7 @@ The change also applies to the async methods (`aask()` and so on).
 
 ## Production settings
 
-- The default retries cover only connection-stage failures and 408 / 409 / 429 / 5xx responses from the server.
+- The default retries cover only connection-stage failures and 408 / 409 / 429 / 5xx responses from the server. Credit and quota errors (`InsufficientCreditsError`) are not retried, even when they are returned as HTTP 429.
 - In latency-sensitive services, consider `max_retries=0` or a short `timeout`. The default `timeout=600` is meant for long generations; combined with retries, a single call can block for a long time. Retrying in your application, where you know the situation, is easier to control.
 - `retry_read_timeout=True` can double-bill: when a read timeout happens, the server may already be generating. Use it only if you accept that every retry costs money and server time.
 - `Retry-After` accepts seconds or an HTTP date, capped by `retry_after_max` in sync and async calls. Invalid values, NaN, infinity, negative seconds, and past dates are ignored in favor of the normal backoff.

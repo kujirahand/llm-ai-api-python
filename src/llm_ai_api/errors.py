@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 
 class LLMError(Exception):
@@ -100,6 +100,16 @@ class RateLimitError(APIStatusError):
     """429"""
 
 
+class InsufficientCreditsError(APIStatusError):
+    """Credit, billing, or quota exhaustion.
+
+    Raised for HTTP 402, and for 403/429 responses whose body reports a
+    credit, billing, or quota failure (for example xAI ``permission-denied``
+    with a credits/licenses message, or OpenAI ``insufficient_quota``).
+    Ordinary permission and rate-limit errors keep their existing classes.
+    """
+
+
 class InternalServerError(APIStatusError):
     """500 以上"""
 
@@ -151,8 +161,88 @@ class StructuredOutputError(LLMError):
         self.provider = provider
 
 
-def status_error_class(status_code: int) -> type:
-    """Return the exception class for an HTTP status code."""
+# Fold "_" and "-" so "insufficient_quota" and "insufficient-quota" match.
+_CREDIT_CODES = frozenset(
+    {
+        "insufficient-quota",
+        "billing-error",
+        "billing-not-configured",
+    }
+)
+_PERMISSION_DENIED_CODES = frozenset({"permission-denied"})
+_CREDIT_PHRASES = (
+    "credits or licenses",
+    "credit or license",
+    "doesn't have any credits",
+    "does not have any credits",
+    "don't have any credits",
+    "do not have any credits",
+    "has no credits",
+    "have no credits",
+    "out of credits",
+    "out of credit",
+    "insufficient credits",
+    "insufficient credit",
+    "no credits or licenses",
+)
+
+
+def _normalized_token(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    token = value.strip().lower().replace("_", "-")
+    return token or None
+
+
+def _codes_and_message(body: Any) -> Tuple[set, str]:
+    """Collect error code/type/status tokens and the combined message text."""
+    codes: set = set()
+    parts: list = []
+
+    def add_code(value: Any) -> None:
+        token = _normalized_token(value)
+        if token is not None:
+            codes.add(token)
+
+    def add_message(value: Any) -> None:
+        if isinstance(value, str) and value:
+            parts.append(value)
+
+    if isinstance(body, dict):
+        err = body.get("error")
+        if isinstance(err, dict):
+            add_code(err.get("code"))
+            add_code(err.get("type"))
+            add_code(err.get("status"))
+            add_message(err.get("message"))
+        elif isinstance(err, str):
+            add_message(err)
+        add_code(body.get("code"))
+        add_code(body.get("type"))
+        add_code(body.get("status"))
+        add_message(body.get("message"))
+    elif isinstance(body, str):
+        add_message(body)
+    return codes, " ".join(parts).lower()
+
+
+def is_insufficient_credits(status_code: int, body: Any = None) -> bool:
+    """Return True when the HTTP error is credit, billing, or quota exhaustion."""
+    if status_code == 402:
+        return True
+    codes, message = _codes_and_message(body)
+    if codes & _CREDIT_CODES:
+        return True
+    if status_code == 403 and (codes & _PERMISSION_DENIED_CODES):
+        if any(phrase in message for phrase in _CREDIT_PHRASES):
+            return True
+    return False
+
+
+def status_error_class(status_code: int, body: Any = None) -> type:
+    """Return the exception class for an HTTP status code and optional error body."""
+    if is_insufficient_credits(status_code, body):
+        return InsufficientCreditsError
     if status_code == 400:
         return BadRequestError
     if status_code == 401:

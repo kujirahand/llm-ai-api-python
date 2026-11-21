@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `InsufficientCreditsError` (`APIStatusError`) for credit, billing, or quota exhaustion: HTTP 402, an xAI 403 whose body is `permission-denied` and mentions missing credits or licenses, and OpenAI 429 `insufficient_quota`. These responses are not retried (including 429 quota errors). The English and Japanese hint is `hint_credits`. Ordinary 403 and 429 responses keep `PermissionDeniedError` / `RateLimitError` and the existing retry behavior (#120).
 - Add the `muse` provider (Muse, Meta Model API) as an OpenAI-compatible client: `MuseClient`, default base URL `https://api.meta.ai/v1`, API key from `MODEL_API_KEY`, base URL override via `MUSE_BASE_URL`, and the `models.MUSE_MUSE_WONDER_1_0` constant.
 - Add the `grok` provider (xAI, OpenAI-compatible; `XAI_API_KEY` / `XAI_BASE_URL`) with `GrokClient` and `models.GROK_GROK_4_7`.
 - Reorganize the READMEs around a quick start and provider table, and add a how-it-works diagram featuring the project mascot to the README header.

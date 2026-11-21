@@ -129,9 +129,10 @@ Every exception is a subclass of `LLMError`. Configuration mistakes raise `LLMCo
 | `APIStatusError` | An HTTP error response (base class) |
 | `BadRequestError` | 400 |
 | `AuthenticationError` | 401 |
-| `PermissionDeniedError` | 403 |
+| `PermissionDeniedError` | 403 (except credit/billing exhaustion; see `InsufficientCreditsError`) |
 | `NotFoundError` | 404 |
-| `RateLimitError` | 429 |
+| `RateLimitError` | 429 (except quota exhaustion; see `InsufficientCreditsError`) |
+| `InsufficientCreditsError` | Credit, billing, or quota exhaustion: HTTP 402, an xAI 403 whose body is `permission-denied` and mentions missing credits or licenses, or OpenAI 429 with code/type `insufficient_quota`. These responses are not retried. |
 | `InternalServerError` | 5xx |
 | `APIStreamError` | An error during streaming (carries `provider` / `request_id` attributes) |
 | `StructuredOutputError` | The `schema=` structured output was refused, incomplete, or failed validation (`result` holds the original `ChatResult`) |
