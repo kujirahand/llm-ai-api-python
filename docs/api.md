@@ -35,7 +35,7 @@ Main options at creation time (keyword arguments):
 
 ## LLM methods
 
-Every call method accepts the per-call keyword arguments `system` / `max_tokens` / `temperature` / `extra` (which override the creation-time values) and `timeout` (a timeout in seconds for this call only). When omitted, the creation-time values are used.
+The question and answer methods accept the per-call keyword arguments `system` / `max_tokens` / `temperature` / `extra` (which override the creation-time values) and `timeout` (a timeout in seconds for this call only). When omitted, the creation-time values are used.
 
 ### Questions and answers
 
@@ -53,6 +53,12 @@ Every call method accepts the per-call keyword arguments `system` / `max_tokens`
 - `ask()` / `ask_stream()` / `aask()` / `aask_stream()` also accept `images=` (a list of file paths, `bytes`, or http(s) URLs). See [Multimodal](multimodal.md).
 - Sync streams are regular iterators; async streams are async iterators (use `async for`; no `await` is needed). The stream iterator gets `request_id` and `retries` set once the response headers have been received. Read it to the end, or call `close()` (sync) / `aclose()` (async), to release the connection.
 - The old names `stream()` / `astream()` remain as deprecated aliases (same behavior as `ask_stream()` / `aask_stream()`). Use the new names in new code.
+
+### Model listing
+
+`models(*, raw=False, timeout=None)` and `await amodels(*, raw=False, timeout=None)` return model ID strings in provider order. Pass `raw=True` for the unchanged model dictionaries across all pages. `timeout` is in seconds; `None` uses the client setting. These calls are not cached or written to the I/O log.
+
+OpenAI-compatible providers (including OpenRouter, Grok, Muse, LM Studio, Ollama, and Strata) use `/models` on the configured base URL; Anthropic uses `/v1/models`. Google uses the native sibling `/models` endpoint when its base URL ends in `/openai`, and otherwise uses the OpenAI-compatible `/models` endpoint. OpenRouter construction and listing do not require an API key; a configured key is sent, and chat without a key fails at request time with the provider's HTTP error.
 
 ### Cleanup and configuration
 

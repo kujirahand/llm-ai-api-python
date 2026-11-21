@@ -43,6 +43,9 @@ MESSAGES = {
     "stream_connection_error": "Reading the stream failed: {detail}",
     "unclosed_stream": "A stream was garbage-collected without being closed; call aclose() when you stop early.",
     "invalid_json_response": "The response was not valid JSON: {preview!r}",
+    "unsupported_models": "Model listing is not supported for provider {provider}.",
+    "invalid_models_response": "The models response must contain a list in {field!r} (received {kind}).",
+    "models_page_limit": "Model listing exceeded the pagination limit ({limit} pages).",
     "invalid_transcription_response": "The transcription response did not contain a string 'text' field (keys and types: {shape}).",
     "response_too_large": "The response is larger than the size limit ({limit} bytes)",
     # API エラー
