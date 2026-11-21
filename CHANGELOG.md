@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Require Python 3.10 or later, and run CI on Python 3.10 and 3.13.
 - Raise the isolated build requirement to `setuptools>=84.1.0` and document recommended minimum versions for patched transitive dependencies.
 - Add weekly Dependabot updates, Python CI, and CodeQL analysis workflows.
 - Add the `muse` provider (Muse, Meta Model API) as an OpenAI-compatible client: `MuseClient`, default base URL `https://api.meta.ai/v1`, API key from `MODEL_API_KEY`, base URL override via `MUSE_BASE_URL`, and the `models.MUSE_MUSE_WONDER_1_0` constant.

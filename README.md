@@ -20,6 +20,8 @@ A thin HTTP wrapper that calls the OpenAI, OpenRouter, Claude (Anthropic), and G
 
 ## Installation
 
+Requires Python 3.10 or later.
+
 ```sh
 pip install llm-ai-api
 ```

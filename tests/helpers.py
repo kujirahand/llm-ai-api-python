@@ -76,7 +76,7 @@ class AsyncFailingStream(httpx.AsyncByteStream):
 class BlockingAsyncStream(httpx.AsyncByteStream):
     """Yields `first` once, then waits forever (until cancelled). Records `aclose()`.
 
-    Create it inside the running test loop (Python 3.9 binds asyncio.Event to it).
+    Create it inside the running test loop (asyncio.Event binds to the running loop).
     """
 
     def __init__(self, first=b""):

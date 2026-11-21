@@ -20,6 +20,8 @@ OpenAI / OpenRouter / Claude (Anthropic) / Google の API と、Ollama / LM Stud
 
 ## インストール
 
+Python 3.10 以降が必要です。
+
 ```sh
 pip install llm-ai-api
 ```
