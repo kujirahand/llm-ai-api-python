@@ -5,6 +5,7 @@
 - Add `models()` and `amodels()` to list provider models, including pagination (#123).
 
 - Add `InsufficientCreditsError` (`APIStatusError`) for credit, billing, or quota exhaustion: HTTP 402, an xAI 403 whose body is `permission-denied` and mentions missing credits or licenses, and OpenAI 429 `insufficient_quota`. These responses are not retried (including 429 quota errors). The English and Japanese hint is `hint_credits`. Ordinary 403 and 429 responses keep `PermissionDeniedError` / `RateLimitError` and the existing retry behavior (#120).
+- Recognize more billing and quota errors as `InsufficientCreditsError`, and still do not retry them: OpenAI `credit_balance_exhausted` and the organization/project spend and usage limit codes, Anthropic's credit-balance sentence and `enforced_spend_limit_reached`, Google Interactions `quota_exceeded`, and OpenRouter budget `limit_source` values. An xAI 403 `permission-denied` matches when the message says credit(s) are exhausted, so reworded shortage messages still classify without treating every mention of credits as billing exhaustion. Google 429 `RESOURCE_EXHAUSTED` stays `RateLimitError` and is still retried (#124).
 - Require Python 3.10 or later, and run CI on Python 3.10 and 3.13.
 - Raise the isolated build requirement to `setuptools>=84.1.0` and document recommended minimum versions for patched transitive dependencies.
 - Add weekly Dependabot updates, Python CI, and CodeQL analysis workflows.

@@ -224,7 +224,7 @@ asyncio.run(main())
 
 ## 8. エラーを処理する
 
-すべての例外は `LLMError` の派生です。HTTP エラー（4xx / 5xx）は `APIStatusError` で、`status_code` と `body` を持ちます。クレジット・課金・クォータ不足（HTTP 402、クレジットやライセンスがない旨の xAI の 403、OpenAI の 429 `insufficient_quota`）は、`APIStatusError` のサブクラス `InsufficientCreditsError` になります。
+すべての例外は `LLMError` の派生です。HTTP エラー（4xx / 5xx）は `APIStatusError` で、`status_code` と `body` を持ちます。クレジット・課金・クォータ不足は `APIStatusError` のサブクラス `InsufficientCreditsError` になります。HTTP 402 のほか、コードや文書にある文言で区別できる 400 / 403 / 429 が対象です。通常の権限エラーと、一時的なレート制限（Google の 429 `RESOURCE_EXHAUSTED` を含む）は、これまでどおり `PermissionDeniedError` / `RateLimitError` です。見分け方は [API リファレンス](api-ja.md) を参照してください。
 
 ```python
 from llm_ai_api import llm, LLMError, APIStatusError
@@ -242,7 +242,7 @@ except LLMError as e:
 
 すべての例外は、言語に依存しない `code` 属性（例: `"missing_api_key"`）を持っています。エラーの判定には、翻訳で変わるメッセージの文面ではなく `code` を使ってください。
 
-失敗したリクエストは、最大 `max_retries` 回（既定 2 回）自動でリトライされます。対象は、接続段階の失敗（サーバーに届いていないもの）と、HTTP 408 / 409 / 429 / 5xx だけです。クレジット・クォータ不足（`InsufficientCreditsError`。OpenAI の 429 `insufficient_quota` を含む）はリトライしません。読み取りタイムアウトなど、送信した後の失敗はリトライしません（生成が二重に行われ、二重に課金されるのを防ぐため）。応答の速さが大事なサービスでは、`llm(..., max_retries=0)` や短い `timeout` を検討してください。詳しくは [設定リファレンス](config-ja.md) を参照してください。
+失敗したリクエストは、最大 `max_retries` 回（既定 2 回）自動でリトライされます。対象は、接続段階の失敗（サーバーに届いていないもの）と、HTTP 408 / 409 / 429 / 5xx だけです。クレジット・クォータ不足（`InsufficientCreditsError`。OpenAI の `insufficient_quota` や支出上限、Anthropic の `enforced_spend_limit_reached` を含む）はリトライしません。読み取りタイムアウトなど、送信した後の失敗はリトライしません（生成が二重に行われ、二重に課金されるのを防ぐため）。応答の速さが大事なサービスでは、`llm(..., max_retries=0)` や短い `timeout` を検討してください。詳しくは [設定リファレンス](config-ja.md) を参照してください。
 
 接続失敗（`APIConnectionError` / `APITimeoutError`）とストリーム途中のエラー（`APIStreamError`）にも、`provider` と `request_id` があります。ヘッダーが届く前の接続失敗では `request_id` は `None` です。`retries` と `latency`（秒）も付きます。HTTP エラー（`APIStatusError`）にも `retries` と `latency` が付きます。
 
