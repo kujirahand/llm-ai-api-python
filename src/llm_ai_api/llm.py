@@ -54,32 +54,23 @@ from .openrouter import OpenRouterClient
 from .strata import StrataClient
 from .types import ChatResult
 
-_PROVIDERS = {
-    "openai": OpenAIClient,
-    "openrouter": OpenRouterClient,
-    "grok": GrokClient,
-    "muse": MuseClient,
-    "google": GoogleClient,
-    "lmstudio": LMStudioClient,
-    "ollama": OllamaClient,
-    "strata": StrataClient,
-    "anthropic": AnthropicClient,
-    "claude": AnthropicClient,
+# Built-in providers as sync/async client pairs. `claude` is an alias of anthropic.
+_PROVIDER_PAIRS = {
+    "openai": (OpenAIClient, _AsyncOpenAIClient),
+    "openrouter": (OpenRouterClient, _AsyncOpenRouterClient),
+    "grok": (GrokClient, _AsyncGrokClient),
+    "muse": (MuseClient, _AsyncMuseClient),
+    "google": (GoogleClient, _AsyncGoogleClient),
+    "lmstudio": (LMStudioClient, _AsyncLMStudioClient),
+    "ollama": (OllamaClient, _AsyncOllamaClient),
+    "strata": (StrataClient, _AsyncStrataClient),
+    "anthropic": (AnthropicClient, _AsyncAnthropicClient),
+    "claude": (AnthropicClient, _AsyncAnthropicClient),
 }
 
+_PROVIDERS = {name: sync for name, (sync, async_client) in _PROVIDER_PAIRS.items()}
 # Internal async clients, created lazily by LLM.aask() / achat() / aask_stream() / achat_stream().
-_ASYNC_PROVIDERS = {
-    "openai": _AsyncOpenAIClient,
-    "openrouter": _AsyncOpenRouterClient,
-    "grok": _AsyncGrokClient,
-    "muse": _AsyncMuseClient,
-    "google": _AsyncGoogleClient,
-    "lmstudio": _AsyncLMStudioClient,
-    "ollama": _AsyncOllamaClient,
-    "strata": _AsyncStrataClient,
-    "anthropic": _AsyncAnthropicClient,
-    "claude": _AsyncAnthropicClient,
-}
+_ASYNC_PROVIDERS = {name: async_client for name, (sync, async_client) in _PROVIDER_PAIRS.items()}
 
 # Client attributes that LLM.set_config() can change after construction.
 _RETRY_SETTINGS = ("max_retries", "retry_read_timeout", "retry_after_max")
