@@ -59,7 +59,7 @@ result = m.chat([
     {"role": "system", "content": long_text},   # 毎回同じ
     {"role": "user", "content": "第3章を要約して"},  # 毎回変わる
 ])
-print(result.usage.cache_read_tokens)  # prompt_tokens_details.cached_tokens から
+print(result.usage and result.usage.cache_read_tokens)  # prompt_tokens_details.cached_tokens から
 print(result.raw["usage"])  # プロバイダーの生のオブジェクト
 ```
 

@@ -94,7 +94,7 @@ OpenAI 互換プロバイダー（OpenRouter、Grok、Muse、LM Studio、Ollama�
 
 - `ChatChunk` は低レベル層のストリーミング（`stream_chat()`）が返す断片で、`text` / `raw` / `request_id` を持ちます。
 - `SSEEvent` は生レイヤーのストリーミングが返すイベントで、`json()` でボディを dict として取り出せます。
-- `Usage` は `input_tokens` / `output_tokens` を持つデータクラスです。プロバイダーが報告すれば `cache_read_tokens`、`cache_creation_tokens`、`reasoning_tokens` も入ります（省略時は `None`、明示的なゼロは `0`）。値は応答からそのままコピーし、合計への足し引きや欠落値の推定、金額計算はしません。
+- `Usage` は `input_tokens` / `output_tokens` を持つデータクラスです。プロバイダーが報告すれば `cache_read_tokens`、`cache_creation_tokens`、`reasoning_tokens` も入ります（省略時は `None`、明示的なゼロは `0`、型が `int` 以外の値が返った項目も `None`）。値は応答からそのままコピーし、合計への足し引きや欠落値の推定、金額計算はしません。`input_tokens` の意味はプロバイダーにより異なり、Anthropic ではキャッシュ分を含みません。これらの項目は `chat()` / `achat()` で取得でき、ストリーミングでは取得できません。
 
 ## モジュール関数
 

@@ -94,7 +94,7 @@ The return value of `chat()` / `achat()`.
 
 - `ChatChunk` is a fragment returned by the low-level streaming layer (`stream_chat()`), with `text` / `raw` / `request_id`.
 - `SSEEvent` is an event returned by the raw streaming layer; `json()` extracts the body as a dict.
-- `Usage` is a dataclass with `input_tokens` / `output_tokens`. When the provider reports them, it also has `cache_read_tokens`, `cache_creation_tokens`, and `reasoning_tokens` (`None` if omitted; an explicit zero is `0`). These values are copied from the response and are not added or subtracted from the totals, and the library does not estimate missing values or compute cost.
+- `Usage` is a dataclass with `input_tokens` / `output_tokens`. When the provider reports them, it also has `cache_read_tokens`, `cache_creation_tokens`, and `reasoning_tokens` (`None` if omitted; an explicit zero is `0`; a value that is not an `int` also becomes `None`). These values are copied from the response and are not added or subtracted from the totals, and the library does not estimate missing values or compute cost. The meaning of `input_tokens` differs by provider: for Anthropic it does not include cached tokens. These fields are available from `chat()` / `achat()`; streaming responses do not carry them.
 
 ## Module functions
 

@@ -57,7 +57,7 @@ result = m.chat([
     {"role": "system", "content": long_text},         # same every time
     {"role": "user", "content": "Summarize chapter 3."},  # changes every time
 ])
-print(result.usage.cache_read_tokens)  # from prompt_tokens_details.cached_tokens
+print(result.usage and result.usage.cache_read_tokens)  # from prompt_tokens_details.cached_tokens
 print(result.raw["usage"])  # unchanged provider object
 ```
 

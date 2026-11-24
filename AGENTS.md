@@ -386,7 +386,7 @@ class ChatChunk:
   - OpenAI / OpenRouter: `choices[0].message.content`（`None` は `""` とする）
   - Anthropic: `content` のうち `type == "text"` のブロックの `text` を連結。`thinking` などその他のブロックは `text` に含めず `raw` から参照してもらう。
 - `stop_reason` は正規化しない（生の値を返す）。Claude の `"refusal"` なども例外にせず、そのまま返す。
-- `usage` の対応: OpenAI 系は `prompt_tokens` → `input_tokens`、`completion_tokens` → `output_tokens`、`prompt_tokens_details.cached_tokens` → `cache_read_tokens`、`completion_tokens_details.reasoning_tokens` → `reasoning_tokens`。Anthropic は `input_tokens` / `output_tokens` に加え、`cache_read_input_tokens` → `cache_read_tokens`、`cache_creation_input_tokens` → `cache_creation_tokens`。取れない項目は `None`（明示的なゼロは `0`）。`input_tokens` / `output_tokens` はプロバイダーの合計をそのまま使い、キャッシュ分の足し引きや欠落値の推定、金額計算はしない。
+- `usage` の対応: OpenAI 系は `prompt_tokens` → `input_tokens`、`completion_tokens` → `output_tokens`、`prompt_tokens_details.cached_tokens` → `cache_read_tokens`、`completion_tokens_details.reasoning_tokens` → `reasoning_tokens`。Anthropic は `input_tokens` / `output_tokens` に加え、`cache_read_input_tokens` → `cache_read_tokens`、`cache_creation_input_tokens` → `cache_creation_tokens`。取れない項目は `None`（明示的なゼロは `0`）。値の型が `int` 以外（`bool`・`float`・文字列など）の項目も `None` とする。`input_tokens` / `output_tokens` はプロバイダーの値をそのまま使い（意味はプロバイダーにより異なり、Anthropic の `input_tokens` はキャッシュ分を含まない）、キャッシュ分の足し引きや欠落値の推定、金額計算はしない。
 
 ### 5.7 キャッシュ（`cache.py`）
 
