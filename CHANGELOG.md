@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.3
+
 - Add optional `cache_read_tokens`, `cache_creation_tokens`, and `reasoning_tokens` to `Usage`. OpenAI-compatible responses map `prompt_tokens_details.cached_tokens` and `completion_tokens_details.reasoning_tokens`; Anthropic maps `cache_read_input_tokens` and `cache_creation_input_tokens`. Missing values stay `None`, an explicit zero is `0`, and existing `input_tokens` / `output_tokens` totals are not adjusted. Cached rows written before these keys existed still load (#127). Note: `Usage` equality now also compares the new fields.
 
 - Add `models()` and `amodels()` to list provider models, including pagination (#123).
