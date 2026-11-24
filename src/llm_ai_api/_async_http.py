@@ -205,10 +205,13 @@ class _AsyncBaseClient:
 
     def _cache_context(self) -> Dict[str, Any]:
         """Client settings that can change a response for the same body (see BaseClient)."""
-        return {
+        context: Dict[str, Any] = {
             "base_url": self.base_url,
             "headers": _merge_headers(self._extra_headers),
         }
+        if self.fixed_headers:  # registered providers only; built-ins keep their keys
+            context["fixed_headers"] = _merge_headers(self.fixed_headers)
+        return context
 
     async def _acache_lookup(self, body: Dict[str, Any]) -> Optional[ChatResult]:
         if self.cache is None:

@@ -3,7 +3,6 @@
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 
-from ._providers import lookup
 from .errors import LLMConfigError, LLMError
 from .lang import t
 
@@ -15,11 +14,11 @@ class ModelPages:
 
     def __init__(self, provider: str, client: Any, raw: bool) -> None:
         self.lang = client.lang
-        # What the provider supports comes from the registry's declared attributes.
-        entry = lookup(provider)
-        if entry is None or not entry.sync.supports_models:
+        # What the provider supports comes from the client's declared attributes, so a
+        # client keeps the behavior it was created with even after a replace=True.
+        if not client.supports_models:
             raise LLMConfigError(t("unsupported_models", self.lang, provider=provider), code="unsupported_models")
-        style = entry.sync.models_style
+        style = client.models_style
         self.native = style == "google" and client.base_url.endswith("/openai")
         if style == "anthropic":
             self.base_path = "/v1/models"

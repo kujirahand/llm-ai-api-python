@@ -90,7 +90,9 @@ These differ from the built-in providers:
 
 To only change where a built-in provider connects, use an environment variable such as `OPENAI_BASE_URL`, or `base_url=` on `llm()`.
 
-After a replacement, an `LLM` that already exists keeps using the definition it was created with.
+After a replacement, an `LLM` that already exists keeps using the definition it was created with (including whether `models()` / `amodels()` is supported).
+
+The response cache key includes the fixed headers given in `headers`, in addition to the registered name, `base_url`, and the body that is sent. Changing only the fixed headers with `replace=True` does not return responses stored before the replacement.
 
 ## About authentication
 

@@ -590,10 +590,13 @@ class BaseClient:
         The API key is mixed into the key hash separately (see `cache_key`) and is never
         stored.
         """
-        return {
+        context: Dict[str, Any] = {
             "base_url": self.base_url,
             "headers": _merge_headers(self._extra_headers),
         }
+        if self.fixed_headers:  # registered providers only; built-ins keep their keys
+            context["fixed_headers"] = _merge_headers(self.fixed_headers)
+        return context
 
     def _cache_lookup(self, body: Dict[str, Any]) -> Optional[ChatResult]:
         """Return the cached result for this request body, or None (miss or cache failure)."""

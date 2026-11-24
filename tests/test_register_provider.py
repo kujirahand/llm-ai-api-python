@@ -317,6 +317,47 @@ class SharedMachineryTest(RegistryTestCase):
             self.assertEqual(m.models(), ["m1", "m2"])
         self.assertEqual(str(rec.requests[0].url), BASE + "/models")
 
+    def test_models_follows_the_created_client_after_replace(self):
+        register_provider("swap", base_url=BASE, api_key_default="k", models=True)
+        rec = Recorder(json_response({"data": [{"id": "m1"}]}))
+        old = llm("swap:x", transport=rec.transport)
+        register_provider("swap", base_url=BASE, api_key_default="k", models=False, replace=True)
+        with old as m:
+            self.assertEqual(m.models(), ["m1"])
+        with llm("swap:x", transport=rec.transport) as m:
+            with self.assertRaises(LLMConfigError) as ctx:
+                m.models()
+        self.assertEqual(ctx.exception.code, "unsupported_models")
+
+    def test_cache_context_includes_fixed_headers_only_when_set(self):
+        register_provider("fh1", base_url=BASE, api_key_default="k", headers={"X-A": "1"})
+        register_provider("fh2", base_url=BASE, api_key_default="k", headers={"X-A": "2"})
+        register_provider("fh0", base_url=BASE, api_key_default="k")
+        with llm("fh1:m") as a, llm("fh2:m") as b, llm("fh0:m") as c:
+            self.assertNotEqual(a.client._cache_context(), b.client._cache_context())
+            self.assertNotIn("fixed_headers", c.client._cache_context())
+        # Built-ins have no fixed headers, so their cache keys stay as they were.
+        for spec in ("openai:m", "anthropic:m", "openrouter:m"):
+            with llm(spec, api_key="k") as m:
+                self.assertNotIn("fixed_headers", m.client._cache_context())
+
+    def test_replacing_fixed_headers_misses_the_cache(self):
+        register_provider("fhc", base_url=BASE, api_key_default="k", headers={"X-Tenant": "a"})
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = SQLiteCache(os.path.join(tmp, "cache.db"))
+            rec = Recorder(json_response(OPENAI_REPLY))
+            with llm("fhc:m", transport=rec.transport, cache=cache, log=False) as m:
+                m.ask("same")
+                m.ask("same")
+            self.assertEqual(len(rec.requests), 1)  # same definition: the second call hits
+            register_provider(
+                "fhc", base_url=BASE, api_key_default="k", headers={"X-Tenant": "b"}, replace=True
+            )
+            with llm("fhc:m", transport=rec.transport, cache=cache, log=False) as m:
+                m.ask("same")
+            self.assertEqual(len(rec.requests), 2)  # the new fixed header is a new key
+            self.assertEqual(rec.requests[1].headers["x-tenant"], "b")
+
     def test_models_false_is_unsupported(self):
         register_provider("nolist", base_url=BASE, api_key_default="k", models=False)
         with llm("nolist:x", transport=Recorder(json_response({})).transport) as m:
@@ -443,6 +484,47 @@ class AsyncTwinTest(RegistryTestCase, unittest.IsolatedAsyncioTestCase):
         finally:
             await m.aclose()
         self.assertEqual(ctx.exception.code, "unsupported_models")
+
+    async def test_amodels_follows_the_created_llm_after_replace(self):
+        register_provider("aswap", base_url=BASE, api_key_default="k", models=True)
+        rec = FreshRecorder(lambda: json_response({"data": [{"id": "z"}]}))
+        old = llm("aswap:m", transport=rec.transport)
+        register_provider("aswap", base_url=BASE, api_key_default="k", models=False, replace=True)
+        try:
+            self.assertEqual(await old.amodels(), ["z"])
+        finally:
+            await old.aclose()
+        new = llm("aswap:m", transport=rec.transport)
+        try:
+            with self.assertRaises(LLMConfigError) as ctx:
+                await new.amodels()
+        finally:
+            await new.aclose()
+        self.assertEqual(ctx.exception.code, "unsupported_models")
+
+    async def test_replacing_fixed_headers_misses_the_async_cache(self):
+        register_provider("afhc", base_url=BASE, api_key_default="k", headers={"X-Tenant": "a"})
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = SQLiteCache(os.path.join(tmp, "cache.db"))
+            rec = FreshRecorder(lambda: json_response(OPENAI_REPLY))
+            with llm("afhc:m", transport=rec.transport, cache=cache, log=False) as m:
+                m.ask("same")  # stored by the sync client
+            m = llm("afhc:m", transport=rec.transport, cache=cache, log=False)
+            try:
+                await m.aask("same")  # same definition: the async client hits the same key
+            finally:
+                await m.aclose()
+            self.assertEqual(len(rec.requests), 1)
+            register_provider(
+                "afhc", base_url=BASE, api_key_default="k", headers={"X-Tenant": "b"}, replace=True
+            )
+            m = llm("afhc:m", transport=rec.transport, cache=cache, log=False)
+            try:
+                await m.aask("same")
+            finally:
+                await m.aclose()
+            self.assertEqual(len(rec.requests), 2)
+            self.assertEqual(rec.requests[1].headers["x-tenant"], "b")
 
     async def test_async_client_shares_listeners_and_resolved_settings(self):
         register_provider("shr", base_url=BASE, api_key_default="k")
@@ -688,6 +770,45 @@ class ValidationTest(RegistryTestCase):
             )
         self.assertIn("register_provider", str(exc))
         self.assertNotIn("secret", str(exc))
+
+    def test_header_values_must_be_strings(self):
+        for value in (None, 5):
+            with self.subTest(value=value):
+                self.assertInvalid("hdr", base_url=BASE, api_key_default="k", headers={"X-A": value})
+        register_provider("hdr", base_url=BASE, api_key_default="k", headers={"X-A": ""})  # empty is fine
+
+    def test_secret_values_are_not_echoed(self):
+        exc = self.assertInvalid("sec", base_url=BASE, api_key_default=b"sk-topsecret")
+        self.assertNotIn("topsecret", str(exc))
+        self.assertIn("bytes", str(exc))
+        exc = self.assertInvalid("sec", base_url=BASE, api_key_default="k", headers={"X-A": b"sk-topsecret"})
+        self.assertNotIn("topsecret", str(exc))
+        self.assertIn("bytes", str(exc))
+        exc = self.assertInvalid("sec", base_url=BASE, api_key_default="k", headers={"X-A": None})
+        self.assertIn("NoneType", str(exc))
+        exc = self.assertInvalid("sec", base_url=BASE, api_key_default="k\nsk-topsecret")
+        self.assertNotIn("topsecret", str(exc))
+        exc = self.assertInvalid("sec", base_url=BASE, api_key_default="k", headers={"X-A": "sk-topsecret\r\n"})
+        self.assertNotIn("topsecret", str(exc))
+
+    def test_header_values_must_be_ascii(self):
+        # httpx would raise a bare UnicodeEncodeError at request time; reject at registration.
+        cases = (
+            {"headers": {"X-Org": "株式会社"}},
+            {"api_key_default": "キー"},
+            {"auth_scheme": "Bearér"},
+        )
+        for extra in cases:
+            kwargs = {"base_url": BASE, "api_key_default": "k"}
+            kwargs.update(extra)
+            with self.subTest(extra=extra):
+                exc = self.assertInvalid("nonascii", **kwargs)
+                self.assertNotIn("株式会社", str(exc))
+                self.assertNotIn("キー", str(exc))
+            self.assertIsNone(lookup("nonascii"))
+
+    def test_base_url_env_must_be_a_variable_name(self):
+        self.assertInvalid("envname", base_url=BASE, api_key_default="k", base_url_env="URL=x")
 
     def test_messages_exist_in_both_languages(self):
         from llm_ai_api.lang import en, ja

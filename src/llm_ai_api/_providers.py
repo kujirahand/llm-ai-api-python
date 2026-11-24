@@ -168,13 +168,30 @@ def _check_name(value: Any, what: str) -> str:
     return value
 
 
-def _check_str(value: Any, what: str, *, empty_ok: bool = False) -> Optional[str]:
-    if value is None:
+def _check_str(
+    value: Any,
+    what: str,
+    *,
+    empty_ok: bool = False,
+    secret: bool = False,
+    none_ok: bool = True,
+    ascii_only: bool = False,
+) -> Optional[str]:
+    """Validate a string option. `secret` keeps the value out of the error (type name only).
+
+    `ascii_only` is for values sent in a header: httpx encodes them as ASCII and would
+    otherwise raise a bare UnicodeEncodeError at request time.
+    """
+    if value is None and none_ok:
         return None
     if not isinstance(value, str) or (not value and not empty_ok):
-        raise _invalid("%s must be a non-empty string: %r" % (what, value))
+        shown = "got %s" % type(value).__name__ if secret else repr(value)
+        kind = "a string" if empty_ok else "a non-empty string"
+        raise _invalid("%s must be %s (%s)" % (what, kind, shown))
     if "\r" in value or "\n" in value:
         raise _invalid("%s must not contain a line break" % what)
+    if ascii_only and not value.isascii():
+        raise _invalid("%s must contain ASCII characters only" % what)
     return value
 
 
@@ -246,7 +263,9 @@ def register_provider(
         if "=" in env:  # type: ignore[operator]
             raise _invalid("api_key_env must be a variable name: %r" % (env,))
     _check_str(base_url_env, "base_url_env")
-    _check_str(api_key_default, "api_key_default")
+    if base_url_env is not None and "=" in base_url_env:
+        raise _invalid("base_url_env must be a variable name: %r" % (base_url_env,))
+    _check_str(api_key_default, "api_key_default", secret=True, ascii_only=True)
     _check_bool(api_key_required, "api_key_required")
     _check_bool(models, "models")
     _check_bool(replace, "replace")
@@ -255,7 +274,7 @@ def register_provider(
         not isinstance(auth_header, str) or not _HEADER_NAME_RE.match(auth_header)
     ):
         raise _invalid("auth_header must be a header name: %r" % (auth_header,))
-    _check_str(auth_scheme, "auth_scheme", empty_ok=True)
+    _check_str(auth_scheme, "auth_scheme", empty_ok=True, ascii_only=True)
     fixed: Dict[str, str] = {}
     if headers is not None:
         if not isinstance(headers, Mapping):
@@ -263,7 +282,9 @@ def register_provider(
         for key, value in headers.items():
             if not isinstance(key, str) or not _HEADER_NAME_RE.match(key):
                 raise _invalid("headers has an invalid header name: %r" % (key,))
-            _check_str(value, "headers[%r]" % key, empty_ok=True)
+            _check_str(
+                value, "headers[%r]" % key, empty_ok=True, secret=True, none_ok=False, ascii_only=True
+            )
             fixed[key] = value
     if api_format == "anthropic":
         if max_tokens_field is not None or stream_include_usage is not None:
