@@ -1,0 +1,27 @@
+{
+  "id": "openai-insufficient-credits",
+  "kind": "synthetic",
+  "source": "Handwritten synthetic case based on response examples in tests/test_insufficient_credits.py.",
+  "captured_at": null,
+  "provider": "openai",
+  "endpoint": "/v1/chat/completions",
+  "status": 429,
+  "headers": {
+    "content-type": "application/json",
+    "x-request-id": "fixture-openai-insufficient-credits"
+  },
+  "body": {
+    "error": {
+      "type": "insufficient_quota",
+      "message": "Fixture balance exhausted.",
+      "code": "insufficient_quota"
+    }
+  },
+  "request": {
+    "model": "fixture-model",
+    "stream": false
+  },
+  "expect": {
+    "error": "credits"
+  }
+}

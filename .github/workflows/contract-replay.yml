@@ -1,0 +1,32 @@
+name: Contract replay
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Monday 03:17 UTC. Offline only: no credentials or live API calls.
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install package
+        run: python -m pip install -e .
+      - name: Replay contract fixtures
+        env:
+          LLM_AI_API_LIVE: "0"
+        run: PYTHONPATH=src python -m unittest tests.test_contract_replay
