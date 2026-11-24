@@ -72,6 +72,45 @@ OpenAI-compatible providers (including OpenRouter, Grok, Muse, LM Studio, Ollama
 
 `LLM` also works with `with` / `async with` (which call `close()` / `aclose()` on exit). See [Events](events.md) for the event types and payloads.
 
+## Testing application code
+
+To test an application that takes an `LLM` instance, you do not need to build provider JSON or SSE, and you do not need `transport=`. Define a `typing.Protocol` for the methods your application actually calls, and pass a stub that returns fixed `str` values, `ChatResult` values, stream iterators, or library exceptions. The standard library is enough; no network access or API key is required.
+
+The following example tests a function that only uses `ask()`. Adapt the protocol if your code also calls `chat()` or `ask_stream()`.
+
+```python
+from typing import Any, Protocol
+
+from llm_ai_api.types import ChatResult
+
+
+class AppLLM(Protocol):
+    def ask(self, prompt: str | list[dict], **kwargs: Any) -> str: ...
+
+
+class ScriptedLLM:
+    def __init__(self, replies: list[str | ChatResult | BaseException]):
+        self._replies = list(replies)
+
+    def ask(self, prompt: str | list[dict], **kwargs: Any) -> str:
+        if not self._replies:
+            raise AssertionError("no scripted replies left")
+        item = self._replies.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        if isinstance(item, ChatResult):
+            return item.text
+        return item
+
+
+def summarize(client: AppLLM, text: str) -> str:
+    return client.ask("Summarize:\n" + text)
+```
+
+A unit test can construct `ScriptedLLM(["a short summary"])` and assert that `summarize(client, "a long article")` returns that text. To exercise an error branch, script a library exception such as `RateLimitError("slow down", status_code=429)`.
+
+For async application code, define the protocol with `async def aask(...)` (and `achat` / `aask_stream` as needed) and use a stub whose methods are coroutines. A stream stub can be a small iterator (or async iterator) that yields strings and exposes `request_id` and `retries`, matching the public stream objects.
+
 ## Return types
 
 ### ChatResult

@@ -72,6 +72,45 @@ OpenAI 互換プロバイダー（OpenRouter、Grok、Muse、LM Studio、Ollama�
 
 `LLM` は `with` / `async with` にも対応します（終了時に `close()` / `aclose()` が呼ばれます）。イベントの種類と payload は [イベント](events-ja.md) を参照してください。
 
+## アプリのテスト
+
+`LLM` インスタンスを受け取るアプリをテストするとき、各社の JSON や SSE を組み立てる必要はなく、`transport=` も不要です。アプリが実際に呼ぶメソッドだけを `typing.Protocol` として定義し、決まった `str`、`ChatResult`、ストリーム、ライブラリの例外を返すスタブを渡します。標準ライブラリだけで書け、ネットワークも API キーも要りません。
+
+次の例は `ask()` だけを使う関数のテストです。`chat()` や `ask_stream()` も使う場合は、プロトコルに合わせてください。
+
+```python
+from typing import Any, Protocol
+
+from llm_ai_api.types import ChatResult
+
+
+class AppLLM(Protocol):
+    def ask(self, prompt: str | list[dict], **kwargs: Any) -> str: ...
+
+
+class ScriptedLLM:
+    def __init__(self, replies: list[str | ChatResult | BaseException]):
+        self._replies = list(replies)
+
+    def ask(self, prompt: str | list[dict], **kwargs: Any) -> str:
+        if not self._replies:
+            raise AssertionError("no scripted replies left")
+        item = self._replies.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        if isinstance(item, ChatResult):
+            return item.text
+        return item
+
+
+def summarize(client: AppLLM, text: str) -> str:
+    return client.ask("Summarize:\n" + text)
+```
+
+ユニットテストでは `ScriptedLLM(["a short summary"])` を渡し、`summarize(client, "a long article")` がその文字列を返すことを確認できます。エラー分岐を試すときは、`RateLimitError("slow down", status_code=429)` のようなライブラリ例外を脚本に入れてください。
+
+非同期のアプリコードでは、プロトコルに `async def aask(...)`（必要なら `achat` / `aask_stream`）を定義し、コルーチンを返すスタブを使います。ストリームのスタブは文字列を返す小さなイテレータ（または非同期イテレータ）にし、公開されているストリームと同様に `request_id` と `retries` を属性として持たせられます。
+
 ## 戻り値の型
 
 ### ChatResult
