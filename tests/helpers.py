@@ -94,3 +94,11 @@ class BlockingAsyncStream(httpx.AsyncByteStream):
 
     async def aclose(self):
         self.closed = True
+
+
+def replay_response(record: dict) -> httpx.Response:
+    """Build a fresh response without changing the recorded SSE line endings."""
+    options = {"headers": record["headers"]}
+    if "sse" in record:
+        return httpx.Response(record["status"], content=record["sse"].encode("utf-8"), **options)
+    return json_response(record["body"], record["status"], **options)

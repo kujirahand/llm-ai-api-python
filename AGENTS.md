@@ -135,6 +135,8 @@ llm-ai-api-python/
 │   ├── test_multimodal.py    # ask 系の images=（#58）
 │   ├── test_transcribe.py    # transcribe() / atranscribe() と生レイヤーの multipart（#58）
 │   ├── test_hardening.py     # キャッシュのファイル権限・WAL・サイズ上限・一括 XOR（#33）
+│   ├── test_contract_replay.py # HTTP 応答記録の同期・非同期再生（#127）
+│   ├── fixtures/           # 出典付きのマスク済み HTTP 応答記録
 │   └── test_live.py         # 実 API を叩くテスト（環境変数で有効化）
 ├── docs/
 │   ├── README.md        # docs の索引（英語）
@@ -571,6 +573,7 @@ LLMError                      # 基底
 - テストフレームワークは標準の `unittest`。実行: `PYTHONPATH=src python -m unittest discover -s tests -t .`（`pip install -e .` 済みなら `PYTHONPATH` は不要）
 - テスト共通のヘルパーは `tests/helpers.py`（`Recorder` が送信内容を記録して応答を返す）。
 - ユニットテストはネットワークに出ない。`httpx.MockTransport` を使って、送信内容の検証と応答の差し替えを行う。
+- 契約再生テストは `tests/fixtures/` の応答記録を同期・非同期の `llm()` 経由で再生する。採取・マスク・レビュー手順は同ディレクトリの README を参照。
 - 最低限テストすること:
   - 共通インターフェイス: モデル指定文字列の分割（`:` を含むモデル名）、別名、エラー、既定値と呼び出しごとの上書き
   - 送信ボディ: 未指定パラメータが送られないこと、`extra` が最後にマージされること、拒否表のキーは `extra` の後でも送られないこと、表にないモデルと OpenRouter / Google は落とさないこと、生レイヤーは加工しないこと、system メッセージの変換、`max_tokens` の名前変換
