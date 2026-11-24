@@ -74,7 +74,7 @@ OpenAI-compatible providers (including OpenRouter, Grok, Muse, LM Studio, Ollama
 
 ## Testing application code
 
-To test an application that takes an `LLM` instance, you do not need to build provider JSON or SSE, and you do not need `transport=`. Define a `typing.Protocol` for the methods your application actually calls, and pass a stub that returns fixed `str` values, `ChatResult` values, stream iterators, or library exceptions. The standard library is enough; no network access or API key is required.
+To test an application that takes an `LLM` instance, you do not need to build provider JSON or SSE, and for testing the application's own logic you do not need `transport=` either. Define a `typing.Protocol` for the methods your application actually calls, and pass a stub that returns fixed `str` values, `ChatResult` values, stream iterators, or library exceptions. The standard library plus this package is enough; no network access or API key is required. When you want to verify the integration through the library itself (request building, retries, and so on), use `transport=` with `httpx.MockTransport` instead.
 
 The following example tests a function that only uses `ask()`. Adapt the protocol if your code also calls `chat()` or `ask_stream()`.
 
@@ -109,7 +109,9 @@ def summarize(client: AppLLM, text: str) -> str:
 
 A unit test can construct `ScriptedLLM(["a short summary"])` and assert that `summarize(client, "a long article")` returns that text. To exercise an error branch, script a library exception such as `RateLimitError("slow down", status_code=429)`.
 
-For async application code, define the protocol with `async def aask(...)` (and `achat` / `aask_stream` as needed) and use a stub whose methods are coroutines. A stream stub can be a small iterator (or async iterator) that yields strings and exposes `request_id` and `retries`, matching the public stream objects.
+So that a type checker (such as mypy) accepts a real `LLM` where the protocol is expected, declare in the protocol the keyword arguments your application actually passes (such as `system` or `max_tokens`). Note that the stub does not validate arguments, so a misspelled argument name will not be caught by the stub.
+
+For async application code, define the protocol with `async def aask(...)` (and `achat` as needed) and use a stub whose methods are coroutines. The stream methods are the exception: on a real `LLM`, `aask_stream` / `achat_stream` are plain methods that return an async iterator, so the stub should not make them `async def` either, and callers use `async for` without `await`. A stream stub can be a small iterator (or async iterator) that yields strings and exposes `request_id` and `retries`, matching the public stream objects.
 
 ## Return types
 

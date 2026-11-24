@@ -1,35 +1,34 @@
-"""Examples from docs/api.md «Testing application code» / docs/api-ja.md «アプリのテスト»."""
+"""Examples from docs/api.md «Testing application code» / docs/api-ja.md «アプリのテスト».
+
+The sync example is extracted from the docs and executed, so editing the
+example in the docs breaks this test. The async stub below mirrors the
+real LLM shape: aask() is a coroutine, while aask_stream() is a plain
+method returning an async iterator (no await at the call site).
+"""
 
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 from typing import Any, AsyncIterator, Iterator, Protocol
 
 from llm_ai_api.errors import RateLimitError
 from llm_ai_api.types import ChatResult
 
-
-class AppLLM(Protocol):
-    def ask(self, prompt: str | list[dict], **kwargs: Any) -> str: ...
+_DOCS_DIR = Path(__file__).resolve().parent.parent / "docs"
 
 
-class ScriptedLLM:
-    def __init__(self, replies: list[str | ChatResult | BaseException]):
-        self._replies = list(replies)
-
-    def ask(self, prompt: str | list[dict], **kwargs: Any) -> str:
-        if not self._replies:
-            raise AssertionError("no scripted replies left")
-        item = self._replies.pop(0)
-        if isinstance(item, BaseException):
-            raise item
-        if isinstance(item, ChatResult):
-            return item.text
-        return item
+def _extract_example(filename: str, heading: str) -> str:
+    text = (_DOCS_DIR / filename).read_text(encoding="utf-8")
+    section = text.split(heading, 1)[1]
+    return section.split("```python\n", 1)[1].split("\n```", 1)[0]
 
 
-def summarize(client: AppLLM, text: str) -> str:
-    return client.ask("Summarize:\n" + text)
+def _load_sync_example() -> dict:
+    namespace: dict = {}
+    code = _extract_example("api.md", "## Testing application code")
+    exec(compile(code, "docs/api.md", "exec"), namespace)
+    return namespace
 
 
 class ScriptedStream:
@@ -50,6 +49,14 @@ class ScriptedStream:
         return chunk
 
 
+class AsyncAppLLM(Protocol):
+    async def aask(self, prompt: str | list[dict], **kwargs: Any) -> str: ...
+
+    def aask_stream(
+        self, prompt: str | list[dict], **kwargs: Any
+    ) -> AsyncIterator[str]: ...
+
+
 class ScriptedAsyncLLM:
     def __init__(self, replies: list[str | ChatResult | BaseException]):
         self._replies = list(replies)
@@ -66,7 +73,7 @@ class ScriptedAsyncLLM:
         item = self._next()
         return item.text if isinstance(item, ChatResult) else item
 
-    async def aask_stream(self, prompt: str | list[dict], **kwargs: Any) -> AsyncIterator[str]:
+    def aask_stream(self, prompt: str | list[dict], **kwargs: Any):
         item = self._next()
         text = item.text if isinstance(item, ChatResult) else item
 
@@ -90,22 +97,42 @@ class ScriptedAsyncLLM:
         return Stream([text])
 
 
-async def asummarize(client: ScriptedAsyncLLM, text: str) -> str:
+async def asummarize(client: AsyncAppLLM, text: str) -> str:
     return await client.aask("Summarize:\n" + text)
 
 
 class TestingAppsDocsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.example = _load_sync_example()
+
+    def test_doc_examples_match_between_languages(self):
+        en = _extract_example("api.md", "## Testing application code")
+        ja = _extract_example("api-ja.md", "## アプリのテスト")
+        self.assertEqual(en, ja)
+
     def test_scripted_ask_returns_text(self):
-        client = ScriptedLLM(["a short summary"])
+        client = self.example["ScriptedLLM"](["a short summary"])
+        summarize = self.example["summarize"]
         self.assertEqual(summarize(client, "a long article"), "a short summary")
 
     def test_scripted_ask_accepts_chat_result(self):
-        client = ScriptedLLM([ChatResult(text="from result")])
+        client = self.example["ScriptedLLM"]([ChatResult(text="from result")])
+        summarize = self.example["summarize"]
         self.assertEqual(summarize(client, "article"), "from result")
 
     def test_scripted_rate_limit(self):
-        client = ScriptedLLM([RateLimitError("slow down", status_code=429)])
+        client = self.example["ScriptedLLM"](
+            [RateLimitError("slow down", status_code=429)]
+        )
+        summarize = self.example["summarize"]
         with self.assertRaises(RateLimitError):
+            summarize(client, "a long article")
+
+    def test_scripted_exhaustion_is_an_error(self):
+        client = self.example["ScriptedLLM"]([])
+        summarize = self.example["summarize"]
+        with self.assertRaises(AssertionError):
             summarize(client, "a long article")
 
     def test_scripted_stream_has_public_attributes(self):
@@ -122,7 +149,7 @@ class TestingAppsDocsAsyncTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_scripted_aask_stream(self):
         client = ScriptedAsyncLLM(["chunk"])
-        stream = await client.aask_stream("q")
+        stream = client.aask_stream("q")
         self.assertIsNone(stream.request_id)
         self.assertEqual(stream.retries, 0)
         chunks = [chunk async for chunk in stream]
