@@ -82,7 +82,7 @@ OpenAI 互換プロバイダー（OpenRouter、Grok、Muse、LM Studio、Ollama�
 |---|---|---|
 | `text` | `str` | 回答のテキスト |
 | `model` | `str` または `None` | 応答したモデル名 |
-| `stop_reason` | `str` または `None` | 終了理由（プロバイダーが返した生の値。正規化しない）。OpenAI は `finish_reason`、Anthropic は `stop_reason` |
+| `stop_reason` | `str` または `None` | 終了理由（プロバイダーが返した生の値。正規化しない）。OpenAI と OpenAI 互換プロバイダーは `finish_reason`、Anthropic は `stop_reason` |
 | `usage` | `Usage` または `None` | `input_tokens` / `output_tokens` |
 | `raw` | `dict` | レスポンスの生 JSON |
 | `request_id` | `str` または `None` | プロバイダーのリクエスト ID（ヘッダーが無い応答では `None`。キャッシュヒット時は保存されていた値） |

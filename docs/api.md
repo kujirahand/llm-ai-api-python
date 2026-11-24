@@ -82,7 +82,7 @@ The return value of `chat()` / `achat()`.
 |---|---|---|
 | `text` | `str` | The answer text |
 | `model` | `str` or `None` | The model that responded |
-| `stop_reason` | `str` or `None` | Finish reason (the raw provider value; it is not normalized). OpenAI: `finish_reason`; Anthropic: `stop_reason` |
+| `stop_reason` | `str` or `None` | Finish reason (the raw provider value; it is not normalized). OpenAI and OpenAI-compatible providers: `finish_reason`; Anthropic: `stop_reason` |
 | `usage` | `Usage` or `None` | `input_tokens` / `output_tokens` |
 | `raw` | `dict` | The raw response JSON |
 | `request_id` | `str` or `None` | The provider's request ID (`None` when the response had no such header; on a cache hit, the stored value) |
