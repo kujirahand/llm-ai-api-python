@@ -18,3 +18,10 @@ Issue #127 の最初の PR では実測記録が未入手のため、OpenAI Chat
 ```sh
 PYTHONPATH=src python -m unittest tests.test_contract_replay
 ```
+
+## 手動・定期実行
+
+通常の CI（`.github/workflows/ci.yml`）でも、他のユニットテストと一緒に契約再生は実行されます。専用ジョブ `.github/workflows/contract-replay.yml` は、`workflow_dispatch`（手動）と毎週月曜 03:17 UTC の `schedule` で、同じオフライン再生（`tests.test_contract_replay`）だけを Python 3.10 と 3.13 で再実行します。資格情報は使わず、外部 API も呼びません。記録の自動更新もしません。
+
+失敗時の診断はケース名と応答の形の差分に限定してください。この段階では合成記録のみなので、実 API の仕様変更はまだ検出できません。
+
