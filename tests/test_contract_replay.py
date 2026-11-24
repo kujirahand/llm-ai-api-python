@@ -3,6 +3,7 @@
 import json
 import re
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 from llm_ai_api import APIStreamError, InsufficientCreditsError, llm
@@ -12,9 +13,32 @@ from .helpers import FreshRecorder, replay_response
 _FIXTURES = Path(__file__).with_name("fixtures")
 _MESSAGES = [{"role": "user", "content": "Suggest a dog name."}]
 _ALLOWED_HEADERS = {"content-type", "request-id", "x-request-id", "retry-after"}
+_ALLOWED_KEYS = {
+    "id",
+    "kind",
+    "source",
+    "captured_at",
+    "provider",
+    "endpoint",
+    "status",
+    "headers",
+    "body",
+    "sse",
+    "request",
+    "expect",
+}
+# Per-provider replay setup. Add a row here when a fixture for another
+# provider is recorded; an unknown provider fails loudly instead of
+# silently replaying against the wrong base URL or request shape.
+_BASE_URLS = {
+    "openai": "https://contract.invalid/v1",
+    "anthropic": "https://contract.invalid",
+}
 _SECRET = re.compile(
     r"\b(?:sk-|sk-ant-|xai-|AIza|gh[pousr]_|github_pat_)[\w-]{8,}"
     r"|\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"
+    r"|\borg-[A-Za-z0-9]{8,}"
+    r"|\beyJ[\w-]+\.[\w-]+\.[\w-]+"
     r"|\bBearer\s+[\w./+=-]+"
     r"|-----BEGIN [A-Z ]*PRIVATE KEY-----"
     r'|"(?:authorization|proxy[_-]?authorization|(?:x[_-]?)?api[_-]?key'
@@ -40,16 +64,28 @@ class ContractReplayTest(unittest.IsolatedAsyncioTestCase):
     def test_fixture_metadata_and_redaction(self):
         records = _records()
         self.assertTrue(records)
+        for path in _FIXTURES.iterdir():
+            self.assertTrue(
+                path.name == "README.md" or path.suffix == ".json",
+                f"unexpected file in fixtures/: {path.name}",
+            )
         for name, record in records.items():
             with self.subTest(fixture=name):
                 self.assertEqual(record["id"], name)
+                self.assertFalse(set(record) - _ALLOWED_KEYS)
                 self.assertIn(record["kind"], {"synthetic", "captured"})
                 self.assertTrue(record["source"].strip())
                 if record["kind"] == "synthetic":
                     self.assertIsNone(record["captured_at"])
                 else:
-                    self.assertTrue(record["captured_at"])
+                    captured_at = datetime.fromisoformat(record["captured_at"])
+                    self.assertIsNotNone(captured_at.tzinfo)
                 self.assertFalse(record["headers"].keys() - _ALLOWED_HEADERS)
+                request_id = _request_id(record)
+                if request_id is not None:
+                    self.assertTrue(request_id.startswith("fixture-"), request_id)
+                if "retry-after" in record["headers"]:
+                    self.assertEqual(record["headers"]["retry-after"], "0")
                 self.assertEqual(len({"body", "sse"} & record.keys()), 1)
                 self.assertEqual(record["request"]["stream"], "sse" in record)
 
@@ -71,6 +107,8 @@ class ContractReplayTest(unittest.IsolatedAsyncioTestCase):
         }
         for provider, marker in markers.items():
             with self.subTest(provider=provider):
+                if records[f"{provider}-sse-success"]["kind"] != "synthetic":
+                    continue  # the exact-difference control only fits synthetic pairs
                 complete = records[f"{provider}-sse-success"]["sse"]
                 incomplete = records[f"{provider}-sse-incomplete"]["sse"]
                 self.assertEqual(complete, incomplete + marker)
@@ -96,9 +134,9 @@ class ContractReplayTest(unittest.IsolatedAsyncioTestCase):
         client = llm(
             f'{record["provider"]}:{record["request"]["model"]}',
             api_key="fixture-key",
-            base_url=("https://contract.invalid/v1" if record["provider"] == "openai"
-                      else "https://contract.invalid"),
-            transport=recorder.transport, max_retries=2, cache=False, log=False,
+            base_url=_BASE_URLS[record["provider"]],
+            transport=recorder.transport, max_retries=2, retry_after_max=0,
+            cache=False, log=False,
         )
         return client, recorder, sequence
 
@@ -121,7 +159,7 @@ class ContractReplayTest(unittest.IsolatedAsyncioTestCase):
         expect = final["expect"]
         self.assertEqual(result.raw, final["body"])
         self.assertEqual(result.text, expect["text"])
-        self.assertEqual(result.model, final["request"]["model"])
+        self.assertEqual(result.model, final["body"].get("model"))
         self.assertEqual(result.stop_reason, expect["stop_reason"])
         self.assertEqual([result.usage.input_tokens, result.usage.output_tokens], expect["usage"])
         self.assertEqual(result.request_id, _request_id(final))
