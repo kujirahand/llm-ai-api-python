@@ -43,7 +43,7 @@ From the second call on, the part that is identical to the previous call (the `s
 | `cache_creation_input_tokens` | Tokens written to the cache |
 | `cache_read_input_tokens` | Tokens read from the cache |
 
-`ChatResult.usage` (`input_tokens` / `output_tokens`) does not include these fields. Always read the cache status from `raw`.
+The same values are also available on `ChatResult.usage` as `cache_creation_tokens` and `cache_read_tokens` (`None` when the provider omitted them). `input_tokens` / `output_tokens` stay the provider totals and are not adjusted. `result.raw["usage"]` remains the unchanged provider object.
 
 The minimum cacheable size, lifetime and pricing differ by model. Check the official documentation for current values.
 
@@ -57,7 +57,8 @@ result = m.chat([
     {"role": "system", "content": long_text},         # same every time
     {"role": "user", "content": "Summarize chapter 3."},  # changes every time
 ])
-print(result.raw["usage"])  # look at prompt_tokens_details.cached_tokens, etc.
+print(result.usage.cache_read_tokens)  # from prompt_tokens_details.cached_tokens
+print(result.raw["usage"])  # unchanged provider object
 ```
 
 On OpenRouter and Google's OpenAI-compatible endpoint, caching behavior (automatic or needs `cache_control`, and the name of the usage field) differs by model. If needed, pass provider-specific parameters with `extra=` and check `result.raw["usage"]`. These combinations have not been verified against the real APIs.

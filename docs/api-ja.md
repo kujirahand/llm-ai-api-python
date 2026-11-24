@@ -83,7 +83,7 @@ OpenAI 互換プロバイダー（OpenRouter、Grok、Muse、LM Studio、Ollama�
 | `text` | `str` | 回答のテキスト |
 | `model` | `str` または `None` | 応答したモデル名 |
 | `stop_reason` | `str` または `None` | 終了理由（プロバイダーの値を正規化したもの） |
-| `usage` | `Usage` または `None` | `input_tokens` / `output_tokens` |
+| `usage` | `Usage` または `None` | `input_tokens` / `output_tokens` に加え、取れた場合は `cache_read_tokens` / `cache_creation_tokens` / `reasoning_tokens` |
 | `raw` | `dict` | レスポンスの生 JSON |
 | `request_id` | `str` または `None` | プロバイダーのリクエスト ID（ヘッダーが無い応答では `None`。キャッシュヒット時は保存されていた値） |
 | `latency` | `float` または `None` | 応答までの秒数 |
@@ -94,7 +94,7 @@ OpenAI 互換プロバイダー（OpenRouter、Grok、Muse、LM Studio、Ollama�
 
 - `ChatChunk` は低レベル層のストリーミング（`stream_chat()`）が返す断片で、`text` / `raw` / `request_id` を持ちます。
 - `SSEEvent` は生レイヤーのストリーミングが返すイベントで、`json()` でボディを dict として取り出せます。
-- `Usage` は `input_tokens` / `output_tokens` を持つデータクラスです。
+- `Usage` は `input_tokens` / `output_tokens` を持つデータクラスです。プロバイダーが報告すれば `cache_read_tokens`、`cache_creation_tokens`、`reasoning_tokens` も入ります（省略時は `None`、明示的なゼロは `0`）。値は応答からそのままコピーし、合計への足し引きや欠落値の推定、金額計算はしません。
 
 ## モジュール関数
 

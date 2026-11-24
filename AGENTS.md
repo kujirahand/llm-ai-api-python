@@ -365,7 +365,7 @@ class ChatResult:
     text: str                 # テキスト部分を連結したもの
     model: str | None
     stop_reason: str | None   # 生の値（OpenAI: finish_reason / Claude: stop_reason）
-    usage: Usage | None       # input_tokens, output_tokens（取れない場合 None）
+    usage: Usage | None       # input_tokens, output_tokens に加え、取れた場合は cache_read_tokens / cache_creation_tokens / reasoning_tokens（省略は None）
     raw: dict                 # レスポンス JSON 全体
     request_id: str | None    # x-request-id または request-id。無ければ None
     latency: float | None     # 秒。呼び出し開始からボディ読了まで（リトライの待ちを含む）
@@ -386,7 +386,7 @@ class ChatChunk:
   - OpenAI / OpenRouter: `choices[0].message.content`（`None` は `""` とする）
   - Anthropic: `content` のうち `type == "text"` のブロックの `text` を連結。`thinking` などその他のブロックは `text` に含めず `raw` から参照してもらう。
 - `stop_reason` は正規化しない（生の値を返す）。Claude の `"refusal"` なども例外にせず、そのまま返す。
-- `usage` の対応: OpenAI 系は `prompt_tokens` → `input_tokens`、`completion_tokens` → `output_tokens`。
+- `usage` の対応: OpenAI 系は `prompt_tokens` → `input_tokens`、`completion_tokens` → `output_tokens`、`prompt_tokens_details.cached_tokens` → `cache_read_tokens`、`completion_tokens_details.reasoning_tokens` → `reasoning_tokens`。Anthropic は `input_tokens` / `output_tokens` に加え、`cache_read_input_tokens` → `cache_read_tokens`、`cache_creation_input_tokens` → `cache_creation_tokens`。取れない項目は `None`（明示的なゼロは `0`）。`input_tokens` / `output_tokens` はプロバイダーの合計をそのまま使い、キャッシュ分の足し引きや欠落値の推定、金額計算はしない。
 
 ### 5.7 キャッシュ（`cache.py`）
 

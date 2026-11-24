@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add optional `cache_read_tokens`, `cache_creation_tokens`, and `reasoning_tokens` to `Usage`. OpenAI-compatible responses map `prompt_tokens_details.cached_tokens` and `completion_tokens_details.reasoning_tokens`; Anthropic maps `cache_read_input_tokens` and `cache_creation_input_tokens`. Missing values stay `None`, an explicit zero is `0`, and existing `input_tokens` / `output_tokens` totals are not adjusted. Cached rows written before these keys existed still load (#127).
+
 - Add `models()` and `amodels()` to list provider models, including pagination (#123).
 
 - Add `InsufficientCreditsError` (`APIStatusError`) for credit, billing, or quota exhaustion: HTTP 402, an xAI 403 whose body is `permission-denied` and mentions missing credits or licenses, and OpenAI 429 `insufficient_quota`. These responses are not retried (including 429 quota errors). The English and Japanese hint is `hint_credits`. Ordinary 403 and 429 responses keep `PermissionDeniedError` / `RateLimitError` and the existing retry behavior (#120).

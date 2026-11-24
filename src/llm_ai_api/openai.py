@@ -9,7 +9,7 @@ from ._events import apply_result_meta, note_request_error, note_stream_error
 from ._http import BaseClient, _TaggedIter, error_message
 from ._model_params import adjust_body
 from .errors import APIStreamError, LLMError
-from .types import ChatChunk, ChatResult, SSEEvent, Usage
+from .types import ChatChunk, ChatResult, SSEEvent, Usage, _optional_int
 
 
 def _text_of(content: Any) -> str:
@@ -29,11 +29,22 @@ def _parse_response(raw: Dict[str, Any]) -> ChatResult:
     choices = raw.get("choices") or [{}]
     choice = choices[0] or {}
     u = raw.get("usage")
-    usage = (
-        Usage(u.get("prompt_tokens"), u.get("completion_tokens"))
-        if isinstance(u, dict)
-        else None
-    )
+    usage = None
+    if isinstance(u, dict):
+        prompt_details = u.get("prompt_tokens_details")
+        completion_details = u.get("completion_tokens_details")
+        usage = Usage(
+            u.get("prompt_tokens"),
+            u.get("completion_tokens"),
+            cache_read_tokens=_optional_int(
+                prompt_details.get("cached_tokens") if isinstance(prompt_details, dict) else None
+            ),
+            reasoning_tokens=_optional_int(
+                completion_details.get("reasoning_tokens")
+                if isinstance(completion_details, dict)
+                else None
+            ),
+        )
     return ChatResult(
         text=_text_of((choice.get("message") or {}).get("content")),
         model=raw.get("model"),
