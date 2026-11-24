@@ -28,6 +28,30 @@ class ProviderPairsTest(unittest.TestCase):
             self.assertIs(_PROVIDERS[name], sync, name)
             self.assertIs(_ASYNC_PROVIDERS[name], async_client, name)
 
+    def test_builtin_names(self):
+        self.assertEqual(
+            set(_PROVIDER_PAIRS),
+            {
+                "openai",
+                "openrouter",
+                "grok",
+                "muse",
+                "google",
+                "lmstudio",
+                "ollama",
+                "strata",
+                "anthropic",
+                "claude",
+            },
+        )
+
+    def test_pairs_agree_on_provider(self):
+        for name, (sync, async_client) in _PROVIDER_PAIRS.items():
+            with self.subTest(name=name):
+                self.assertEqual(sync.provider, async_client.provider)
+                expected = "anthropic" if name == "claude" else name
+                self.assertEqual(sync.provider, expected)
+
     def test_claude_is_alias_of_anthropic(self):
         self.assertIs(_PROVIDER_PAIRS["claude"][0], _PROVIDER_PAIRS["anthropic"][0])
         self.assertIs(_PROVIDER_PAIRS["claude"][1], _PROVIDER_PAIRS["anthropic"][1])
