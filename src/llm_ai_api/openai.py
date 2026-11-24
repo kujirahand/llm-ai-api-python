@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from ._singleflight import singleflight
 from ._events import apply_result_meta, note_request_error, note_stream_error
-from ._http import BaseClient, _TaggedIter, error_message
+from ._http import BaseClient, _TaggedIter, build_auth_header, error_message
 from ._model_params import adjust_body
 from .errors import APIStreamError, LLMError
 from .types import ChatChunk, ChatResult, SSEEvent, Usage, _optional_int
@@ -81,7 +81,9 @@ class OpenAICompatClient(BaseClient):
     stream_include_usage = False
 
     def _auth_headers(self) -> Dict[str, str]:
-        return {"Authorization": "Bearer " + self._api_key} if self._api_key else {}
+        headers = dict(self.fixed_headers)
+        headers.update(build_auth_header(self.auth_header, self.auth_scheme, self._api_key))
+        return headers
 
     def _build_body(
         self,
@@ -106,7 +108,10 @@ class OpenAICompatClient(BaseClient):
         # After extra, so a rejected key cannot be put back. The raw request()
         # path does not call this.
         return adjust_body(
-            self.provider, model, body, anthropic_version=getattr(self, "anthropic_version", None)
+            self.rules_provider or self.provider,
+            model,
+            body,
+            anthropic_version=getattr(self, "anthropic_version", None),
         )
 
     def chat(
@@ -201,3 +206,4 @@ class OpenAIClient(OpenAICompatClient):
     base_url_env = "OPENAI_BASE_URL"
     max_tokens_field = "max_completion_tokens"
     stream_include_usage = True
+    supports_audio = True

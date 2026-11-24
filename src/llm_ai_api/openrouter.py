@@ -1,33 +1,18 @@
-"""OpenRouter のクライアント。"""
+"""Client for OpenRouter (OpenAI-compatible)."""
 
 from __future__ import annotations
-
-from typing import Any, Dict, Optional
 
 from .openai import OpenAICompatClient
 
 
 class OpenRouterClient(OpenAICompatClient):
-    """OpenRouter（OpenAI 互換）のクライアント。"""
+    """OpenRouter client. `app_url` is sent as HTTP-Referer and `app_name` as X-Title."""
 
     provider = "openrouter"
     default_base_url = "https://openrouter.ai/api/v1"
     api_key_optional = True
     api_key_env = "OPENROUTER_API_KEY"
     base_url_env = "OPENROUTER_BASE_URL"
-
-    def __init__(
-        self,
-        *args: Any,
-        app_url: Optional[str] = None,
-        app_name: Optional[str] = None,
-        **kwargs: Any,
-    ) -> None:
-        """`app_url` は HTTP-Referer、`app_name` は X-Title として送る。"""
-        super().__init__(*args, **kwargs)
-        if app_url:
-            if not any(k.lower() == "http-referer" for k in self._extra_headers):
-                self._extra_headers["HTTP-Referer"] = app_url
-        if app_name:
-            if not any(k.lower() == "x-title" for k in self._extra_headers):
-                self._extra_headers["X-Title"] = app_name
+    # Constructor options turned into headers by the base class. A header the caller
+    # passed in `headers=` (any letter case) wins.
+    header_options = (("app_url", "HTTP-Referer"), ("app_name", "X-Title"))

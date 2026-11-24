@@ -418,6 +418,42 @@ def _merge_headers(*groups: Dict[str, str]) -> Dict[str, str]:
     return {name.lower(): value for group in groups for name, value in group.items()}
 
 
+def _missing_key_error(provider: str, env: str, lang: Optional[str]) -> LLMConfigError:
+    """The error for a required API key that is nowhere to be found (sync and async)."""
+    if not env:  # a registered provider without api_key_env
+        return LLMConfigError(
+            t("missing_api_key_no_env", lang, provider=provider), code="missing_api_key"
+        )
+    return LLMConfigError(
+        t("missing_api_key", lang, provider=provider, env=env), code="missing_api_key"
+    )
+
+
+def apply_header_options(
+    options: Tuple[Tuple[str, str], ...], values: Dict[str, Any], headers: Dict[str, str]
+) -> None:
+    """Turn declared constructor options (e.g. `app_url`) into headers.
+
+    An unknown option raises `TypeError` like any unexpected keyword argument. A header
+    the caller already passed (any letter case) is kept.
+    """
+    known = dict(options)
+    for name in values:
+        if name not in known:
+            raise TypeError("__init__() got an unexpected keyword argument %r" % name)
+    for name, header in options:
+        value = values.get(name)
+        if value and not any(k.lower() == header.lower() for k in headers):
+            headers[header] = value
+
+
+def build_auth_header(header: str, scheme: str, key: Optional[str]) -> Dict[str, str]:
+    """`{header: "<scheme> <key>"}`, or the bare key when `scheme` is empty; `{}` without a key."""
+    if not key:
+        return {}
+    return {header: "%s %s" % (scheme, key) if scheme else key}
+
+
 class BaseClient:
     """Shared raw HTTP layer for the provider clients."""
 
@@ -428,6 +464,18 @@ class BaseClient:
     base_url_env = ""
     api_key_default: Optional[str] = None  # used when no key is given (local providers)
     api_key_optional = False
+    # Declared attributes shared with the registry (see _providers.py).
+    api_format = "openai"  # "openai" or "anthropic": body, parsing and auth behaviour
+    auth_header = "Authorization"
+    auth_scheme = "Bearer"  # "" sends the bare key as the header value
+    fixed_headers: Mapping[str, str] = {}  # sent unless headers= overrides them
+    # (constructor argument name, header name) pairs, e.g. OpenRouter's app_url.
+    header_options: Tuple[Tuple[str, str], ...] = ()
+    supports_models = True  # False: models() raises unsupported_models
+    supports_audio = False  # True: LLM.transcribe() may use /audio/transcriptions
+    models_style = "openai"  # model-list format: "openai", "anthropic" or "google"
+    # Name used to look up the model drop rules (None: this client's `provider`).
+    rules_provider: Optional[str] = None
 
     def __init__(
         self,
@@ -444,6 +492,7 @@ class BaseClient:
         log: Any = LOG_NOT_SET,
         transport: Optional[httpx.BaseTransport] = None,
         connection: Optional[Mapping[str, Any]] = None,
+        **header_values: Any,
     ) -> None:
         """`lang` はエラーメッセージの言語（`"ja"` / `"en"`）。None なら環境から判定する。
 
@@ -473,13 +522,11 @@ class BaseClient:
             key = key or os.environ.get(name)
         key = key or self.api_key_default
         if not key and not self.api_key_optional:
-            raise LLMConfigError(
-                t("missing_api_key", lang, provider=self.provider, env=self.api_key_env),
-                code="missing_api_key",
-            )
+            raise _missing_key_error(self.provider, self.api_key_env, lang)
         self._api_key = key
         self.base_url = (
-            base_url or os.environ.get(self.base_url_env) or self.default_base_url
+            base_url or (os.environ.get(self.base_url_env) if self.base_url_env else None)
+            or self.default_base_url
         ).rstrip("/")
         self.timeout = timeout
         self.max_retries = max_retries
@@ -488,6 +535,7 @@ class BaseClient:
         self.connection = resolve_connection(connection, lang=lang)
         self._connect_timeout = self.connection["connect_timeout"]
         self._extra_headers = dict(headers or {})
+        apply_header_options(self.header_options, header_values, self._extra_headers)
         if transport is not None:
             self._client = httpx.Client(
                 transport=transport,

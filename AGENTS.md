@@ -56,6 +56,7 @@ print(luna.ask(question))  # ポチ
 - 任意パス・任意ボディを送る生リクエスト（上記以外のエンドポイントも呼べる）
 - 任意の API 応答キャッシュ（SQLite。既定はオフ。5.7 を参照）
 - 任意の入出力ログ（JSON Lines。既定はオフ。5.8 を参照）
+- 宣言だけでプロバイダーを足す `register_provider()`（OpenAI 互換 / Anthropic 互換。5.2 を参照）
 - リクエストのライフサイクルイベント（`add_event_listener`。5.9 を参照）と、成功時の `request_id` / `latency` / `retries`
 
 ### v1 では対応しない（必要になったら別途検討）
@@ -81,7 +82,8 @@ llm-ai-api-python/
 │       ├── _events.py       # リクエストのライフサイクルイベント（内部）。add_event_listener の実装
 │       ├── _http.py         # httpx による送受信、SSE パーサー、リトライ
 │       ├── _async_http.py   # 非同期版の送受信・SSE・リトライ（内部専用、httpx.AsyncClient）
-│       ├── _async_clients.py # 非同期のプロバイダークライアント（内部専用、LLM の a* メソッドが使う）
+│       ├── _async_clients.py # 非同期の基底クライアント（OpenAI 互換 / Anthropic）と本文生成・パースの共有（内部専用、LLM の a* メソッドが使う）
+│       ├── _providers.py    # プロバイダーのレジストリ（内部）と公開 register_provider()。非同期クラスの自動生成 _make_async
 │       ├── errors.py        # 例外クラス
 │       ├── types.py         # ChatResult などの dataclass
 │       ├── cache.py         # SQLite による応答キャッシュ（暗号化、既定はオフ）、set_cache() / clear_cache()
@@ -120,6 +122,7 @@ llm-ai-api-python/
 │   ├── test_async_llm.py     # LLM の aask / achat / aask_stream / achat_stream
 │   ├── test_per_call_timeout.py # 呼び出しごとの timeout（httpx に届くこと）
 │   ├── test_model_params.py # 拒否パラメータのドロップ表
+│   ├── test_register_provider.py # register_provider()（宣言登録、検証、同期・非同期の属性一致）（#141）
 │   ├── test_models.py
 │   ├── test_lang.py
 │   ├── test_connection.py # 接続設定（set_connection / connection=）
@@ -150,6 +153,8 @@ llm-ai-api-python/
 │   ├── structured-ja.md # 同（日本語）
 │   ├── multimodal.md    # 画像入力 images=（英語）
 │   ├── multimodal-ja.md # 同（日本語）
+│   ├── providers.md     # プロバイダーの追加 register_provider()（英語）
+│   ├── providers-ja.md  # 同（日本語）
 │   ├── events.md        # イベントリスナーと request_id の参照先（英語）
 │   ├── events-ja.md     # 同（日本語）
 │   ├── config.md        # 設定リファレンスとリトライの方針（英語）
@@ -246,7 +251,15 @@ async with llm("openai:gpt-6-luna") as m:
 - ローカルプロバイダー（#73 / #74 / #75）: `lmstudio` / `ollama` / `strata` は OpenAI 互換のローカルサーバー向けで、`OpenAICompatClient` の薄いサブクラスとして実装する（各社のネイティブ API は対象外）。API キーは任意: `BaseClient` / `_AsyncBaseClient` のクラス属性 `api_key_default`（既定 None）を、この3プロバイダーだけが設定し、キー解決は「明示引数 → 環境変数 → `api_key_default` → `missing_api_key` エラー」の順。接続先は `LMSTUDIO_BASE_URL` / `OLLAMA_BASE_URL` / `STRATA_BASE_URL` で変更できる。`max_tokens_field` 等は上書きしない（`max_tokens` のまま）。Strata の既定 URL は Strata 本体が共有オフで待ち受けるポートと同じ `http://127.0.0.1:47831/v1`（同じマシンからなら無設定でつながる）。LAN 越し（共有オンでポート `47832`）は `STRATA_BASE_URL` の指定が必須で、既定値ではつながらない。LM Studio は「Require Authentication」（0.4.0 以降。LM Studio 側は既定でオフ）がオンの構成だと API トークンが必要で、その状態で既定の仮キー `lm-studio` を送ると 401 になる。Ollama のローカルサーバーはキーを一切チェックしない（認証をオンにする機能が無い）。既定の接続は固定ポートの平文 HTTP で、サーバーの真正性は確認しない（同じポートで別プロセスが待ち受けるとプロンプトを受け取れる）。共有マシンでの注意と、機密情報を扱う場合の対策（単一ユーザーのマシンで使う、TLS 終端プロキシ経由で HTTPS 接続する。トークンや認証付きプロキシは接続先の真正性を確認しない）は docs に書く（#88）。利用者向けの説明は docs/local_llm-lmstudio.md / -ja.md、docs/local_llm-ollama.md / -ja.md、docs/local_llm-strata.md / -ja.md。
 - 画像入力（#58）: `ask()` / `ask_stream()` / `aask()` / `aask_stream()`（旧名 `stream()` / `astream()` も）はキーワード専用の `images=None` を受け取る（`chat()` 系にはない。新しい公開名は増やさない）。要素はファイルのパス（`str` / `os.PathLike`）、画像の `bytes`、`http(s)://` で始まる URL 文字列で、リストで渡す。`None` または空なら従来と完全に同じ（content は文字列、キャッシュキーも不変）。非空なら user メッセージの content を `[{"type": "text", ...}, 画像パート...]`（指定順）にする。形式は LLM 層（`_media.py`）で組み立て、プロバイダー層・生レイヤーは無変換: OpenAI 系（`openai` / `openrouter` / `google` / `grok` / `muse`）は `image_url`（data URL または URL）、Anthropic は `image` の `source`（`base64` または `url`）。media type は先頭バイトのシグネチャ（PNG / JPEG / GIF / WEBP）、だめなら拡張子で判定し、不明・読めないファイル・リストでない `images`・不正な要素・文字列でない prompt（messages のリスト）との併用は `LLMConfigError(code="invalid_media")`。独自の件数・サイズ上限は設けない（意図的。#88。巨大なファイルはメモリを圧迫しうるので、アプリ側でサイズを確認し、信頼できないパスやアップロードをそのまま渡さないこと）。非同期はファイル読み込みだけ `asyncio.to_thread()` で行い、`aask_stream()` は引数の形を呼び出し時に検査して、ファイルは最初の反復で読む。利用者向けの説明は docs/multimodal.md / multimodal-ja.md。
 - 音声の文字起こし（#58）: `LLM.transcribe(file, *, extra=None, timeout=None) -> str` / `atranscribe()`。`file` はパス（`str` / `os.PathLike`）または音声の `bytes`。**OpenAI のみ**で、他のプロバイダーは通信せずに `LLMConfigError(code="unsupported_modality")`。`/audio/transcriptions` へ multipart で送る（`model`、`response_format="json"`、ファイル `file`）。`extra` はフォームフィールドに展開する（スカラーは文字列化、bool は `true` / `false`、リスト・タプルは `キー[]` の繰り返し、`None` は省略、展開できない値は `invalid_media`）。形式は `_media.py` でシグネチャ（WAV / MP3 / FLAC / OGG / WEBM / M4A）→ 拡張子の順に判定し、パスはファイル名をそのまま、`bytes` は `audio.<拡張子>` を送る。判定不能・読めない・型違いは `invalid_media`。応答の `text`（文字列でなければ `invalid_json_response`）を返す。`chat()` の仕組みを通さず `client.request()` を直接使うため、キャッシュ・入出力ログ・singleflight の対象外（イベントは生レイヤーのもの）。非同期はファイル読み込みだけ `asyncio.to_thread()`。生レイヤーの `request()` は `files={フィールド名: (ファイル名, bytes, media_type)}` と `form_data=[(名前, 値), ...]` を受け取れる（同期・非同期とも。指定時は `body` が `None` でなければ `LLMConfigError(code="invalid_option")`。JSON の `Content-Type` は付けず httpx が boundary 付きで付ける。リトライごとに作り直す）。利用者向けの説明は docs/multimodal.md / multimodal-ja.md。
-- 実装は `_async_http.py` / `_async_clients.py`（内部専用）。ボディ生成とパースは同期版の関数を共用する。ストリームは async generator ではなく `__anext__` / `aclose` を持つ通常のクラスで組む（generator の `finally` で `await` しないため）。Python 3.10 互換のため `asyncio.TaskGroup` / `asyncio.timeout`（3.11+）は使わない。
+- プロバイダーの追加 `register_provider()`（#141）: 組み込みも含め、すべてのプロバイダーは内部モジュール `_providers.py` のレジストリ（名前 → 同期・非同期クラスの組、別名、ロック）から引く。`llm.py` に固定の辞書は無い（`_PROVIDER_PAIRS` / `_PROVIDERS` / `_ASYNC_PROVIDERS` はレジストリを読むだけの読み取り専用ビューで、旧名を残している）。公開名は `register_provider()` だけ（`__init__.py` から公開）。登録はプロセス全体に効くので、起動時に呼ぶ。戻り値は `None`。一覧・削除の公開 API は作らない。
+  - 引数（キーワード専用、`name` のみ位置引数）: `base_url`（必須）、`api_format`（`"openai"`（既定）/ `"anthropic"`）、`api_key_env`（文字列または文字列の列。先頭が優先、残りは `api_key_env_fallbacks`）、`base_url_env`、`api_key_default`、`api_key_required`（既定 True。False ならキーなしでも生成できる）、`auth_header` / `auth_scheme`（既定は `openai` が `Authorization` / `Bearer`、`anthropic` が `x-api-key` / スキームなし。スキームが空文字ならキーだけを値にする。キーが空ならヘッダーを付けない）、`headers`（固定ヘッダー。呼び出し側の `headers=` が上書きする。認証ヘッダーは固定ヘッダーより優先）、`max_tokens_field`（既定 `max_tokens`）と `stream_include_usage`（既定 False）（どちらも `openai` 形式だけ。`anthropic` 形式で指定すると `invalid_provider`）、`models`（既定 True。False なら `models()` は `unsupported_models`）、`aliases`（`claude` と同じ仕組み）、`replace`（既定 False）。
+  - 宣言で済むのは、URL・環境変数・キー要否・認証ヘッダー・`max_tokens` の名前・usage・固定ヘッダーだけが違う OpenAI 互換と Anthropic 互換。独自のボディ形式・SSE・応答パースを持つ API は `api_format` の列挙を増やして組み込みとして足す。利用者がクラス・パーサー関数を渡す仕組みは作らない。入れない認証: クエリパラメータのキー、署名（SigV4 等）、OAuth の更新。
+  - 検証と衝突（すべて `LLMConfigError`）: 名前と別名は `^[a-z][a-z0-9_-]{0,31}$`。`base_url` なし・`api_format` が未知・型の誤り・形式専用項目の混在・ヘッダー名や値の不正は `invalid_provider`。組み込みの名前・別名との衝突は `replace=True` でも `provider_exists`。自作名の衝突は `replace=False` で `provider_exists`。`replace=True` が差し替えられるのは、自分と同じ名前で登録済みの自作定義だけ（他の自作定義の名前・別名は奪えない）。差し替えると古い別名は消える。登録と参照はロックで保護し、登録単位で原子的に反映する。エラーメッセージに `base_url` は出さない。`base_url` のスキームは制限しない（5.3 と同じ）。未登録の名前は従来どおり `unknown_provider`（`supported` 欄に登録名と別名が並ぶ）。
+  - 宣言は `BaseClient` / `_AsyncBaseClient` のクラス属性: `provider` / `default_base_url` / `api_key_env` / `api_key_env_fallbacks` / `base_url_env` / `api_key_default` / `api_key_optional` に加え、`api_format` / `auth_header` / `auth_scheme` / `fixed_headers` / `header_options` / `supports_models` / `supports_audio` / `models_style` / `rules_provider`、OpenAI 互換の `max_tokens_field` / `stream_include_usage`。非同期クラスはこれらを同期クラスから `_make_async()` が自動生成する（1 回の登録で両方できる。属性を二重に書かない）。`LLM` は生成時のクラスを持ち続けるので、後からの `replace=True` の影響を受けない。
+  - 名前の分岐は属性参照に置き換えた: `models()`（`supports_models` / `models_style`。`ModelPages` はレジストリから引く）、画像と構造化出力（`api_format`）、`transcribe()`（`supports_audio`。v1 は組み込みの `openai` だけが True）。OpenRouter の `app_url` / `app_name` は内部用の宣言 `header_options`（コンストラクタ引数名とヘッダー名の組）で、基底クラスが処理する。登録からは指定できない。
+  - 拒否表（`_model_params.py`）は組み込み分だけで、登録プロバイダーには当てない。例外は `api_format="anthropic"` の登録で、`rules_provider` 属性（`"anthropic"`）経由でバージョン依存のルール（モデル名に依存しない `temperature` / `top_p` / `top_k`）が同じ `anthropic-version` のときに当たる。`models.py` の定数は変えない。キャッシュキーはプロバイダー名を含むので、登録名ごとに独立する。固定ヘッダーはキャッシュキーの追加ヘッダーに入らないが、登録名に紐づく定数なので問題ない。
+  - やらないこと: entry points 等の自動検出、環境変数・設定ファイルからの登録、組み込みの上書き、登録時の疎通確認、動的な登録解除、カスタムの拒否表、`transcribe()` の自動対応。利用者向けの説明は docs/providers.md / providers-ja.md。
+- 実装は `_async_http.py` / `_async_clients.py`（内部専用）。ボディ生成とパースは同期版の関数を共用する。`_async_clients.py` には非同期の基底クラス（`_AsyncOpenAICompatClient` / `_AsyncAnthropicClient`）だけを置き、組み込みの `_AsyncOpenAIClient` などは `_providers.py` が生成して、旧名の import は `_async_clients` のモジュール `__getattr__` が解決する。ストリームは async generator ではなく `__anext__` / `aclose` を持つ通常のクラスで組む（generator の `finally` で `await` しないため）。Python 3.10 互換のため `asyncio.TaskGroup` / `asyncio.timeout`（3.11+）は使わない。
 
 - `models(*, raw=False, timeout=None)` / `amodels()` は設定済みクライアントの生リクエストでプロバイダーのモデル一覧を全ページ取得する。`raw=True` では生のモデル辞書を返し、キャッシュ・入出力ログは使わない。OpenRouter は API キーなしでもクライアント生成・一覧取得できる。
 
@@ -541,6 +554,9 @@ LLMError                      # 基底
   | `invalid_option` | `LLMConfigError`（オプションの値が範囲外。現在は `retry_after_max`） |
   | `invalid_event` | `LLMConfigError`（未知のイベント名） |
   | `invalid_listener` | `LLMConfigError`（リスナーが呼び出し可能でない） |
+  | `invalid_provider` | `LLMConfigError`（`register_provider()` の引数の誤り） |
+  | `provider_exists` | `LLMConfigError`（`register_provider()` の名前・別名が使用済み。組み込みは `replace=True` でも不可） |
+  | `unsupported_models` | `LLMConfigError`（`models()` に対応しないプロバイダー） |
   | `invalid_media` | `LLMConfigError`（`images=` の指定の誤り、画像の種類を判定できない、ファイルを読めない。`transcribe()` の音声・`extra` の誤りも同じ） |
   | `unsupported_modality` | `LLMConfigError`（`transcribe()` を OpenAI 以外で呼んだ） |
   | `invalid_json_response` | `LLMError` |

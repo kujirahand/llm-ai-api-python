@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `register_provider()` to add an OpenAI-compatible or Anthropic-compatible provider from a declaration (`base_url`, `api_key_env`, `auth_header` / `auth_scheme`, `headers`, `aliases`, `replace`, ...), with sync and async clients generated from it. Built-in providers now come from the same internal registry (`_providers.py`), their async classes are generated instead of hand-written, and `models()` / images / structured output / `transcribe()` read declared attributes instead of provider names. Built-in names cannot be replaced, and the table of rejected parameters stays built-in only, except for the `anthropic-version` rule, which also applies to `api_format="anthropic"` registrations. New error codes: `invalid_provider`, `provider_exists` (#141).
+
 - Add optional `cache_read_tokens`, `cache_creation_tokens`, and `reasoning_tokens` to `Usage`. OpenAI-compatible responses map `prompt_tokens_details.cached_tokens` and `completion_tokens_details.reasoning_tokens`; Anthropic maps `cache_read_input_tokens` and `cache_creation_input_tokens`. Missing values stay `None`, an explicit zero is `0`, and existing `input_tokens` / `output_tokens` totals are not adjusted. Cached rows written before these keys existed still load (#127). Note: `Usage` equality now also compares the new fields.
 
 - Add `models()` and `amodels()` to list provider models, including pagination (#123).

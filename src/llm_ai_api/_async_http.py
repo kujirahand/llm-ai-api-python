@@ -38,11 +38,13 @@ from ._http import (
     _mask_url,
     _merge_headers,
     _is_terminal_event,
+    _missing_key_error,
     _retry_after_delay,
     _should_retry_status,
     _transport_reason,
     _SSEDecoder,
     _user_agent,
+    apply_header_options,
     error_body,
     error_message,
 )
@@ -107,6 +109,16 @@ class _AsyncBaseClient:
     base_url_env = ""
     api_key_default: Optional[str] = None  # used when no key is given (local providers)
     api_key_optional = False
+    # Declared attributes; the registry copies them from the sync class (_make_async).
+    api_format = "openai"
+    auth_header = "Authorization"
+    auth_scheme = "Bearer"
+    fixed_headers: Mapping[str, str] = {}
+    header_options: Tuple[Tuple[str, str], ...] = ()
+    supports_models = True
+    supports_audio = False
+    models_style = "openai"
+    rules_provider: Optional[str] = None
 
     def __init__(
         self,
@@ -123,6 +135,7 @@ class _AsyncBaseClient:
         log: Any = LOG_NOT_SET,
         transport: Optional[httpx.AsyncBaseTransport] = None,
         connection: Optional[Mapping[str, Any]] = None,
+        **header_values: Any,
     ) -> None:
         """Same arguments as `BaseClient`; `transport` is for tests (`httpx.MockTransport`).
 
@@ -139,13 +152,11 @@ class _AsyncBaseClient:
             key = key or os.environ.get(name)
         key = key or self.api_key_default
         if not key and not self.api_key_optional:
-            raise LLMConfigError(
-                t("missing_api_key", lang, provider=self.provider, env=self.api_key_env),
-                code="missing_api_key",
-            )
+            raise _missing_key_error(self.provider, self.api_key_env, lang)
         self._api_key = key
         self.base_url = (
-            base_url or os.environ.get(self.base_url_env) or self.default_base_url
+            base_url or (os.environ.get(self.base_url_env) if self.base_url_env else None)
+            or self.default_base_url
         ).rstrip("/")
         self.timeout = timeout
         self.max_retries = max_retries
@@ -154,6 +165,7 @@ class _AsyncBaseClient:
         self.connection = resolve_connection(connection, lang=lang)
         self._connect_timeout = self.connection["connect_timeout"]
         self._extra_headers = dict(headers or {})
+        apply_header_options(self.header_options, header_values, self._extra_headers)
         if transport is not None:
             self._client = httpx.AsyncClient(
                 transport=transport,

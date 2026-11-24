@@ -146,6 +146,7 @@ The return value of `chat()` / `achat()`.
 | `set_log(log=None, *, max_size=...)` / `get_log()` | Global input/output log settings. See [Input/output log](io_logs.md) |
 | `set_connection(*, max_connections, max_keepalive_connections, keepalive_expiry, connect_timeout, verify, cert, proxy)` / `get_connection()` | Global connection settings (replace-style: calling with no arguments resets to the defaults). See the [Configuration reference](config.md) |
 | `set_language(lang)` / `get_language()` | Global language of error messages (`"ja"` / `"en"`); applies to the whole process |
+| `register_provider(name, *, base_url, api_format="openai", api_key_env=None, base_url_env=None, api_key_default=None, api_key_required=True, auth_header=None, auth_scheme=None, headers=None, max_tokens_field=None, stream_include_usage=None, models=True, aliases=(), replace=False)` | Add an OpenAI-compatible or Anthropic-compatible API from a declaration so that `llm("<name>:<model>")` works. Returns `None`. It affects the whole process, so call it at startup. A built-in name or alias cannot be overwritten, even with `replace=True`. Errors are `LLMConfigError` (`code="invalid_provider"` / `"provider_exists"`). See [Adding a provider](providers.md) |
 
 The cache class is `SQLiteCache` and the log class is `JSONLLog`. Build either with a file path and pass it to `llm(..., cache=...)` / `log=...` or to `set_cache()` / `set_log()`.
 

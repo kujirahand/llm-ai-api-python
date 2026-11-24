@@ -60,6 +60,15 @@ from llm_ai_api import llm, models
 m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 ```
 
+組み込みにない OpenAI 互換・Anthropic 互換のサービスは、`register_provider()` で宣言を 1 回書けば同じ書き方で呼べます（非同期も使えます）。登録はプロセス全体に効くので、起動時に呼んでください。詳しくは[プロバイダーを追加する](docs/providers-ja.md)を参照してください。
+
+```python
+from llm_ai_api import llm, register_provider
+
+register_provider("deepseek", base_url="https://api.deepseek.com/v1", api_key_env="DEEPSEEK_API_KEY")
+print(llm("deepseek:deepseek-chat").ask("こんにちは"))
+```
+
 最初から順に試す手順は[チュートリアル](docs/tutorial-ja.md)を参照してください。
 
 ## 使い方
@@ -282,6 +291,7 @@ m = llm("openai:gpt-6-luna", lang="en")  # モデルごと
 | `local-llm-lmstudio.py` | ローカルの LM Studio サーバーで `ask()` / `chat()` / `ask_stream()` を試す（[docs/local_llm-lmstudio-ja.md](docs/local_llm-lmstudio-ja.md)） |
 | `local-llm-ollama.py` | ローカルの Ollama サーバーで `ask()` / `chat()` / `ask_stream()` を試す（[docs/local_llm-ollama-ja.md](docs/local_llm-ollama-ja.md)） |
 | `local-llm-strata.py` | ローカルの Strata サーバーで `ask()` / `chat()` / `ask_stream()` を試す（[docs/local_llm-strata-ja.md](docs/local_llm-strata-ja.md)） |
+| `register_provider.py` | `register_provider()` で自分のサーバーを登録し、`ask()` / `ask_stream()` を試す（[docs/providers-ja.md](docs/providers-ja.md)） |
 
 `ask(prompt, images=[...])` は、画像（ファイルのパス・bytes・http(s) の URL）をプロバイダーごとの形式に組み立てて送ります（[docs/multimodal-ja.md](docs/multimodal-ja.md)）。`chat()` に渡す `content` のネイティブ dict はプロバイダー間で変換されません。
 
