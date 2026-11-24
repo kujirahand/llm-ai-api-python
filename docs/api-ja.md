@@ -124,7 +124,7 @@ def summarize(client: AppLLM, text: str) -> str:
 | `text` | `str` | 回答のテキスト |
 | `model` | `str` または `None` | 応答したモデル名 |
 | `stop_reason` | `str` または `None` | 終了理由（プロバイダーが返した生の値。正規化しない）。OpenAI と OpenAI 互換プロバイダーは `finish_reason`、Anthropic は `stop_reason` |
-| `usage` | `Usage` または `None` | `input_tokens` / `output_tokens` |
+| `usage` | `Usage` または `None` | `input_tokens` / `output_tokens` に加え、取れた場合は `cache_read_tokens` / `cache_creation_tokens` / `reasoning_tokens` |
 | `raw` | `dict` | レスポンスの生 JSON |
 | `request_id` | `str` または `None` | プロバイダーのリクエスト ID（ヘッダーが無い応答では `None`。キャッシュヒット時は保存されていた値） |
 | `latency` | `float` または `None` | 応答までの秒数 |
@@ -135,7 +135,7 @@ def summarize(client: AppLLM, text: str) -> str:
 
 - `ChatChunk` は低レベル層のストリーミング（`stream_chat()`）が返す断片で、`text` / `raw` / `request_id` を持ちます。
 - `SSEEvent` は生レイヤーのストリーミングが返すイベントで、`json()` でボディを dict として取り出せます。
-- `Usage` は `input_tokens` / `output_tokens` を持つデータクラスです。
+- `Usage` は `input_tokens` / `output_tokens` を持つデータクラスです。プロバイダーが報告すれば `cache_read_tokens`、`cache_creation_tokens`、`reasoning_tokens` も入ります（省略時は `None`、明示的なゼロは `0`、型が `int` 以外の値が返った項目も `None`）。値は応答からそのままコピーし、合計への足し引きや欠落値の推定、金額計算はしません。`input_tokens` の意味はプロバイダーにより異なり、Anthropic ではキャッシュ分を含みません。これらの項目は `chat()` / `achat()` で取得でき、ストリーミングでは取得できません。
 
 ## モジュール関数
 

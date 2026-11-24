@@ -45,7 +45,7 @@ print(result.raw["usage"])
 | `cache_creation_input_tokens` | キャッシュに書き込んだトークン数 |
 | `cache_read_input_tokens` | キャッシュから読んだトークン数 |
 
-`ChatResult.usage`（`input_tokens` / `output_tokens`）には、これらのフィールドは含まれません。キャッシュの状況は、必ず `raw` から読んでください。
+同じ値は `ChatResult.usage` の `cache_creation_tokens` と `cache_read_tokens` でも読めます（プロバイダーが省略した場合は `None`）。`input_tokens` / `output_tokens` はプロバイダーの合計のままで、足し引きしません。`result.raw["usage"]` は従来どおりプロバイダーの生のオブジェクトです。
 
 キャッシュできる最小トークン数、有効期間、料金は、モデルによって異なります。最新の値は、公式ドキュメントで確認してください。
 
@@ -59,7 +59,8 @@ result = m.chat([
     {"role": "system", "content": long_text},   # 毎回同じ
     {"role": "user", "content": "第3章を要約して"},  # 毎回変わる
 ])
-print(result.raw["usage"])  # prompt_tokens_details.cached_tokens などを見る
+print(result.usage and result.usage.cache_read_tokens)  # prompt_tokens_details.cached_tokens から
+print(result.raw["usage"])  # プロバイダーの生のオブジェクト
 ```
 
 OpenRouter と Google の OpenAI 互換エンドポイントでは、キャッシュの扱い（自動か、`cache_control` が必要か、使用量の項目名）が、モデルによって異なります。必要なら `extra=` でプロバイダー固有のパラメータを渡し、`result.raw["usage"]` で結果を確認してください。この組み合わせは、実際の API では未確認です。

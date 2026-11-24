@@ -124,7 +124,7 @@ The return value of `chat()` / `achat()`.
 | `text` | `str` | The answer text |
 | `model` | `str` or `None` | The model that responded |
 | `stop_reason` | `str` or `None` | Finish reason (the raw provider value; it is not normalized). OpenAI and OpenAI-compatible providers: `finish_reason`; Anthropic: `stop_reason` |
-| `usage` | `Usage` or `None` | `input_tokens` / `output_tokens` |
+| `usage` | `Usage` or `None` | `input_tokens` / `output_tokens`, plus optional `cache_read_tokens` / `cache_creation_tokens` / `reasoning_tokens` |
 | `raw` | `dict` | The raw response JSON |
 | `request_id` | `str` or `None` | The provider's request ID (`None` when the response had no such header; on a cache hit, the stored value) |
 | `latency` | `float` or `None` | Seconds until the response |
@@ -135,7 +135,7 @@ The return value of `chat()` / `achat()`.
 
 - `ChatChunk` is a fragment returned by the low-level streaming layer (`stream_chat()`), with `text` / `raw` / `request_id`.
 - `SSEEvent` is an event returned by the raw streaming layer; `json()` extracts the body as a dict.
-- `Usage` is a dataclass with `input_tokens` / `output_tokens`.
+- `Usage` is a dataclass with `input_tokens` / `output_tokens`. When the provider reports them, it also has `cache_read_tokens`, `cache_creation_tokens`, and `reasoning_tokens` (`None` if omitted; an explicit zero is `0`; a value that is not an `int` also becomes `None`). These values are copied from the response and are not added or subtracted from the totals, and the library does not estimate missing values or compute cost. The meaning of `input_tokens` differs by provider: for Anthropic it does not include cached tokens. These fields are available from `chat()` / `achat()`; streaming responses do not carry them.
 
 ## Module functions
 

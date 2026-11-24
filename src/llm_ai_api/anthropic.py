@@ -9,7 +9,7 @@ from ._events import apply_result_meta, note_request_error, note_stream_error
 from ._http import BaseClient, _TaggedIter
 from ._model_params import adjust_body
 from .errors import APIStreamError, LLMError
-from .types import ChatChunk, ChatResult, SSEEvent, Usage
+from .types import ChatChunk, ChatResult, SSEEvent, Usage, _optional_int
 
 DEFAULT_MAX_TOKENS = 16000
 
@@ -51,7 +51,14 @@ def _parse_response(raw: Dict[str, Any]) -> ChatResult:
     )
     u = raw.get("usage")
     usage = (
-        Usage(u.get("input_tokens"), u.get("output_tokens")) if isinstance(u, dict) else None
+        Usage(
+            u.get("input_tokens"),
+            u.get("output_tokens"),
+            cache_read_tokens=_optional_int(u.get("cache_read_input_tokens")),
+            cache_creation_tokens=_optional_int(u.get("cache_creation_input_tokens")),
+        )
+        if isinstance(u, dict)
+        else None
     )
     return ChatResult(
         text=text,

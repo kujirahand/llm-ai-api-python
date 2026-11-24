@@ -10,12 +10,26 @@ from .errors import LLMError
 from .lang import t
 
 
+def _optional_int(value: Any) -> Optional[int]:
+    """Return ``value`` when it is an ``int`` (not ``bool``); otherwise ``None``."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 @dataclass
 class Usage:
-    """Token usage."""
+    """Token usage reported by the provider.
+
+    ``input_tokens`` and ``output_tokens`` keep the provider's existing totals
+    and are not adjusted for cache or reasoning tokens. The optional fields
+    are ``None`` when the provider omitted them; an explicit zero is stored
+    as ``0``. This library does not estimate missing values or compute cost.
+    """
 
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
+    cache_read_tokens: Optional[int] = None
+    cache_creation_tokens: Optional[int] = None
+    reasoning_tokens: Optional[int] = None
 
 
 @dataclass

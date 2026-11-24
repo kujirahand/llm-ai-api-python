@@ -25,7 +25,7 @@ from typing import Any, Dict, Iterator, Optional
 
 from .errors import LLMConfigError
 from .lang import t
-from .types import ChatResult, Usage
+from .types import ChatResult, Usage, _optional_int
 
 DEFAULT_CACHE_PATH = "llm_ai_api_cache.db"
 CACHE_DIR_ENV = "LLM_AI_API_CACHE_DIR"
@@ -292,7 +292,13 @@ class SQLiteCache(FailureCounter):
             if u is None:
                 usage = None
             elif isinstance(u, dict):
-                usage = Usage(u.get("input_tokens"), u.get("output_tokens"))
+                usage = Usage(
+                    u.get("input_tokens"),
+                    u.get("output_tokens"),
+                    cache_read_tokens=_optional_int(u.get("cache_read_tokens")),
+                    cache_creation_tokens=_optional_int(u.get("cache_creation_tokens")),
+                    reasoning_tokens=_optional_int(u.get("reasoning_tokens")),
+                )
             else:
                 raise ValueError("cached response has an unexpected shape")
             return ChatResult(
@@ -317,11 +323,16 @@ class SQLiteCache(FailureCounter):
 
         With `secret` (the API key) the value is encrypted; without it, it is stored as is.
         """
-        usage = (
-            {"input_tokens": result.usage.input_tokens, "output_tokens": result.usage.output_tokens}
-            if result.usage is not None
-            else None
-        )
+        usage = None
+        if result.usage is not None:
+            usage = {
+                "input_tokens": result.usage.input_tokens,
+                "output_tokens": result.usage.output_tokens,
+            }
+            for field in ("cache_read_tokens", "cache_creation_tokens", "reasoning_tokens"):
+                value = getattr(result.usage, field)
+                if value is not None:
+                    usage[field] = value
         plain = json.dumps(
             {
                 "text": result.text,
