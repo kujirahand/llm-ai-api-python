@@ -1,0 +1,43 @@
+{
+  "id": "openai-json-success",
+  "kind": "synthetic",
+  "source": "Handwritten synthetic case based on response examples in tests/test_openai.py.",
+  "captured_at": null,
+  "provider": "openai",
+  "endpoint": "/v1/chat/completions",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-request-id": "fixture-openai-json-success"
+  },
+  "body": {
+    "id": "fixture-chat",
+    "model": "fixture-model",
+    "choices": [
+      {
+        "message": {
+          "role": "assistant",
+          "content": "ポチ"
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 5,
+      "completion_tokens": 2,
+      "total_tokens": 7
+    }
+  },
+  "request": {
+    "model": "fixture-model",
+    "stream": false
+  },
+  "expect": {
+    "text": "ポチ",
+    "stop_reason": "stop",
+    "usage": [
+      5,
+      2
+    ]
+  }
+}

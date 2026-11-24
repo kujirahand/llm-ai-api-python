@@ -1,0 +1,42 @@
+{
+  "id": "anthropic-json-success",
+  "kind": "synthetic",
+  "source": "Handwritten synthetic case based on response examples in tests/test_anthropic.py.",
+  "captured_at": null,
+  "provider": "anthropic",
+  "endpoint": "/v1/messages",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "request-id": "fixture-anthropic-json-success"
+  },
+  "body": {
+    "id": "fixture-message",
+    "model": "fixture-model",
+    "role": "assistant",
+    "type": "message",
+    "content": [
+      {
+        "type": "text",
+        "text": "ポチ"
+      }
+    ],
+    "stop_reason": "end_turn",
+    "usage": {
+      "input_tokens": 5,
+      "output_tokens": 2
+    }
+  },
+  "request": {
+    "model": "fixture-model",
+    "stream": false
+  },
+  "expect": {
+    "text": "ポチ",
+    "stop_reason": "end_turn",
+    "usage": [
+      5,
+      2
+    ]
+  }
+}

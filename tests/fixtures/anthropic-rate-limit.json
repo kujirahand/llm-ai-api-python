@@ -1,0 +1,28 @@
+{
+  "id": "anthropic-rate-limit",
+  "kind": "synthetic",
+  "source": "Handwritten synthetic case based on response examples in tests/test_retry_policy.py.",
+  "captured_at": null,
+  "provider": "anthropic",
+  "endpoint": "/v1/messages",
+  "status": 429,
+  "headers": {
+    "content-type": "application/json",
+    "request-id": "fixture-anthropic-rate-limit",
+    "retry-after": "0"
+  },
+  "body": {
+    "error": {
+      "type": "rate_limit_error",
+      "message": "Fixture request rate exceeded."
+    },
+    "type": "error"
+  },
+  "request": {
+    "model": "fixture-model",
+    "stream": false
+  },
+  "expect": {
+    "retry_with": "anthropic-json-success"
+  }
+}

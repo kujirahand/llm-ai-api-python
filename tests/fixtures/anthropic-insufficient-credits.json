@@ -1,0 +1,27 @@
+{
+  "id": "anthropic-insufficient-credits",
+  "kind": "synthetic",
+  "source": "Handwritten synthetic case based on response examples in tests/test_insufficient_credits.py.",
+  "captured_at": null,
+  "provider": "anthropic",
+  "endpoint": "/v1/messages",
+  "status": 402,
+  "headers": {
+    "content-type": "application/json",
+    "request-id": "fixture-anthropic-insufficient-credits"
+  },
+  "body": {
+    "error": {
+      "type": "billing_error",
+      "message": "Fixture balance exhausted."
+    },
+    "type": "error"
+  },
+  "request": {
+    "model": "fixture-model",
+    "stream": false
+  },
+  "expect": {
+    "error": "credits"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "id": "openai-sse-success",
+  "kind": "synthetic",
+  "source": "Handwritten synthetic case based on response examples in tests/test_async_llm.py.",
+  "captured_at": null,
+  "provider": "openai",
+  "endpoint": "/v1/chat/completions",
+  "status": 200,
+  "headers": {
+    "content-type": "text/event-stream",
+    "x-request-id": "fixture-openai-sse-success"
+  },
+  "sse": "data: {\"choices\":[{\"delta\":{\"content\":\"ポ\"}}]}\r\n\r\ndata: {\"choices\":[{\"delta\":{\"content\":\"チ\"}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2,\"total_tokens\":7}}\r\n\r\ndata: [DONE]\n\n",
+  "request": {
+    "model": "fixture-model",
+    "stream": true
+  },
+  "expect": {
+    "pieces": [
+      "ポ",
+      "チ"
+    ],
+    "complete": true
+  }
+}
