@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from ._singleflight import async_singleflight
 from ._async_http import _AsyncBaseClient, _AsyncChunks, _AsyncLoggedChunks
+from ._http import build_auth_header
 from .anthropic import AnthropicClient
 from .anthropic import _chunk_from_event as _anthropic_chunk
 from .anthropic import _parse_response as _anthropic_parse
@@ -27,7 +28,9 @@ class _AsyncOpenAICompatClient(_AsyncBaseClient):
     stream_include_usage = False
 
     def _auth_headers(self) -> Dict[str, str]:
-        return {"Authorization": "Bearer " + self._api_key} if self._api_key else {}
+        headers = dict(self.fixed_headers)
+        headers.update(build_auth_header(self.auth_header, self.auth_scheme, self._api_key))
+        return headers
 
     def _build_body(
         self,
@@ -85,92 +88,23 @@ class _AsyncOpenAICompatClient(_AsyncBaseClient):
         return self._alog_chunks(chunks, body, cached)
 
 
-class _AsyncOpenAIClient(_AsyncOpenAICompatClient):
-    provider = "openai"
-    default_base_url = "https://api.openai.com/v1"
-    api_key_env = "OPENAI_API_KEY"
-    base_url_env = "OPENAI_BASE_URL"
-    max_tokens_field = "max_completion_tokens"
-    stream_include_usage = True
-
-
-class _AsyncOpenRouterClient(_AsyncOpenAICompatClient):
-    provider = "openrouter"
-    default_base_url = "https://openrouter.ai/api/v1"
-    api_key_optional = True
-    api_key_env = "OPENROUTER_API_KEY"
-    base_url_env = "OPENROUTER_BASE_URL"
-
-    def __init__(
-        self,
-        *args: Any,
-        app_url: Optional[str] = None,
-        app_name: Optional[str] = None,
-        **kwargs: Any,
-    ) -> None:
-        """`app_url` is sent as HTTP-Referer and `app_name` as X-Title."""
-        super().__init__(*args, **kwargs)
-        if app_url:
-            if not any(k.lower() == "http-referer" for k in self._extra_headers):
-                self._extra_headers["HTTP-Referer"] = app_url
-        if app_name:
-            if not any(k.lower() == "x-title" for k in self._extra_headers):
-                self._extra_headers["X-Title"] = app_name
-
-
-class _AsyncGrokClient(_AsyncOpenAICompatClient):
-    provider = "grok"
-    default_base_url = "https://api.x.ai/v1"
-    api_key_env = "XAI_API_KEY"
-    base_url_env = "XAI_BASE_URL"
-
-
-class _AsyncMuseClient(_AsyncOpenAICompatClient):
-    provider = "muse"
-    default_base_url = "https://api.meta.ai/v1"
-    api_key_env = "MODEL_API_KEY"
-    base_url_env = "MUSE_BASE_URL"
-
-
-class _AsyncGoogleClient(_AsyncOpenAICompatClient):
-    provider = "google"
-    default_base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
-    api_key_env = "GEMINI_API_KEY"
-    api_key_env_fallbacks = ("GOOGLE_API_KEY",)
-    base_url_env = "GOOGLE_BASE_URL"
-
-
-class _AsyncLMStudioClient(_AsyncOpenAICompatClient):
-    provider = "lmstudio"
-    default_base_url = "http://localhost:1234/v1"
-    api_key_env = "LMSTUDIO_API_KEY"
-    base_url_env = "LMSTUDIO_BASE_URL"
-    api_key_default = "lm-studio"
-
-
-class _AsyncOllamaClient(_AsyncOpenAICompatClient):
-    provider = "ollama"
-    default_base_url = "http://localhost:11434/v1"
-    api_key_env = "OLLAMA_API_KEY"
-    base_url_env = "OLLAMA_BASE_URL"
-    api_key_default = "ollama"
-
-
-class _AsyncStrataClient(_AsyncOpenAICompatClient):
-    provider = "strata"
-    default_base_url = "http://127.0.0.1:47831/v1"
-    api_key_env = "STRATA_API_KEY"
-    base_url_env = "STRATA_BASE_URL"
-    api_key_default = "local"
-
-
 class _AsyncAnthropicClient(_AsyncBaseClient):
-    """Async client for the Anthropic Messages API."""
+    """Async client for the Anthropic Messages API.
+
+    This is the base `_providers._make_async()` subclasses for Anthropic-format
+    providers, and it stays directly usable as the built-in Anthropic client. Its
+    declared attributes therefore repeat `AnthropicClient`'s; a test checks that
+    the two agree.
+    """
 
     provider = "anthropic"
     default_base_url = "https://api.anthropic.com"
     api_key_env = "ANTHROPIC_API_KEY"
     base_url_env = "ANTHROPIC_BASE_URL"
+    api_format = "anthropic"
+    auth_header = "x-api-key"
+    auth_scheme = ""
+    models_style = "anthropic"
 
     def __init__(
         self, *args: Any, anthropic_version: str = "2026-10-21", **kwargs: Any
@@ -185,7 +119,10 @@ class _AsyncAnthropicClient(_AsyncBaseClient):
         return context
 
     def _auth_headers(self) -> Dict[str, str]:
-        return {"x-api-key": self._api_key, "anthropic-version": self.anthropic_version}
+        headers = dict(self.fixed_headers)
+        headers["anthropic-version"] = self.anthropic_version
+        headers.update(build_auth_header(self.auth_header, self.auth_scheme, self._api_key))
+        return headers
 
     def _build_body(
         self,
@@ -242,3 +179,19 @@ class _AsyncAnthropicClient(_AsyncBaseClient):
         headline = self._t("stream_error", provider=self.provider)
         chunks = _AsyncChunks(events, lambda ev: _anthropic_chunk(ev, headline), self)
         return self._alog_chunks(chunks, body, cached)
+
+
+def __getattr__(name: str) -> Any:
+    """Keep `from ._async_clients import _AsyncOpenAIClient` working.
+
+    The per-provider async classes are no longer written by hand: `_providers`
+    generates them from the sync classes (`_make_async`). This maps the old names
+    to the generated classes.
+    """
+    if name.startswith("_Async") and name.endswith("Client"):
+        from ._providers import builtin_async_class
+
+        cls = builtin_async_class(name)
+        if cls is not None:
+            return cls
+    raise AttributeError("module %r has no attribute %r" % (__name__, name))

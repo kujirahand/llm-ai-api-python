@@ -16,3 +16,4 @@ class GoogleClient(OpenAICompatClient):
     api_key_env = "GEMINI_API_KEY"
     api_key_env_fallbacks = ("GOOGLE_API_KEY",)
     base_url_env = "GOOGLE_BASE_URL"
+    models_style = "google"  # lists through the native models endpoint on the default URL

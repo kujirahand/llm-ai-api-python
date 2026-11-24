@@ -111,6 +111,7 @@ class FallbackTest(unittest.TestCase):
             "_structured.py",
             "_media.py",
             "_model_list.py",
+            "_providers.py",
         ):
             with open(os.path.join(base, name), encoding="utf-8") as f:
                 src += f.read()

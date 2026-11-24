@@ -146,6 +146,7 @@ def summarize(client: AppLLM, text: str) -> str:
 | `set_log(log=None, *, max_size=...)` / `get_log()` | 入出力ログの全体設定。詳細は [入出力のログ](io_logs-ja.md) |
 | `set_connection(*, max_connections, max_keepalive_connections, keepalive_expiry, connect_timeout, verify, cert, proxy)` / `get_connection()` | 接続設定の全体設定（引数なしの呼び出しで既定に戻す置き換え式）。詳細は [設定リファレンス](config-ja.md) |
 | `set_language(lang)` / `get_language()` | エラーメッセージの言語（`"ja"` / `"en"`）の全体設定。プロセス全体に効く |
+| `register_provider(name, *, base_url, api_format="openai", api_key_env=None, base_url_env=None, api_key_default=None, api_key_required=True, auth_header=None, auth_scheme=None, headers=None, max_tokens_field=None, stream_include_usage=None, models=True, aliases=(), replace=False)` | OpenAI 互換・Anthropic 互換の API を宣言だけで追加し、`llm("<name>:<モデル名>")` で呼べるようにする。戻り値は `None`。プロセス全体に効くので起動時に呼ぶ。組み込みの名前・別名は `replace=True` でも上書きできない。エラーは `LLMConfigError`（`code="invalid_provider"` / `"provider_exists"`）。詳細は [プロバイダーを追加する](providers-ja.md) |
 
 キャッシュのクラスは `SQLiteCache`、ログのクラスは `JSONLLog` です。どちらもコンストラクタでファイルパス等を指定して作り、`llm(..., cache=...)` / `log=...` や `set_cache()` / `set_log()` に渡せます。
 

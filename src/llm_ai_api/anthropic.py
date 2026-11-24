@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from ._singleflight import singleflight
 from ._events import apply_result_meta, note_request_error, note_stream_error
-from ._http import BaseClient, _TaggedIter
+from ._http import BaseClient, _TaggedIter, build_auth_header
 from ._model_params import adjust_body
 from .errors import APIStreamError, LLMError
 from .types import ChatChunk, ChatResult, SSEEvent, Usage, _optional_int
@@ -102,6 +102,10 @@ class AnthropicClient(BaseClient):
     default_base_url = "https://api.anthropic.com"
     api_key_env = "ANTHROPIC_API_KEY"
     base_url_env = "ANTHROPIC_BASE_URL"
+    api_format = "anthropic"
+    auth_header = "x-api-key"
+    auth_scheme = ""
+    models_style = "anthropic"
 
     def __init__(
         self, *args: Any, anthropic_version: str = "2026-10-21", **kwargs: Any
@@ -116,7 +120,10 @@ class AnthropicClient(BaseClient):
         return context
 
     def _auth_headers(self) -> Dict[str, str]:
-        return {"x-api-key": self._api_key, "anthropic-version": self.anthropic_version}
+        headers = dict(self.fixed_headers)
+        headers["anthropic-version"] = self.anthropic_version
+        headers.update(build_auth_header(self.auth_header, self.auth_scheme, self._api_key))
+        return headers
 
     def _build_body(
         self,
@@ -145,7 +152,7 @@ class AnthropicClient(BaseClient):
         # rejected depends on the anthropic-version header that will be sent.
         # request() does not call this.
         return adjust_body(
-            self.provider,
+            self.rules_provider or self.provider,
             model,
             body,
             anthropic_version=_sent_anthropic_version(self),

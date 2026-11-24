@@ -91,16 +91,16 @@ def resolve_images(images: List[Any], lang: Optional[str]) -> List[Resolved]:
     return [resolve_image(item, lang) for item in images]
 
 
-def image_part(provider: str, resolved: Resolved) -> Dict[str, Any]:
-    """Build the provider's content part for one resolved image."""
+def image_part(api_format: str, resolved: Resolved) -> Dict[str, Any]:
+    """Build the content part for one resolved image, in the client's `api_format`."""
     if resolved[0] == "url":
         url = resolved[1]
-        if provider == "anthropic":
+        if api_format == "anthropic":
             return {"type": "image", "source": {"type": "url", "url": url}}
         return {"type": "image_url", "image_url": {"url": url}}
     data = base64.b64encode(resolved[1]).decode("ascii")
     media_type = resolved[2]
-    if provider == "anthropic":
+    if api_format == "anthropic":
         return {
             "type": "image",
             "source": {"type": "base64", "media_type": media_type, "data": data},
@@ -108,10 +108,10 @@ def image_part(provider: str, resolved: Resolved) -> Dict[str, Any]:
     return {"type": "image_url", "image_url": {"url": "data:%s;base64,%s" % (media_type, data)}}
 
 
-def image_messages(provider: str, prompt: str, resolved: List[Resolved]) -> List[Dict[str, Any]]:
+def image_messages(api_format: str, prompt: str, resolved: List[Resolved]) -> List[Dict[str, Any]]:
     """One user message: the text part followed by the images in the given order."""
     content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
-    content.extend(image_part(provider, r) for r in resolved)
+    content.extend(image_part(api_format, r) for r in resolved)
     return [{"role": "user", "content": content}]
 
 

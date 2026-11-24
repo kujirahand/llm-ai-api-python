@@ -60,6 +60,15 @@ from llm_ai_api import llm, models
 m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 ```
 
+An OpenAI-compatible or Anthropic-compatible service that is not built in can be called the same way after one declaration with `register_provider()` (async works too). Registration affects the whole process, so call it at startup. See [Adding a provider](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/providers.md).
+
+```python
+from llm_ai_api import llm, register_provider
+
+register_provider("deepseek", base_url="https://api.deepseek.com/v1", api_key_env="DEEPSEEK_API_KEY")
+print(llm("deepseek:deepseek-chat").ask("Hello"))
+```
+
 For step-by-step setup, see the [Tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md).
 
 ## Usage
@@ -282,6 +291,7 @@ See [`examples/`](https://github.com/kujirahand/llm-ai-api-python/tree/main/exam
 | `local-llm-lmstudio.py` | Try `ask()` / `chat()` / `ask_stream()` against a local LM Studio server ([docs/local_llm-lmstudio.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-lmstudio.md)) |
 | `local-llm-ollama.py` | Try `ask()` / `chat()` / `ask_stream()` against a local Ollama server ([docs/local_llm-ollama.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-ollama.md)) |
 | `local-llm-strata.py` | Try `ask()` / `chat()` / `ask_stream()` against a local Strata server ([docs/local_llm-strata.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-strata.md)) |
+| `register_provider.py` | Register your own server with `register_provider()` and try `ask()` / `ask_stream()` ([docs/providers.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/providers.md)) |
 
 `ask(prompt, images=[...])` builds each provider's image format from file paths, bytes, or http(s) URLs ([docs/multimodal.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/multimodal.md)). Native `content` dicts passed to `chat()` are not converted between providers.
 

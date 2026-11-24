@@ -17,17 +17,6 @@ from typing import (
     Union,
 )
 
-from ._async_clients import (
-    _AsyncAnthropicClient,
-    _AsyncGoogleClient,
-    _AsyncGrokClient,
-    _AsyncLMStudioClient,
-    _AsyncMuseClient,
-    _AsyncOllamaClient,
-    _AsyncOpenAIClient,
-    _AsyncOpenRouterClient,
-    _AsyncStrataClient,
-)
 from ._async_http import _AsyncBaseClient
 from ._http import BaseClient, _check_retry_after_max
 from ._model_list import ModelPages
@@ -40,37 +29,18 @@ from ._media import (
     resolve_images,
     transcription_form,
 )
+from ._providers import ASYNC_PROVIDERS, PROVIDER_PAIRS, PROVIDERS, lookup, provider_names
 from ._structured import inject_schema_extra, interpret_schema, parse_structured_result
-from .anthropic import AnthropicClient
 from .errors import LLMConfigError, LLMError
-from .google import GoogleClient
-from .grok import GrokClient
 from .lang import t
-from .lmstudio import LMStudioClient
-from .muse import MuseClient
-from .ollama import OllamaClient
-from .openai import OpenAIClient
-from .openrouter import OpenRouterClient
-from .strata import StrataClient
 from .types import ChatResult
 
-# Built-in providers as sync/async client pairs. `claude` is an alias of anthropic.
-_PROVIDER_PAIRS = {
-    "openai": (OpenAIClient, _AsyncOpenAIClient),
-    "openrouter": (OpenRouterClient, _AsyncOpenRouterClient),
-    "grok": (GrokClient, _AsyncGrokClient),
-    "muse": (MuseClient, _AsyncMuseClient),
-    "google": (GoogleClient, _AsyncGoogleClient),
-    "lmstudio": (LMStudioClient, _AsyncLMStudioClient),
-    "ollama": (OllamaClient, _AsyncOllamaClient),
-    "strata": (StrataClient, _AsyncStrataClient),
-    "anthropic": (AnthropicClient, _AsyncAnthropicClient),
-    "claude": (AnthropicClient, _AsyncAnthropicClient),
-}
-
-_PROVIDERS = {name: sync for name, (sync, async_client) in _PROVIDER_PAIRS.items()}
+# Live read-only views of the provider registry (_providers.py): name or alias ->
+# (sync, async) classes. Kept under their old private names; nothing is declared here.
+_PROVIDER_PAIRS = PROVIDER_PAIRS
+_PROVIDERS = PROVIDERS
 # Internal async clients, created lazily by LLM.aask() / achat() / aask_stream() / achat_stream().
-_ASYNC_PROVIDERS = {name: async_client for name, (sync, async_client) in _PROVIDER_PAIRS.items()}
+_ASYNC_PROVIDERS = ASYNC_PROVIDERS
 
 # Client attributes that LLM.set_config() can change after construction.
 _RETRY_SETTINGS = ("max_retries", "retry_read_timeout", "retry_after_max")
@@ -110,9 +80,9 @@ def parse_model_spec(spec: str, lang: Optional[str] = None) -> "tuple[str, str]"
     model = model.strip()
     if not sep or not provider or not model:
         raise LLMConfigError(t("invalid_model_spec", lang, spec=spec), code="invalid_model_spec")
-    if provider not in _PROVIDERS:
+    if lookup(provider) is None:
         raise LLMConfigError(
-            t("unknown_provider", lang, provider=provider, supported=", ".join(sorted(_PROVIDERS))),
+            t("unknown_provider", lang, provider=provider, supported=", ".join(provider_names())),
             code="unknown_provider",
         )
     return provider, model
@@ -132,16 +102,24 @@ class LLM:
         **client_options: Any,
     ) -> None:
         provider, model = parse_model_spec(spec, client_options.get("lang"))
-        self.provider = "anthropic" if provider == "claude" else provider
+        entry = lookup(provider)
+        if entry is None:  # unregistered between parsing and here; cannot happen today
+            raise LLMConfigError(
+                t("unknown_provider", client_options.get("lang"), provider=provider,
+                  supported=", ".join(provider_names())),
+                code="unknown_provider",
+            )
+        self.provider = entry.name  # an alias such as "claude" resolves to its canonical name
         self.model = model
         self.system = system
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.extra = extra
-        self.client: BaseClient = _PROVIDERS[provider](**client_options)
-        # Kept to create the async client on first use (see _get_async_client).
+        self.client: BaseClient = entry.sync(**client_options)
+        # Kept to create the async client on first use (see _get_async_client). The
+        # class is fixed now, so a later register_provider(replace=True) cannot change it.
         self._client_options = dict(client_options)
-        self._provider_key = provider
+        self._async_class = entry.async_
         self._async_client_instance: Optional[_AsyncBaseClient] = None
 
     def __repr__(self) -> str:
@@ -198,7 +176,7 @@ class LLM:
         if items:
             check_prompt_for_images(prompt, self.client.lang)
             resolved = resolve_images(items, self.client.lang)
-            return image_messages(self.provider, prompt, resolved)  # type: ignore[arg-type]
+            return image_messages(self.client.api_format, prompt, resolved)  # type: ignore[arg-type]
         if isinstance(prompt, str):
             return [{"role": "user", "content": prompt}]
         self._validate_messages(prompt)
@@ -213,7 +191,7 @@ class LLM:
         check_prompt_for_images(prompt, self.client.lang)
         # Only the file reads go to a worker thread; building the parts is cheap.
         resolved = await asyncio.to_thread(resolve_images, items, self.client.lang)
-        return image_messages(self.provider, prompt, resolved)  # type: ignore[arg-type]
+        return image_messages(self.client.api_format, prompt, resolved)  # type: ignore[arg-type]
 
     def _prepare(
         self,
@@ -266,9 +244,11 @@ class LLM:
         """
         structured = interpret_schema(schema, self.client.lang)
         kw = self._prepare(messages, system, max_tokens, temperature, extra)
-        kw["extra"] = inject_schema_extra(self.provider, kw["extra"], structured)
+        kw["extra"] = inject_schema_extra(self.client.api_format, kw["extra"], structured)
         result = self.client.chat(timeout=timeout, **kw)  # type: ignore[attr-defined]
-        return parse_structured_result(result, self.provider, structured, self.client.lang)
+        return parse_structured_result(
+            result, self.provider, structured, self.client.lang, api_format=self.client.api_format
+        )
 
     def ask(
         self,
@@ -303,7 +283,7 @@ class LLM:
     ) -> List[Any]:
         """Check the arguments of `transcribe()` (no I/O); return the form fields."""
         lang = self.client.lang
-        if self.provider != "openai":
+        if not self.client.supports_audio:
             raise LLMConfigError(
                 t("unsupported_modality", lang, provider=self.provider, modality="audio"),
                 code="unsupported_modality",
@@ -446,7 +426,7 @@ class LLM:
             # Current retry settings, including changes made by set_config().
             for name in _RETRY_SETTINGS:
                 options[name] = getattr(self.client, name)
-            client = _ASYNC_PROVIDERS[self._provider_key](**options)
+            client = self._async_class(**options)
             client._api_key = self.client._api_key  # retain even an absent optional key
             # One listener list for sync and async calls on this LLM.
             client._events = self.client._events
@@ -534,9 +514,11 @@ class LLM:
         """
         structured = interpret_schema(schema, self.client.lang)
         kw = self._prepare(messages, system, max_tokens, temperature, extra)
-        kw["extra"] = inject_schema_extra(self.provider, kw["extra"], structured)
+        kw["extra"] = inject_schema_extra(self.client.api_format, kw["extra"], structured)
         result = await self._get_async_client().achat(timeout=timeout, **kw)  # type: ignore[attr-defined]
-        return parse_structured_result(result, self.provider, structured, self.client.lang)
+        return parse_structured_result(
+            result, self.provider, structured, self.client.lang, api_format=self.client.api_format
+        )
 
     async def atranscribe(
         self,
