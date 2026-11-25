@@ -34,7 +34,7 @@ from .openai import OpenAIClient
 from ._providers import register_provider
 from .openrouter import OpenRouterClient
 from .strata import StrataClient
-from .types import ChatChunk, ChatResult, SSEEvent, Usage
+from .types import ChatChunk, ChatResult, SSEEvent, ToolCall, Usage
 
 __all__ = [
     "__version__",
@@ -66,6 +66,7 @@ __all__ = [
     "ChatChunk",
     "SSEEvent",
     "Usage",
+    "ToolCall",
     "LLMError",
     "LLMConfigError",
     "APIConnectionError",

@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
+from ._tools import make_tool_call
 from ._singleflight import singleflight
 from ._events import apply_result_meta, note_request_error, note_stream_error
 from ._http import BaseClient, _StreamAccumulator, _TaggedIter, build_auth_header, error_message
 from ._model_params import adjust_body
 from .errors import APIStreamError, LLMError
-from .types import ChatChunk, ChatResult, SSEEvent, Usage, _optional_int
+from .types import ChatChunk, ChatResult, SSEEvent, ToolCall, Usage, _optional_int
 
 
 def _text_of(content: Any) -> str:
@@ -44,17 +46,60 @@ def _usage_from(u: Any) -> Optional[Usage]:
     )
 
 
+def _derive_openai(raw: Dict[str, Any]) -> Tuple[List[ToolCall], Optional[str], Optional[Dict[str, Any]]]:
+    """Read `(tool_calls, thinking, message)` from a response without changing it."""
+    choices = raw.get("choices")
+    choice = choices[0] if isinstance(choices, list) and choices else None
+    message = choice.get("message") if isinstance(choice, dict) else None
+    if not isinstance(message, dict):
+        return [], None, None
+
+    tool_calls: List[ToolCall] = []
+    elements = message.get("tool_calls")
+    for element in elements if isinstance(elements, list) else []:
+        if not isinstance(element, dict):
+            continue
+        kind = element.get("type")
+        kind = kind if isinstance(kind, str) else ""
+        inner = element.get(kind) if kind else None
+        if kind == "function":
+            fn = element.get("function")
+            source = fn if isinstance(fn, dict) else {}
+            name, arguments = source.get("name"), source.get("arguments")
+        elif isinstance(inner, dict):
+            name = inner.get("name")
+            arguments = inner["arguments"] if "arguments" in inner else inner.get("input")
+        else:
+            name = element.get("name")
+            arguments = element["arguments"] if "arguments" in element else element.get("input")
+        call = make_tool_call(element.get("id"), name, arguments, kind, element)
+        if call is not None:
+            tool_calls.append(call)
+
+    thinking: Optional[str] = None
+    for key in ("reasoning_content", "reasoning"):
+        value = message.get(key)
+        if isinstance(value, str) and value:
+            thinking = value
+            break
+    return tool_calls, thinking, copy.deepcopy(message)
+
+
 def _parse_response(raw: Dict[str, Any]) -> ChatResult:
     """Build a `ChatResult` from a `/chat/completions` response (shared by sync and async)."""
     choices = raw.get("choices") or [{}]
     choice = choices[0] or {}
     usage = _usage_from(raw.get("usage"))
+    tool_calls, thinking, message = _derive_openai(raw)
     return ChatResult(
         text=_text_of((choice.get("message") or {}).get("content")),
         model=raw.get("model"),
         stop_reason=choice.get("finish_reason"),
         usage=usage,
         raw=raw,
+        tool_calls=tool_calls,
+        thinking=thinking,
+        message=message,
     )
 
 
@@ -160,6 +205,7 @@ class OpenAICompatClient(BaseClient):
             cached = self._lookup_chat_cache(body)
             if cached is not None:
                 self._log_call(body, cached.raw, cached=True)
+                cached.tool_calls, cached.thinking, cached.message = _derive_openai(cached.raw)
                 return cached
             raw, meta = self._read_json("/chat/completions", body, timeout=timeout)
             result = apply_result_meta(_parse_response(raw), meta)

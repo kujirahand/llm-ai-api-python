@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from .errors import LLMError
 from .lang import t
@@ -33,6 +33,24 @@ class Usage:
 
 
 @dataclass
+class ToolCall:
+    """One tool call read from a response (read-only extraction; `raw` is the original element).
+
+    `id` is None when the provider sent none (it is never invented). `arguments` is the
+    parsed dict, or None when the arguments could not be parsed into an object;
+    `arguments_raw` is the JSON string as sent. `type` is the raw value
+    (`"function"`, `"custom"`, `"tool_use"`, ...).
+    """
+
+    id: Optional[str] = None
+    name: str = ""
+    arguments: Optional[Dict[str, Any]] = None
+    arguments_raw: str = ""
+    type: str = ""
+    raw: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class ChatResult:
     """Result of one chat call. `raw` is the response JSON.
 
@@ -49,6 +67,13 @@ class ChatResult:
     `parsed` holds the decoded or validated structured output when the call
     used `LLM.chat(..., schema=...)` / `LLM.achat(..., schema=...)`; it is
     None otherwise.
+
+    `tool_calls`, `thinking`, and `message` are read from `raw` (also on a cache hit,
+    where they are rebuilt, not stored). `tool_calls` lists the function/tool calls
+    (empty when none). `thinking` is the reasoning text as a string, or None.
+    `message` is a copy of the provider-format assistant message, to append to the
+    history unchanged for a round trip with the same provider; None when the
+    response has none. Streams leave these at their defaults.
     """
 
     text: str
@@ -60,6 +85,9 @@ class ChatResult:
     latency: Optional[float] = None
     retries: int = 0
     parsed: Any = None
+    tool_calls: List[ToolCall] = field(default_factory=list)
+    thinking: Optional[str] = None
+    message: Optional[Dict[str, Any]] = None
 
 
 @dataclass
