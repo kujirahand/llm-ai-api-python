@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.6.4
 
+- Add tool calls and thinking to the common interface. `chat()` / `achat()` accept `tools=`, and `ChatResult` gains `tool_calls` (each with the parsed arguments and the raw arguments string), `thinking` (the reasoning text as a plain string), and `message` (the assistant message to send back); `LLM.tool_results()` builds the follow-up messages that send tool results back, so a tool round trip needs no provider-specific code. The cache format is unchanged: on a cache hit the new fields are derived again from the stored raw response (#135).
 - Make the response cache work for providers that need no API key (for example OpenRouter without a key). Previously `cache_key(..., None)` raised, so every cache read and write on a key-less client failed and was swallowed, and nothing was cached. `cache_key()` now accepts `api_key=None`. Also, `SQLiteCache.put()` called directly without a `secret` (the only path that used to store plain text) now encrypts with a fixed default secret; the per-file random salt still goes into the key derivation. Plain rows written by earlier versions are still readable. If you downgrade to an earlier version, it cannot read the encrypted key-less rows: it drops them and the responses are fetched again (#147).
 - Pin the GitHub Actions in the CI, CodeQL, and contract-replay workflows to commit SHAs (#147).
 - Cap the number of items `models()` / `amodels()` accumulate (10,000); exceeding it raises `LLMError` with `code="models_pagination_limit"` (#147).
