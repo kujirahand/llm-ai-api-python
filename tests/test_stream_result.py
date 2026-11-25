@@ -13,6 +13,8 @@ import tempfile
 import unittest
 
 from llm_ai_api import APIStreamError, AnthropicClient, ChatResult, OpenAIClient, Usage, llm
+from llm_ai_api.openai import _OpenAIStreamResult
+from llm_ai_api.types import ChatChunk
 
 from .helpers import Recorder, sse_response
 
@@ -114,6 +116,18 @@ class SyncOpenAITest(OpenAIResultMixin, unittest.TestCase):
             stream = m.ask_stream("hi")
             list(stream)
             self.check(stream.result)
+
+    def test_over_limit_still_delivers_chunks_but_no_result(self):
+        from unittest import mock
+
+        from llm_ai_api._http import _StreamAccumulator
+
+        rec = Recorder(response(OPENAI_STREAM))
+        with mock.patch.object(_StreamAccumulator, "max_retained_bytes", 10):
+            with openai_llm(rec) as m:
+                stream = m.ask_stream("hi")
+                self.assertEqual("".join(stream), "Hello")
+                self.assertIsNone(stream.result)
 
     def test_provider_layer(self):
         rec = Recorder(response(OPENAI_STREAM))
@@ -442,6 +456,34 @@ class CacheReplayTest(unittest.TestCase):
             self.assertIsNone(replay.result.latency)
 
         asyncio.run(run())
+
+
+class AccumulatorLimitTests(unittest.TestCase):
+    def feed(self, acc, pieces):
+        for piece in pieces:
+            acc.add(ChatChunk(text=piece, raw={"choices": [{"delta": {"content": piece}}]}))
+        acc.complete()
+
+    def test_under_limit_builds_result(self):
+        acc = _OpenAIStreamResult()
+        self.feed(acc, ["Hel", "lo"])
+        result = acc.build(None, 0)
+        self.assertEqual(result.text, "Hello")
+        self.assertEqual(len(result.raw["events"]), 2)
+
+    def test_over_limit_gives_no_result(self):
+        acc = _OpenAIStreamResult()
+        acc.max_retained_bytes = 100
+        self.feed(acc, ["x" * 60, "y" * 60])
+        self.assertIsNone(acc.build(None, 0))
+        self.assertEqual(acc._texts, [])
+        self.assertEqual(acc._events, [])
+
+    def test_multibyte_text_is_counted_in_utf8_bytes(self):
+        acc = _OpenAIStreamResult()
+        acc.max_retained_bytes = 200
+        self.feed(acc, ["あ" * 40])  # 120 bytes of text plus the event JSON
+        self.assertIsNone(acc.build(None, 0))
 
 
 if __name__ == "__main__":

@@ -94,6 +94,12 @@ After a replacement, an `LLM` that already exists keeps using the definition it 
 
 The response cache key includes the fixed headers given in `headers`, in addition to the registered name, `base_url`, and the body that is sent. Changing only the fixed headers with `replace=True` does not return responses stored before the replacement.
 
+## Trust boundary (only trusted code should declare providers)
+
+Declare providers only from trusted code. Do not build a declaration from user input or from an external configuration file.
+
+`api_key_env` accepts any environment variable name. Whoever can create a declaration can therefore send any environment variable of the process (for example cloud credentials) as a credential to the destination given in `base_url`. Together with the fact that `base_url` has no scheme or host restriction, treat a declaration with the same level of trust as a secret.
+
 ## About authentication
 
 Only the shape "header name + scheme + key" is supported (Bearer, `x-api-key`, Azure's `api-key`, and so on). Keys in query parameters (easily leaked through URLs into logs and exceptions), request signing (SigV4 and the like), and OAuth token refresh are out of scope. When you need one, pass a short-lived token in `headers=`, or go through a gateway that supports it.

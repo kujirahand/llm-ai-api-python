@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Make the response cache work for providers that need no API key (for example OpenRouter without a key). Previously `cache_key(..., None)` raised, so every cache read and write on a key-less client failed and was swallowed, and nothing was cached. `cache_key()` now accepts `api_key=None`. Also, `SQLiteCache.put()` called directly without a `secret` (the only path that used to store plain text) now encrypts with a fixed default secret; the per-file random salt still goes into the key derivation. Plain rows written by earlier versions are still readable. If you downgrade to an earlier version, it cannot read the encrypted key-less rows: it drops them and the responses are fetched again (#147).
+- Pin the GitHub Actions in the CI, CodeQL, and contract-replay workflows to commit SHAs (#147).
+- Cap the number of items `models()` / `amodels()` accumulate (10,000); exceeding it raises `LLMError` with `code="models_pagination_limit"` (#147).
+- Cap what a stream's `result` retains (16 MiB of text and event JSON). Past the cap `result` stays `None`; the chunks are still delivered (#147).
+- Document in the `register_provider()` docs that declarations must come from trusted code only, since `api_key_env` can name any environment variable and its value is sent to `base_url` (#147).
+
 ## 0.6.3
 
 - Change the response cache key to HMAC-SHA256 keyed with a scrypt-derived key of the API key, so the API key is no longer hashed directly with SHA-256 (fixes CodeQL code scanning alert #1, `py/weak-sensitive-data-hashing`). The key is still a 64-character hex string and different API keys still never share entries. Existing cache entries written by earlier versions will no longer hit and are simply re-fetched; use `clear_cache()` to remove them.

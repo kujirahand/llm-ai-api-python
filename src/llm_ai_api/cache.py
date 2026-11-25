@@ -5,10 +5,14 @@ Key:   HMAC-SHA256("{provider}:{model}>>>{input}") keyed with a scrypt-derived k
        change a response. The API key itself is never part of the hashed message. Keys differ
        from the old sha256 format, so entries written by earlier versions simply miss.
 Value: the whole ChatResult as JSON, encrypted with a key derived from the API key.
+       Without an API key (providers that need none) a fixed default secret is used instead,
+       so values are never stored in plain text; the per-file random salt still makes the
+       derived key differ from file to file.
 
 Only the standard library is available, so the cipher is built from HMAC-SHA256
 (counter-mode keystream + encrypt-then-MAC) with a scrypt-derived key. It keeps cached
 responses from sitting in plain text; it is not a substitute for protecting the API key.
+With the default secret, anyone who knows it (it is public) and can read the file can decrypt.
 """
 
 from __future__ import annotations
@@ -36,6 +40,8 @@ DEFAULT_MAX_SIZE = 100 * 1024 * 1024  # bytes; above this the oldest third of th
 _NONCE = 16
 _MAC = 32
 _PLAIN, _ENCRYPTED = b"P", b"E"  # first byte of a stored value
+# Used in place of an API key when there is none. A domain-separation constant, not a secret.
+_NO_KEY_SECRET = "llm-ai-api:no-api-key"
 _chmod_warned_paths: set = set()
 
 
@@ -152,13 +158,14 @@ def cache_key(
     provider: str,
     body: Dict[str, Any],
     context: Optional[Dict[str, Any]] = None,
-    api_key: str = "",
+    api_key: Optional[str] = "",
 ) -> str:
     """Return the cache key: HMAC-SHA256 of "{provider}:{model}>>>{input}" (64 hex chars).
 
     The HMAC key is derived from the API key with scrypt, so the API key is not hashed
     directly and is not part of the message. Different API keys give different cache keys.
-    Keys differ from the earlier sha256 format; existing cache entries simply miss.
+    When `api_key` is None (a provider without a key) a fixed default secret is used, so the
+    key is still derived and no exception is raised. Keys differ from the earlier sha256 format; existing cache entries simply miss.
 
     `input` is the canonical JSON of the request body and `context`. `context` carries
     client settings that can change the response for the same body (base URL, extra
@@ -173,6 +180,8 @@ def cache_key(
         separators=(",", ":"),
     )
     raw = "%s:%s>>>%s" % (provider, model, canonical)
+    if api_key is None:
+        api_key = _NO_KEY_SECRET
     return hmac.new(_key_hmac_key(api_key), raw.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
@@ -291,7 +300,9 @@ class SQLiteCache(FailureCounter):
     def get(self, key: str, secret: Optional[str] = None) -> Optional[ChatResult]:
         """Return the stored result for `key`, or None on a miss.
 
-        `secret` (the API key) decrypts entries written with it. A corrupted or tampered
+        `secret` (the API key) decrypts entries written with it. Without `secret`, encrypted
+        entries are decrypted with the default secret (as `put()` writes them), and plain
+        entries written by older versions are still read. A corrupted or tampered
         row (bad MAC, invalid JSON, or not the shape `put` writes) is deleted and treated
         as a miss instead of raising.
         """
@@ -312,7 +323,11 @@ class SQLiteCache(FailureCounter):
                 if plain is None:
                     raise ValueError("cached response failed authentication")
             elif blob[:1] == _PLAIN:
-                plain = blob[1:]
+                plain = blob[1:]  # legacy row written before the default secret existed
+            elif blob[:1] == _ENCRYPTED:
+                plain = decrypt(*self._derive(_NO_KEY_SECRET), blob[1:], key.encode("utf-8"))
+                if plain is None:
+                    raise ValueError("cached response failed authentication")
             else:
                 raise ValueError("cached response cannot be read")
             data = json.loads(plain.decode("utf-8"))
@@ -353,7 +368,8 @@ class SQLiteCache(FailureCounter):
     ) -> None:
         """Store `result` under `key`, replacing any existing entry.
 
-        With `secret` (the API key) the value is encrypted; without it, it is stored as is.
+        The value is always encrypted: with `secret` (the API key), or with a fixed default
+        secret when none is given. Either way the key also depends on the file's random salt.
         """
         usage = None
         if result.usage is not None:
@@ -378,10 +394,9 @@ class SQLiteCache(FailureCounter):
             },
             ensure_ascii=False,
         ).encode("utf-8")
-        if secret is not None:
-            value = _ENCRYPTED + encrypt(*self._derive(secret), plain, key.encode("utf-8"))
-        else:
-            value = _PLAIN + plain
+        if secret is None:
+            secret = _NO_KEY_SECRET
+        value = _ENCRYPTED + encrypt(*self._derive(secret), plain, key.encode("utf-8"))
         with self._lock, self._connect() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO llm_cache (key, provider, model, response, created_at) "

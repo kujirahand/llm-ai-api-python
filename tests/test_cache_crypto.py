@@ -193,10 +193,50 @@ class CryptoTest(unittest.TestCase):
         SQLiteCache(self.db).put("k", "openai", ChatResult("x", None, None, None, {}))
         self.assertEqual(clear_cache(0), 1)
 
-    def test_plain_entries_without_secret_still_work(self):
+    def test_entries_without_secret_roundtrip(self):
         c = SQLiteCache(self.db)
         c.put("k", "openai", ChatResult("x", None, None, None, {}))
         self.assertEqual(c.get("k").text, "x")
+
+    def test_put_without_secret_is_encrypted(self):
+        c = SQLiteCache(self.db)
+        c.put("k", "openai", ChatResult("visible-marker-text", None, None, None, {}))
+        conn = sqlite3.connect(self.db)
+        blob = conn.execute("SELECT response FROM llm_cache WHERE key = 'k'").fetchone()[0]
+        conn.close()
+        self.assertTrue(bytes(blob).startswith(cache_mod._ENCRYPTED))
+        self.assertNotIn(b"visible-marker-text", bytes(blob))
+        self.assertEqual(c.get("k").text, "visible-marker-text")
+
+    def test_tampered_entry_without_secret_is_a_miss(self):
+        c = SQLiteCache(self.db)
+        c.put("k", "openai", ChatResult("x", None, None, None, {}))
+        conn = sqlite3.connect(self.db)
+        blob = bytearray(conn.execute("SELECT response FROM llm_cache").fetchone()[0])
+        blob[30] ^= 1
+        conn.execute("UPDATE llm_cache SET response = ?", (bytes(blob),))
+        conn.commit()
+        conn.close()
+        self.assertIsNone(c.get("k"))
+
+    def test_cache_key_without_api_key(self):
+        body = {"model": "m", "messages": MSGS}
+        key = cache_key("openrouter", body, None, None)
+        self.assertRegex(key, r"^[0-9a-f]{64}$")
+        self.assertNotEqual(key, cache_key("openrouter", body, None, "real-key"))
+        self.assertNotEqual(key, cache_key("openrouter", body, None, ""))
+
+    def test_legacy_plain_row_is_still_readable(self):
+        c = SQLiteCache(self.db)
+        c.put("seed", "openai", ChatResult("x", None, None, None, {}))
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            "INSERT INTO llm_cache (key, provider, model, response, created_at) VALUES (?, ?, ?, ?, ?)",
+            ("old", "openai", "m", b'P{"text":"legacy","raw":{}}', 1.0),
+        )
+        conn.commit()
+        conn.close()
+        self.assertEqual(c.get("old").text, "legacy")
 
 
 if __name__ == "__main__":

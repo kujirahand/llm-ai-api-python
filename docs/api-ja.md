@@ -57,7 +57,7 @@ luna = llm("openai:gpt-6-luna")
 
 ### モデル一覧
 
-`models(*, raw=False, timeout=None)` と `await amodels(*, raw=False, timeout=None)` は、プロバイダーの順序でモデル ID の文字列を返します。`raw=True` では全ページのモデル辞書を無加工で返します。`timeout` は秒単位で、`None` ならクライアントの設定を使います。この呼び出しはキャッシュや入出力ログの対象外です。
+`models(*, raw=False, timeout=None)` と `await amodels(*, raw=False, timeout=None)` は、プロバイダーの順序でモデル ID の文字列を返します。`raw=True` では全ページのモデル辞書を無加工で返します。`timeout` は秒単位で、`None` ならクライアントの設定を使います。この呼び出しはキャッシュや入出力ログの対象外です。ページ数の上限または件数の上限を超えると `LLMError`（`code="models_pagination_limit"`）になります。
 
 OpenAI 互換プロバイダー（OpenRouter、Grok、Muse、LM Studio、Ollama、Strata を含む）は設定済みのベース URL の `/models`、Anthropic は `/v1/models` を使います。Google はベース URL が `/openai` で終わる場合に隣接するネイティブの `/models` を使い、それ以外は OpenAI 互換の `/models` を使います。OpenRouter の生成と一覧取得に API キーは不要です。設定されたキーは送信され、キーなしのチャットはリクエスト時にプロバイダーの HTTP エラーになります。
 

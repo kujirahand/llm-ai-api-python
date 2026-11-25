@@ -344,9 +344,19 @@ class _StreamAccumulator:
     Subclasses (one per API format) implement `_observe()` and `_usage()`.
     `build()` returns None until `complete()` is called at the terminal event,
     so a stream that failed or was closed early never produces a result.
+
+    Retained text and event JSON are capped at `max_retained_bytes` (UTF-8 bytes, events
+    measured as `json.dumps(..., ensure_ascii=False)` output with its default separators).
+    Past the cap nothing more is kept and `build()` returns
+    None, since a partial result would pass for the whole response. Delivery of the
+    chunks themselves is not affected.
     """
 
+    max_retained_bytes = 16 * 1024 * 1024
+
     def __init__(self) -> None:
+        self._retained = 0
+        self._overflow = False
         self._texts: List[str] = []
         self._events: List[Dict[str, Any]] = []
         self.model: Optional[str] = None
@@ -357,13 +367,36 @@ class _StreamAccumulator:
 
     def add(self, chunk: ChatChunk) -> None:
         """Take in one chunk (text and raw event JSON)."""
-        self._texts.append(chunk.text or "")
+        if self._overflow:
+            return
+        text = chunk.text or ""
+        if not self._reserve(len(text.encode("utf-8"))):
+            return
+        self._texts.append(text)
         self.add_event(chunk.raw)
 
     def add_event(self, raw: Dict[str, Any]) -> None:
         """Record one stream event that produced no chunk (for example a ping)."""
+        if self._overflow:
+            return
+        try:
+            size = len(json.dumps(raw, ensure_ascii=False).encode("utf-8"))
+        except (TypeError, ValueError):
+            size = 0
+        if not self._reserve(size):
+            return
         self._events.append(raw)
         self._observe(raw)
+
+    def _reserve(self, size: int) -> bool:
+        """Count `size` retained bytes; past the cap, drop everything and stop collecting."""
+        self._retained += size
+        if self._retained > self.max_retained_bytes:
+            self._overflow = True
+            self._texts = []
+            self._events = []
+            return False
+        return True
 
     def complete(self, started: Optional[float] = None) -> None:
         """Record the terminal event. `started` (monotonic) gives the latency, if known."""
@@ -375,7 +408,7 @@ class _StreamAccumulator:
 
     def build(self, request_id: Optional[str], retries: int) -> Optional[ChatResult]:
         """Return the `ChatResult` once complete (the same object every time), else None."""
-        if not self._completed:
+        if not self._completed or self._overflow:
             return None
         if self._built is None:
             self._built = ChatResult(
