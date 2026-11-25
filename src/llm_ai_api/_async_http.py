@@ -1001,15 +1001,24 @@ class _AsyncChunks:
                 raise
             if terminal:
                 self._done = True
+                await _close_quietly(self._events)
+                # Complete only after the event stream is closed, so a
+                # failure while closing cannot leave a result behind.
                 if self._acc is not None:
                     self._acc.complete(getattr(self._events, "started", None))
-                await _close_quietly(self._events)
                 raise StopAsyncIteration
             if chunk is not None:
                 chunk.request_id = self.request_id
                 if self._acc is not None:
                     self._acc.add(chunk)
                 return chunk
+            if self._acc is not None:
+                # The parser skipped this event (for example a ping); it
+                # still belongs in the result's raw["events"].
+                try:
+                    self._acc.add_event(ev.json() if ev.data else {})
+                except Exception:
+                    pass
 
     async def aclose(self) -> None:
         self._done = True

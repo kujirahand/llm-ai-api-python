@@ -198,6 +198,7 @@ class OpenAICompatClient(BaseClient):
     ) -> Iterator[ChatChunk]:
         headline = self._t("stream_error", provider=self.provider)
         request_id = getattr(events, "request_id", None)
+        terminal_seen = False
         try:
             for ev in events:
                 try:
@@ -209,8 +210,7 @@ class OpenAICompatClient(BaseClient):
                     note_request_error(self, events, e.code)
                     raise
                 if terminal:
-                    if acc is not None:
-                        acc.complete(getattr(events, "started", None))
+                    terminal_seen = True
                     break
                 if chunk is not None:
                     chunk.request_id = request_id
@@ -228,6 +228,10 @@ class OpenAICompatClient(BaseClient):
             close = getattr(events, "close", None)
             if close is not None:
                 close()
+            # Complete only after the event stream is closed, so a failure
+            # while closing cannot leave a result behind.
+            if terminal_seen and acc is not None:
+                acc.complete(getattr(events, "started", None))
 
 
 class OpenAIClient(OpenAICompatClient):

@@ -61,8 +61,9 @@ ANTHROPIC_EVENTS = [
     {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 9}},
 ]
 ANTHROPIC_STREAM = anthropic_sse(*ANTHROPIC_EVENTS, {"type": "message_stop"})
-# `ping` is skipped by the parser, so it is not part of `raw["events"]`.
-ANTHROPIC_RECORDED = [e for e in ANTHROPIC_EVENTS if e["type"] != "ping"]
+# Every non-terminal event is recorded in `raw["events"]`, including `ping`
+# (which the parser skips as a chunk). Only `message_stop` is left out.
+ANTHROPIC_RECORDED = ANTHROPIC_EVENTS
 
 HEADERS = {"x-request-id": "req-1", "content-type": "text/event-stream"}
 
@@ -182,6 +183,28 @@ class SyncOpenAITest(OpenAIResultMixin, unittest.TestCase):
             stream = m.ask_stream("hi")
             list(stream)
             self.assertIsNone(stream.result.stop_reason)
+
+    def test_the_last_usage_wins(self):
+        events = [
+            {"model": "gpt-x-1", "choices": [{"delta": {"content": "Hi"}, "finish_reason": None}],
+             "usage": {"prompt_tokens": 1, "completion_tokens": 1}},
+            {"model": "gpt-x-1", "choices": [{"delta": {}, "finish_reason": "stop"}],
+             "usage": {"prompt_tokens": 7, "completion_tokens": 3}},
+        ]
+        rec = Recorder(response(sse(*events, "[DONE]")))
+        with openai_llm(rec) as m:
+            stream = m.ask_stream("hi")
+            list(stream)
+            self.assertEqual(stream.result.usage, Usage(7, 3))
+
+    def test_terminal_only_stream_has_an_empty_result(self):
+        rec = Recorder(response(sse("[DONE]")))
+        with openai_llm(rec) as m:
+            stream = m.ask_stream("hi")
+            self.assertEqual(list(stream), [])
+            self.assertIsNotNone(stream.result)
+            self.assertEqual(stream.result.text, "")
+            self.assertIsNone(stream.result.usage)
 
 
 class SyncAnthropicTest(unittest.TestCase):
@@ -362,6 +385,17 @@ class AsyncAnthropicTest(unittest.TestCase):
                 with self.assertRaises(APIStreamError):
                     async for _ in stream:
                         pass
+                self.assertIsNone(stream.result)
+
+        asyncio.run(run())
+
+    def test_none_after_aclose(self):
+        async def run():
+            rec = Recorder(response(ANTHROPIC_STREAM))
+            async with anthropic_llm(rec) as m:
+                stream = m.aask_stream("hi")
+                self.assertEqual(await stream.__anext__(), "Hel")
+                await stream.aclose()
                 self.assertIsNone(stream.result)
 
         asyncio.run(run())

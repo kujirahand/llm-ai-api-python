@@ -358,8 +358,12 @@ class _StreamAccumulator:
     def add(self, chunk: ChatChunk) -> None:
         """Take in one chunk (text and raw event JSON)."""
         self._texts.append(chunk.text or "")
-        self._events.append(chunk.raw)
-        self._observe(chunk.raw)
+        self.add_event(chunk.raw)
+
+    def add_event(self, raw: Dict[str, Any]) -> None:
+        """Record one stream event that produced no chunk (for example a ping)."""
+        self._events.append(raw)
+        self._observe(raw)
 
     def complete(self, started: Optional[float] = None) -> None:
         """Record the terminal event. `started` (monotonic) gives the latency, if known."""

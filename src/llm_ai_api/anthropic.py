@@ -262,6 +262,7 @@ class AnthropicClient(BaseClient):
     ) -> Iterator[ChatChunk]:
         headline = self._t("stream_error", provider=self.provider)
         request_id = getattr(events, "request_id", None)
+        terminal_seen = False
         try:
             for ev in events:
                 try:
@@ -273,14 +274,17 @@ class AnthropicClient(BaseClient):
                     note_request_error(self, events, e.code)
                     raise
                 if terminal:
-                    if acc is not None:
-                        acc.complete(getattr(events, "started", None))
+                    terminal_seen = True
                     break
                 if chunk is not None:
                     chunk.request_id = request_id
                     if acc is not None:
                         acc.add(chunk)
                     yield chunk
+                elif acc is not None:
+                    # The parser skips this event (ping); it still belongs in
+                    # the result's raw["events"].
+                    acc.add_event(ev.json() if ev.data else {})
             else:
                 error = APIStreamError(
                     self._t("stream_incomplete", provider=self.provider),
@@ -292,3 +296,7 @@ class AnthropicClient(BaseClient):
             close = getattr(events, "close", None)
             if close is not None:
                 close()
+            # Complete only after the event stream is closed, so a failure
+            # while closing cannot leave a result behind.
+            if terminal_seen and acc is not None:
+                acc.complete(getattr(events, "started", None))

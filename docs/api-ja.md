@@ -52,7 +52,7 @@ luna = llm("openai:gpt-6-luna")
 - `transcribe(file, *, extra=None, timeout=None) -> str` / `atranscribe()` は音声（パスまたは `bytes`）を文字起こしして文字列を返します（OpenAI のみ。キャッシュ・ログの対象外）。詳細は [マルチモーダル](multimodal-ja.md) を参照してください。生レイヤーの `request()` は `files=` / `form_data=` で multipart を送れます。
 - `ask()` / `ask_stream()` / `aask()` / `aask_stream()` には `images=`（ファイルのパス、`bytes`、http(s) URL のリスト）も渡せます。詳細は [マルチモーダル](multimodal-ja.md) を参照してください。
 - 同期のストリームは通常のイテレータ、非同期のストリームは非同期イテレータ（`async for` で使う。`await` は不要）です。ストリームのイテレータには、レスポンスヘッダー受信後に `request_id` と `retries` が設定されます。最後まで読み切るか、同期は `close()`、非同期は `aclose()` を呼ぶと接続が解放されます。
-- ストリームを最後まで読み終えると、`stream.result` に応答全体の `ChatResult` が入ります: `text`（差分をすべて連結）、`model`、`stop_reason`、`usage`（プロバイダーが送らなければ `None`）、`raw`（`{"events": [...]}`。全ストリームイベントの JSON）、`request_id`、`retries`、`latency`（終端までの秒。キャッシュからの再生では `None`）。終端に届く前、エラー後、途中で `close()` / `aclose()` した後は `None` です。イテレーターは止まるまで読んでください（最後のテキスト差分で読むのをやめると、ストリームの終端には届きません）。プロバイダー層の `stream_chat()` のイテレーターにも同じ `result` があります。
+- ストリームを最後まで読み終えると、`stream.result` に応答全体の `ChatResult` が入ります: `text`（差分をすべて連結）、`model`、`stop_reason`、`usage`（プロバイダーが送らなければ `None`）、`raw`（`{"events": [...]}`。全ストリームイベントの JSON）、`request_id`、`retries`、`latency`（終端までの秒。キャッシュからの再生では `None`）。終端に届く前、エラー後、途中で `close()` / `aclose()` した後は `None` です。イテレーターは止まるまで読んでください（最後のテキスト差分で読むのをやめると、ストリームの終端には届きません）。プロバイダー層の `stream_chat()` のイテレーターにも同じ `result` があります。結果を作るため全イベントを終端までメモリに保持するので、非常に長いストリームでは差分だけを読む場合よりメモリを使います。
 - 旧名 `stream()` / `astream()` は非推奨のエイリアスとして残っています（`ask_stream()` / `aask_stream()` と同じ動作）。新規のコードでは新しい名前を使ってください。
 
 ### モデル一覧
