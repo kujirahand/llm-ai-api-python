@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import fields
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
+from ._tools import make_tool_call
 from ._singleflight import singleflight
 from ._events import apply_result_meta, note_request_error, note_stream_error
 from ._http import BaseClient, _StreamAccumulator, _TaggedIter, build_auth_header
 from ._model_params import adjust_body
 from .errors import APIStreamError, LLMError
-from .types import ChatChunk, ChatResult, SSEEvent, Usage, _optional_int
+from .types import ChatChunk, ChatResult, SSEEvent, ToolCall, Usage, _optional_int
 
 DEFAULT_MAX_TOKENS = 16000
 
@@ -55,6 +57,29 @@ def _usage_from(u: Any) -> Optional[Usage]:
     )
 
 
+def _derive_anthropic(
+    raw: Dict[str, Any],
+) -> Tuple[List[ToolCall], Optional[str], Optional[Dict[str, Any]]]:
+    """Read `(tool_calls, thinking, message)` from a response without changing it."""
+    content = raw.get("content")
+    if not isinstance(content, list):
+        return [], None, None
+    tool_calls: List[ToolCall] = []
+    thoughts: List[str] = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        kind = block.get("type")
+        if kind == "tool_use":
+            call = make_tool_call(block.get("id"), block.get("name"), block.get("input"), "tool_use", block)
+            if call is not None:
+                tool_calls.append(call)
+        elif kind == "thinking" and isinstance(block.get("thinking"), str) and block["thinking"]:
+            thoughts.append(block["thinking"])
+    thinking = "\n\n".join(thoughts) if thoughts else None
+    return tool_calls, thinking, {"role": "assistant", "content": copy.deepcopy(content)}
+
+
 def _parse_response(raw: Dict[str, Any]) -> ChatResult:
     """Build a `ChatResult` from a Messages API response (shared by sync and async)."""
     text = "".join(
@@ -62,12 +87,16 @@ def _parse_response(raw: Dict[str, Any]) -> ChatResult:
         for b in raw.get("content") or []
         if isinstance(b, dict) and b.get("type") == "text"
     )
+    tool_calls, thinking, message = _derive_anthropic(raw)
     return ChatResult(
         text=text,
         model=raw.get("model"),
         stop_reason=raw.get("stop_reason"),
         usage=_usage_from(raw.get("usage")),
         raw=raw,
+        tool_calls=tool_calls,
+        thinking=thinking,
+        message=message,
     )
 
 
@@ -224,6 +253,7 @@ class AnthropicClient(BaseClient):
             cached = self._lookup_chat_cache(body)
             if cached is not None:
                 self._log_call(body, cached.raw, cached=True)
+                cached.tool_calls, cached.thinking, cached.message = _derive_anthropic(cached.raw)
                 return cached
             raw, meta = self._read_json("/v1/messages", body, timeout=timeout)
             result = apply_result_meta(_parse_response(raw), meta)

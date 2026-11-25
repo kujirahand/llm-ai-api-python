@@ -32,6 +32,7 @@ MESSAGES = {
     "invalid_schema": "schema= には JSON Schema の dict または pydantic v2 互換のモデルを指定してください。",
     "invalid_schema_cyclic": "スキーマに循環参照があります。",
     "invalid_schema_too_deep": "スキーマの入れ子が深さの上限（{limit}）を超えています。",
+    "invalid_tools": "tools= または tool_results() の指定が正しくありません。",
     "invalid_event": "未知のイベントです: {event!r}（使えるイベント: {known}）",
     "invalid_listener": "イベントリスナーは呼び出し可能である必要があります。",
     "unknown_provider": "未知のプロバイダーです: {provider!r}（対応: {supported}）",

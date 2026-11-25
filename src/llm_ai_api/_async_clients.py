@@ -14,10 +14,12 @@ from ._http import build_auth_header
 from .anthropic import AnthropicClient
 from .anthropic import _chunk_from_event as _anthropic_chunk
 from .anthropic import _parse_response as _anthropic_parse
+from .anthropic import _derive_anthropic
 from .anthropic import _AnthropicStreamResult
 from .openai import OpenAICompatClient
 from .openai import _chunk_from_event as _openai_chunk
 from .openai import _parse_response as _openai_parse
+from .openai import _derive_openai
 from .openai import _OpenAIStreamResult
 from ._events import apply_result_meta
 from .types import ChatResult
@@ -65,6 +67,7 @@ class _AsyncOpenAICompatClient(_AsyncBaseClient):
             cached = await self._alookup_chat_cache(body)
             if cached is not None:
                 await self._alog_call(body, cached.raw, cached=True)
+                cached.tool_calls, cached.thinking, cached.message = _derive_openai(cached.raw)
                 return cached
             raw, meta = await self._read_json("/chat/completions", body, timeout=timeout)
             result = apply_result_meta(_openai_parse(raw), meta)
@@ -160,6 +163,7 @@ class _AsyncAnthropicClient(_AsyncBaseClient):
             cached = await self._alookup_chat_cache(body)
             if cached is not None:
                 await self._alog_call(body, cached.raw, cached=True)
+                cached.tool_calls, cached.thinking, cached.message = _derive_anthropic(cached.raw)
                 return cached
             raw, meta = await self._read_json("/v1/messages", body, timeout=timeout)
             result = apply_result_meta(_anthropic_parse(raw), meta)

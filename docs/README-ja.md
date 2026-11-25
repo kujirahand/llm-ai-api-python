@@ -19,6 +19,7 @@ English: [README.md](README.md)
 
 | ページ | 内容 |
 |---|---|
+| [ツール呼び出しと thinking](tools-ja.md) / [Tool calls and thinking](tools.md) | `chat()` / `achat()` の `tools=`、`ChatResult.tool_calls` / `thinking` / `message`、`tool_results()`、同一プロバイダー内の往復。 |
 | [構造化出力](structured-ja.md) / [Structured output](structured.md) | `chat()` / `achat()` の `schema=`。JSON Schema とモデルクラスの指定、schema の正規化、プロバイダーごとのリクエストの形、応答の検証とエラー。 |
 | [画像入力（`images=`）](multimodal-ja.md) / [Image input](multimodal.md) | `ask` 系の `images=`（パス、bytes、URL）、プロバイダーに送られる形、`transcribe()` / `atranscribe()` による音声の文字起こし（OpenAI のみ）、キャッシュとログとの関係。 |
 | [プロバイダーを追加する](providers-ja.md) / [Adding a provider](providers.md) | `register_provider()`。OpenAI 互換・Anthropic 互換の API を宣言だけで足す方法（`base_url`、`api_key_env`、`auth_header` / `auth_scheme`、`headers`、`aliases`、`replace` など）、組み込みとの違い（拒否パラメータの表は適用されない、`transcribe()` は使えない）、名前の衝突とエラー。 |

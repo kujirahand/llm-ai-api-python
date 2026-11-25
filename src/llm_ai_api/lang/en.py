@@ -32,6 +32,7 @@ MESSAGES = {
     "invalid_schema": "schema= must be a JSON Schema dict or a pydantic-v2-compatible model.",
     "invalid_schema_cyclic": "The schema contains a circular reference.",
     "invalid_schema_too_deep": "The schema exceeds the maximum nesting depth ({limit}).",
+    "invalid_tools": "Invalid tools= or tool_results() argument.",
     "invalid_event": "Unknown event {event!r}. Known events: {known}.",
     "invalid_listener": "An event listener must be callable.",
     "unknown_provider": "Unknown provider: {provider!r} (supported: {supported})",

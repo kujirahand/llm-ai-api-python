@@ -31,6 +31,7 @@ from ._media import (
 )
 from ._providers import ASYNC_PROVIDERS, PROVIDER_PAIRS, PROVIDERS, lookup, provider_names
 from ._structured import inject_schema_extra, interpret_schema, parse_structured_result
+from ._tools import build_tool_results, inject_tools_extra, interpret_tools
 from .errors import LLMConfigError, LLMError
 from .lang import t
 from .types import ChatResult
@@ -230,6 +231,7 @@ class LLM:
         temperature: Union[Optional[float], _Unset] = UNSET,
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
         schema: Any = None,
+        tools: Any = None,
         timeout: Optional[float] = None,
     ) -> ChatResult:
         """Send messages and return a `ChatResult`, including stop reason and raw data.
@@ -240,15 +242,32 @@ class LLM:
 
         `schema` (a JSON Schema dict or a pydantic-v2-compatible model class)
         requests structured output; the decoded, validated value is stored in
-        `ChatResult.parsed` (see docs/structured.md).
+        `ChatResult.parsed` (see docs/structured.md). When the response contains
+        tool calls, it is returned as is without validation (`parsed` stays None).
+
+        `tools` is a list of `{"name", "description", "parameters"}` dicts, mapped to
+        the provider's format (see docs/tools.md). Calls come back in `ChatResult.tool_calls`.
         """
         structured = interpret_schema(schema, self.client.lang)
+        normalized = interpret_tools(tools, self.client.lang)
         kw = self._prepare(messages, system, max_tokens, temperature, extra)
         kw["extra"] = inject_schema_extra(self.client.api_format, kw["extra"], structured)
+        kw["extra"] = inject_tools_extra(self.client.api_format, kw["extra"], normalized)
         result = self.client.chat(timeout=timeout, **kw)  # type: ignore[attr-defined]
+        if result.tool_calls:
+            return result
         return parse_structured_result(
             result, self.provider, structured, self.client.lang, api_format=self.client.api_format
         )
+
+    def tool_results(self, outputs: Any) -> List[Dict[str, Any]]:
+        """Build tool-result messages in this provider's format.
+
+        `outputs` is a sequence of `(call_or_id, output)` or `(call_or_id, output, is_error)`,
+        where `call_or_id` is a `ToolCall`, an id string, or None. A non-string `output`
+        is JSON-encoded. Append the returned messages to the history after `result.message`.
+        """
+        return build_tool_results(self.client.api_format, outputs, self.client.lang)
 
     def ask(
         self,
@@ -501,6 +520,7 @@ class LLM:
         temperature: Union[Optional[float], _Unset] = UNSET,
         extra: Union[Optional[Dict[str, Any]], _Unset] = UNSET,
         schema: Any = None,
+        tools: Any = None,
         timeout: Optional[float] = None,
     ) -> ChatResult:
         """Async `chat()`: send messages and return a `ChatResult`.
@@ -510,12 +530,16 @@ class LLM:
         extend it. Use `asyncio.wait_for()` for a hard deadline.
 
         `schema` works as in `chat()`: the validated value lands in `ChatResult.parsed`
-        (docs/structured.md).
+        (docs/structured.md). `tools` works as in `chat()` (docs/tools.md).
         """
         structured = interpret_schema(schema, self.client.lang)
+        normalized = interpret_tools(tools, self.client.lang)
         kw = self._prepare(messages, system, max_tokens, temperature, extra)
         kw["extra"] = inject_schema_extra(self.client.api_format, kw["extra"], structured)
+        kw["extra"] = inject_tools_extra(self.client.api_format, kw["extra"], normalized)
         result = await self._get_async_client().achat(timeout=timeout, **kw)  # type: ignore[attr-defined]
+        if result.tool_calls:
+            return result
         return parse_structured_result(
             result, self.provider, structured, self.client.lang, api_format=self.client.api_format
         )

@@ -24,7 +24,7 @@ print(luna.ask(question))  # ポチ
 1. **依存は `httpx` のみ**: ランタイム依存として許可するのは `httpx` だけ。それ以外は標準ライブラリ（`json`, `os`, `time`, `dataclasses` など）で実装する。
    - `openai`, `anthropic` などの公式 SDK パッケージや、`requests`, `pydantic` などのサードパーティパッケージは一切使わない（テスト用も含めて導入しない）。
    - `httpx` の例外・型は公開 API に漏らさない（自前の例外に包んで送出する）。将来 HTTP ライブラリを差し替えられるようにするため。
-2. **パススルー優先**: リクエストボディは利用者が渡した dict をそのまま送る。レスポンスは生の dict を必ず保持して返す。未知のフィールドを削ったり検証したりしない。例外は、チャットのボディから落とす拒否パラメータだけ（原則 3 と 5.5。生レイヤーは加工しない）。
+2. **パススルー優先**: リクエストボディは利用者が渡した dict をそのまま送る。レスポンスは生の dict を必ず保持して返す。未知のフィールドを削ったり検証したりしない。例外は、チャットのボディから落とす拒否パラメータだけ（原則 3 と 5.5。生レイヤーは加工しない）。応答からの読み取り専用の抽出（`tool_calls` / `thinking`）と raw の写し（`message`）は加工にあたらない。LLM 層が新しく作る dict（`tools=` の写像、`tool_results()`）は `images=` / `schema=` と同じ扱い。
 3. **指定されていないパラメータは送らない**: `temperature`, `top_p`, `max_tokens` などは利用者が明示した場合のみ送信する。
    - 理由: 新しいモデルや API バージョンでは、デフォルト値であっても送るだけで 400 になるパラメータがある（例: Claude の API バージョン `2026-10-21` では `temperature` / `top_p` / `top_k` が全モデルで拒否される。一部の OpenAI モデルも `temperature` などを拒否する）。
    - 例外（足すもの）: API 仕様上必須のもの（Claude の `max_tokens`）のみ、デフォルト値を補う。拒否されるフィールドへ固定値を書き込むことはしない。
@@ -53,6 +53,7 @@ print(luna.ask(question))  # ポチ
 - 共通インターフェイス `llm()` によるテキストの一問一答・ストリーミング
 - 共通インターフェイス（`llm()` / `LLM`）の非同期版 `aask()` / `achat()` / `aask_stream()` / `achat_stream()`（内部実装のみで、プロバイダークライアントと生レイヤーの非同期版は公開しない。5.2 を参照）
 - テキストチャット（非ストリーミング / ストリーミング）
+- ツール呼び出しの抽出（`ChatResult.tool_calls` / `thinking` / `message`）と、同一プロバイダー内の往復（`chat(tools=)` / `tool_results()`。5.2 を参照）
 - 任意パス・任意ボディを送る生リクエスト（上記以外のエンドポイントも呼べる）
 - 任意の API 応答キャッシュ（SQLite。既定はオフ。5.7 を参照）
 - 任意の入出力ログ（JSON Lines。既定はオフ。5.8 を参照）
@@ -64,6 +65,7 @@ print(luna.ask(question))  # ポチ
 - OpenAI Responses API 専用の便利レイヤー（生レイヤー経由では呼べる）
 - Embeddings / 画像生成 / 音声 / ファイルアップロード / Batch の便利レイヤー
 - ツール呼び出しループの自動化、会話履歴管理
+- プロバイダー間の履歴変換、thinking の出力指定の共通化（`extra` に各社形式を書く）、ストリーミングでのツール呼び出し・thinking の抽出
 - トークン数の計算
 
 ## 4. ディレクトリ構成
@@ -91,6 +93,7 @@ llm-ai-api-python/
 │       ├── _connection.py   # 接続設定（内部）: set_connection() / get_connection()、解決と httpx 引数の生成
 │       ├── _model_params.py # モデルが拒否するパラメータを落とす表（内部。チャットのボディだけ）
 │       ├── _structured.py   # 構造化出力 schema= の解釈・正規化・検証（内部。LLM 層だけが使う）
+│       ├── _tools.py        # tools= の検証・写像、tool_results()、tool_calls の引数パース（内部。types / errors / lang だけに依存）
 │       ├── _media.py        # ask 系 images= の検査・読み込み・プロバイダー形式への組み立て（内部。LLM 層だけが使う）
 │       ├── openai.py        # OpenAIClient
 │       ├── openrouter.py    # OpenRouterClient（OpenAI 互換部分を共有）
@@ -135,6 +138,7 @@ llm-ai-api-python/
 │   ├── test_insufficient_credits.py  # InsufficientCreditsError の判定・ヒント・非リトライ（#120）
 │   ├── test_events.py        # イベントリスナーと request_id / latency / retries（#30）
 │   ├── test_structured.py    # schema= の構造化出力（#60）
+│   ├── test_tools.py         # tool_calls / thinking / message の抽出、tools=、tool_results()（#135）
 │   ├── test_multimodal.py    # ask 系の images=（#58）
 │   ├── test_transcribe.py    # transcribe() / atranscribe() と生レイヤーの multipart（#58）
 │   ├── test_hardening.py     # キャッシュのファイル権限・WAL・サイズ上限・一括 XOR（#33）
@@ -149,6 +153,8 @@ llm-ai-api-python/
 │   ├── api-ja.md        # 同（日本語）
 │   ├── api-keys.md      # プロバイダーごとの API キーの取得方法（英語）
 │   ├── api-keys-ja.md   # 同（日本語）
+│   ├── tools.md         # ツール呼び出しと thinking（tools=）（英語）
+│   ├── tools-ja.md      # 同（日本語）
 │   ├── structured.md    # 構造化出力（schema=）（英語）
 │   ├── structured-ja.md # 同（日本語）
 │   ├── multimodal.md    # 画像入力 images=（英語）
@@ -249,6 +255,7 @@ async with llm("openai:gpt-6-luna") as m:
 - `aask_stream()` / `achat_stream()` は最初の反復で通信を始めるので、接続エラーや HTTP エラーも最初の反復で出る（同期版 `ask_stream()` / `chat_stream()` は呼び出し時）。途中でやめるときは `await stream.aclose()` を呼ぶ。キャンセルされたストリームはレスポンスを閉じ、キャッシュ・ログに残さない。閉じずに捨てられた `_AsyncEventStream` は、最後の手段として `__del__` から生成時のイベントループに `resp.aclose()` を予約する（ループがなければ `ResourceWarning`）。この回収経路は `stream_end` を出さない（await できないため）。`request_id` はヘッダー受信後にイテレータへ入る（5.9）。
 - イベントループをまたいで使わない。`asyncio.run()` ごとに新しい `llm()` を作る。
 - 構造化出力（#60）: `chat()` / `achat()` はキーワード専用の `schema=None` を受け取る。dict は JSON Schema として無加工で送信し、`model_json_schema()` と `model_validate_json()` を持つモデルクラスは strict 用に正規化（object の `additionalProperties=False`、全プロパティ required 化、任意項目の nullable 化、プロパティの `default` 除去）して送信し、応答を検証する。成功時は `ChatResult.parsed` に値を入れる。プロバイダー差分（OpenAI 系は `response_format`、Anthropic は `output_config.format`）は LLM 層（`_structured.py`）で `extra` に注入し、利用者の `extra` が最後に勝つ。拒否・未完了・JSON/検証失敗は `StructuredOutputError`（コードは `output_refused` / `output_incomplete` / `invalid_structured_output`）、不正な schema 引数や循環または過度に深いモデルスキーマは `LLMConfigError(code="invalid_schema")`。循環と深さは正規化対象外のキーワードを含むスキーマ全体で検査し、メッセージで区別する。`ask` 系・ストリーミング系は対応しない。利用者向けの説明は docs/structured.md / structured-ja.md。
+- ツール呼び出し（#135）: `chat()` / `achat()` はキーワード専用の `tools=None` を受け取る（`ask` 系にはない）。要素は `name`（必須）/ `description` / `parameters` だけの dict で、`_tools.py` の `interpret_tools()` が検証・正規化し（不正は `LLMConfigError(code="invalid_tools")`）、`inject_tools_extra()` がプロバイダー形式（OpenAI 系は `{"type": "function", "function": {...}}`、Anthropic は `{"name", "description", "input_schema"}`）に写して `extra` に入れる。利用者の `extra["tools"]` が勝つ。空リストは送らない。`LLM.tool_results(outputs)` は `(call_or_id, output[, is_error])` の列から、Anthropic は 1 つの user メッセージの `tool_result` ブロック、OpenAI 系は `role: "tool"` のメッセージ列を作る（`output` が文字列以外なら JSON 化、id が None なら id を書かない、`is_error` は Anthropic だけで True のときのみで bool 以外は `invalid_tools`、空の列は `invalid_tools`）。`schema=` と併用したとき、結果の `tool_calls` が空でなければ構造化出力の検証を行わず返す（`parsed` は None）。抽出は `openai.py` の `_derive_openai()` と `anthropic.py` の `_derive_anthropic()`（読み取り専用）。ストリーミングは対象外で、`stream.result` の新フィールドは既定値のまま。利用者向けの説明は docs/tools.md / tools-ja.md。
 - ローカルプロバイダー（#73 / #74 / #75）: `lmstudio` / `ollama` / `strata` は OpenAI 互換のローカルサーバー向けで、`OpenAICompatClient` の薄いサブクラスとして実装する（各社のネイティブ API は対象外）。API キーは任意: `BaseClient` / `_AsyncBaseClient` のクラス属性 `api_key_default`（既定 None）を、この3プロバイダーだけが設定し、キー解決は「明示引数 → 環境変数 → `api_key_default` → `missing_api_key` エラー」の順。接続先は `LMSTUDIO_BASE_URL` / `OLLAMA_BASE_URL` / `STRATA_BASE_URL` で変更できる。`max_tokens_field` 等は上書きしない（`max_tokens` のまま）。Strata の既定 URL は Strata 本体が共有オフで待ち受けるポートと同じ `http://127.0.0.1:47831/v1`（同じマシンからなら無設定でつながる）。LAN 越し（共有オンでポート `47832`）は `STRATA_BASE_URL` の指定が必須で、既定値ではつながらない。LM Studio は「Require Authentication」（0.4.0 以降。LM Studio 側は既定でオフ）がオンの構成だと API トークンが必要で、その状態で既定の仮キー `lm-studio` を送ると 401 になる。Ollama のローカルサーバーはキーを一切チェックしない（認証をオンにする機能が無い）。既定の接続は固定ポートの平文 HTTP で、サーバーの真正性は確認しない（同じポートで別プロセスが待ち受けるとプロンプトを受け取れる）。共有マシンでの注意と、機密情報を扱う場合の対策（単一ユーザーのマシンで使う、TLS 終端プロキシ経由で HTTPS 接続する。トークンや認証付きプロキシは接続先の真正性を確認しない）は docs に書く（#88）。利用者向けの説明は docs/local_llm-lmstudio.md / -ja.md、docs/local_llm-ollama.md / -ja.md、docs/local_llm-strata.md / -ja.md。
 - 画像入力（#58）: `ask()` / `ask_stream()` / `aask()` / `aask_stream()`（旧名 `stream()` / `astream()` も）はキーワード専用の `images=None` を受け取る（`chat()` 系にはない。新しい公開名は増やさない）。要素はファイルのパス（`str` / `os.PathLike`）、画像の `bytes`、`http(s)://` で始まる URL 文字列で、リストで渡す。`None` または空なら従来と完全に同じ（content は文字列、キャッシュキーも不変）。非空なら user メッセージの content を `[{"type": "text", ...}, 画像パート...]`（指定順）にする。形式は LLM 層（`_media.py`）で組み立て、プロバイダー層・生レイヤーは無変換: OpenAI 系（`openai` / `openrouter` / `google` / `grok` / `muse`）は `image_url`（data URL または URL）、Anthropic は `image` の `source`（`base64` または `url`）。media type は先頭バイトのシグネチャ（PNG / JPEG / GIF / WEBP）、だめなら拡張子で判定し、不明・読めないファイル・リストでない `images`・不正な要素・文字列でない prompt（messages のリスト）との併用は `LLMConfigError(code="invalid_media")`。独自の件数・サイズ上限は設けない（意図的。#88。巨大なファイルはメモリを圧迫しうるので、アプリ側でサイズを確認し、信頼できないパスやアップロードをそのまま渡さないこと）。非同期はファイル読み込みだけ `asyncio.to_thread()` で行い、`aask_stream()` は引数の形を呼び出し時に検査して、ファイルは最初の反復で読む。利用者向けの説明は docs/multimodal.md / multimodal-ja.md。
 - 音声の文字起こし（#58）: `LLM.transcribe(file, *, extra=None, timeout=None) -> str` / `atranscribe()`。`file` はパス（`str` / `os.PathLike`）または音声の `bytes`。**OpenAI のみ**で、他のプロバイダーは通信せずに `LLMConfigError(code="unsupported_modality")`。`/audio/transcriptions` へ multipart で送る（`model`、`response_format="json"`、ファイル `file`）。`extra` はフォームフィールドに展開する（スカラーは文字列化、bool は `true` / `false`、リスト・タプルは `キー[]` の繰り返し、`None` は省略、展開できない値は `invalid_media`）。形式は `_media.py` でシグネチャ（WAV / MP3 / FLAC / OGG / WEBM / M4A）→ 拡張子の順に判定し、パスはファイル名をそのまま、`bytes` は `audio.<拡張子>` を送る。判定不能・読めない・型違いは `invalid_media`。応答の `text`（文字列でなければ `invalid_json_response`）を返す。`chat()` の仕組みを通さず `client.request()` を直接使うため、キャッシュ・入出力ログ・singleflight の対象外（イベントは生レイヤーのもの）。非同期はファイル読み込みだけ `asyncio.to_thread()`。生レイヤーの `request()` は `files={フィールド名: (ファイル名, bytes, media_type)}` と `form_data=[(名前, 値), ...]` を受け取れる（同期・非同期とも。指定時は `body` が `None` でなければ `LLMConfigError(code="invalid_option")`。JSON の `Content-Type` は付けず httpx が boundary 付きで付ける。リトライごとに作り直す）。利用者向けの説明は docs/multimodal.md / multimodal-ja.md。
@@ -386,6 +393,19 @@ class ChatResult:
     request_id: str | None    # x-request-id または request-id。無ければ None
     latency: float | None     # 秒。呼び出し開始からボディ読了まで（リトライの待ちを含む）
     retries: int              # この応答の前に行ったリトライ回数（初回成功は 0）
+    parsed: Any               # schema= の検証済みの値（なければ None）
+    tool_calls: list[ToolCall]  # 応答から抽出したツール呼び出し（なければ空）
+    thinking: str | None      # 推論テキスト（文字列。なければ None）
+    message: dict | None      # 各社形式の assistant メッセージ（raw の写し。履歴にそのまま足す）
+
+@dataclass
+class ToolCall:
+    id: str | None            # 無ければ None（作り出さない）
+    name: str
+    arguments: dict | None    # パース済み。できなければ None（例外にしない）
+    arguments_raw: str        # 生の JSON 文字列
+    type: str                 # 生の値（"function" / "custom" / "tool_use" など）
+    raw: dict                 # 元の要素
 
 @dataclass
 class ChatChunk:
@@ -400,7 +420,7 @@ class ChatChunk:
 - キャッシュヒット時の `request_id` / `latency` / `retries` は、保存してあった元の呼び出しの値（今回の待ち時間ではない）。このフィールドが無かった頃の行は `None` / `None` / `0` として読む。
 - テキスト抽出:
   - OpenAI / OpenRouter: `choices[0].message.content`（`None` は `""` とする）
-  - Anthropic: `content` のうち `type == "text"` のブロックの `text` を連結。`thinking` などその他のブロックは `text` に含めず `raw` から参照してもらう。
+  - Anthropic: `content` のうち `type == "text"` のブロックの `text` を連結。`thinking` などその他のブロックは `text` には含めず、`thinking` / `tool_calls` に抽出する（`raw` / `message` にも残る）。`type == "tool_use"` だけを `tool_calls` にし、`server_tool_use` / `redacted_thinking` は含めない。
 - `stop_reason` は正規化しない（生の値を返す）。Claude の `"refusal"` なども例外にせず、そのまま返す。
 - `usage` の対応: OpenAI 系は `prompt_tokens` → `input_tokens`、`completion_tokens` → `output_tokens`、`prompt_tokens_details.cached_tokens` → `cache_read_tokens`、`completion_tokens_details.reasoning_tokens` → `reasoning_tokens`。Anthropic は `input_tokens` / `output_tokens` に加え、`cache_read_input_tokens` → `cache_read_tokens`、`cache_creation_input_tokens` → `cache_creation_tokens`。取れない項目は `None`（明示的なゼロは `0`）。値の型が `int` 以外（`bool`・`float`・文字列など）の項目も `None` とする。`input_tokens` / `output_tokens` はプロバイダーの値をそのまま使い（意味はプロバイダーにより異なり、Anthropic の `input_tokens` はキャッシュ分を含まない）、キャッシュ分の足し引きや欠落値の推定、金額計算はしない。
 
@@ -422,6 +442,7 @@ class ChatChunk:
 - 有効にしている間、同じリクエストには常に同じ保存済み応答が返る。新しい応答が欲しい場合はキャッシュを空にするかオフにする。
 - 対象は `chat()` / `ask()` と `stream_chat()` / `ask_stream()` / `chat_stream()`。ストリームは、終端イベント（OpenAI 系の `[DONE]`、Anthropic の `message_stop`。判定は `_is_terminal_event()`）を受け取ったときだけ保存する。終端イベントなしで EOF になったものは未完了のストリームとして保存しない（届いたチャンクの後に `APIStreamError`（`code="stream_incomplete"`）を送出し、`stream_error` を通知する）。途中で止めたもの・エラーになったものも保存しない。生レイヤー（`request()` / `request_stream()`）は対象外。
 - **最大サイズ**: `SQLiteCache(path, max_size=DEFAULT_MAX_SIZE)`（公開属性 `max_size`、バイト）。既定は 100 MB（`cache.DEFAULT_MAX_SIZE`）。`put()` のあとにファイルサイズが `max_size` を超えていたら、ロックの下で `created_at` の古い順に 1/3 の行を削除し、`VACUUM` で縮める（最新の行は必ず残す。1 回の `put()` につき整理は 1 回）。`None` は無制限。0 以下・整数以外は `LLMConfigError`（`code="invalid_cache"`）。整理の失敗はベストエフォート（無視）。`set_cache(..., max_size=...)` はパス / `True` から作るときだけ使い、`SQLiteCache` オブジェクトを渡したときはそのオブジェクトの `max_size` が優先。自作のキャッシュオブジェクトには影響しない。
+- `tool_calls` / `thinking` / `message` は保存しない（保存形式は変えない）。キャッシュヒット時に `raw` から作り直すので、古い行からも得られる。
 - 実行時のキャッシュの失敗はベストエフォート（読み取りはミス扱い、書き込みは無視）にして、料金を払って得た応答を失わない。設定の誤り（不正な値、使えないパス）は生成時に `LLMConfigError`（`code="invalid_cache"`）を送出する。
 - `close()` は渡されたキャッシュを閉じない（グローバルと共有されうるため）。
 

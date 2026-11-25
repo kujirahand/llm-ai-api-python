@@ -122,6 +122,28 @@ while True:
 - The old name `stream()` (`astream()` in async code) is deprecated. It remains as an alias of `ask_stream()` (`aask_stream()` in async code)
 - A stream closes its connection by itself when it is read to the end or dropped (for async streams, only while the event loop that created the stream is still running). To stop early, call `close()` (`await stream.aclose()` in async code) to release the connection right away
 
+### Tool calls and thinking
+
+```python
+tools = [{
+    "name": "get_weather",
+    "description": "Return the weather for a city",
+    "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]},
+}]
+history = [{"role": "user", "content": "What is the weather in Tokyo?"}]
+result = luna.chat(history, tools=tools)
+for call in result.tool_calls:  # ToolCall: id, name, arguments (dict), arguments_raw, type, raw
+    print(call.name, call.arguments)
+history.append(result.message)  # append the response's assistant message as is
+history += luna.tool_results([(call, "sunny") for call in result.tool_calls])
+result = luna.chat(history, tools=tools)
+print(result.text, result.thinking)  # thinking is the reasoning text (None when absent)
+```
+
+- `tools=` on `chat()` / `achat()` takes the common format (`name` / `description` / `parameters`) and is mapped to the provider's format before sending. Running the tools and looping is up to the caller
+- Reasoning text is available as `ChatResult.thinking` (never mixed into `text`). To request it, pass the provider's own fields through `extra`
+- See [Tool calls and thinking](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tools.md) for details
+
 ### How parameters are handled
 
 - Parameters you do not pass are never sent (newer models reject even default values such as `temperature`)

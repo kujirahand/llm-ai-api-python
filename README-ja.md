@@ -122,6 +122,28 @@ while True:
 - 旧名の `stream()`（非同期は `astream()`）は非推奨です。`ask_stream()`（非同期は `aask_stream()`）の別名として残してあります
 - ストリームは、最後まで読むか、捨てられたときに自動で接続を閉じます（非同期では、ストリームを作ったイベントループがまだ動いている場合に限ります）。途中でやめるときは `close()`（非同期では `await stream.aclose()`）を呼ぶと、すぐに接続を解放できます
 
+### ツール呼び出しと思考
+
+```python
+tools = [{
+    "name": "get_weather",
+    "description": "都市の天気を返す",
+    "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]},
+}]
+history = [{"role": "user", "content": "東京の天気は？"}]
+result = luna.chat(history, tools=tools)
+for call in result.tool_calls:  # ToolCall: id, name, arguments（dict）, arguments_raw, type, raw
+    print(call.name, call.arguments)
+history.append(result.message)  # 応答の assistant メッセージをそのまま足す
+history += luna.tool_results([(call, "晴れ") for call in result.tool_calls])
+result = luna.chat(history, tools=tools)
+print(result.text, result.thinking)  # thinking は思考テキスト（無ければ None）
+```
+
+- `chat()` / `achat()` の `tools=` は共通形式（`name` / `description` / `parameters`）で受け取り、プロバイダーの形式に写して送ります。ツールの実行とループは呼び出し側で行います
+- `ChatResult.thinking` に思考テキストが入ります（`text` には混ざりません）。思考を出させる指定は `extra` に各社の形式で書きます
+- 詳しくは [ツール呼び出しと thinking](docs/tools-ja.md) を参照してください
+
 ### パラメータの扱い
 
 - 指定していないパラメータは送りません（新しいモデルは `temperature` などをデフォルト値でも拒否することがあるため）

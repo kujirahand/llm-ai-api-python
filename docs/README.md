@@ -19,6 +19,7 @@ The guides have an English and a Japanese version (`foo.md` and `foo-ja.md`) and
 
 | Page | What it covers |
 |---|---|
+| [Tool calls and thinking](tools.md) / [ツール呼び出しと thinking](tools-ja.md) | `tools=` on `chat()` / `achat()`, `ChatResult.tool_calls` / `thinking` / `message`, `tool_results()`, and a same-provider round trip. |
 | [Structured output](structured.md) / [構造化出力](structured-ja.md) | `schema=` on `chat()` / `achat()`: JSON Schema or a model class, how the schema is normalized, the per-provider request shape, validation and the errors you get back. |
 | [Image input](multimodal.md) / [画像入力](multimodal-ja.md) | `images=` on the `ask` family (paths, bytes, URLs), what is sent to each provider, audio transcription with `transcribe()` / `atranscribe()` (OpenAI only), and how both interact with the cache and the log. |
 | [Adding a provider](providers.md) / [プロバイダーを追加する](providers-ja.md) | `register_provider()`: add an OpenAI-compatible or Anthropic-compatible API from a declaration alone (`base_url`, `api_key_env`, `auth_header` / `auth_scheme`, `headers`, `aliases`, `replace`, and more), how it differs from the built-ins (the table of rejected parameters does not apply, `transcribe()` is unavailable), and name conflicts and errors. |
