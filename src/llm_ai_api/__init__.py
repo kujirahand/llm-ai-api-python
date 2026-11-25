@@ -31,6 +31,7 @@ from .lang import get_language, set_language
 from .muse import MuseClient
 from .ollama import OllamaClient
 from .openai import OpenAIClient
+from ._providers import register_provider
 from .openrouter import OpenRouterClient
 from .strata import StrataClient
 from .types import ChatChunk, ChatResult, SSEEvent, Usage
@@ -38,6 +39,7 @@ from .types import ChatChunk, ChatResult, SSEEvent, Usage
 __all__ = [
     "__version__",
     "llm",
+    "register_provider",
     "models",
     "clear_cache",
     "SQLiteCache",

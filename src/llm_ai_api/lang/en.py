@@ -35,6 +35,9 @@ MESSAGES = {
     "invalid_event": "Unknown event {event!r}. Known events: {known}.",
     "invalid_listener": "An event listener must be callable.",
     "unknown_provider": "Unknown provider: {provider!r} (supported: {supported})",
+    "invalid_provider": "Invalid register_provider() argument: {detail}",
+    "provider_exists": "Provider name {name!r} is already taken. Built-in names and aliases can never be replaced; pass replace=True to replace a provider you registered yourself.",
+    "missing_api_key_no_env": "No API key found for {provider}. Pass api_key=....",
     "cache_dir_not_set": "Set cache_dir=... or the LLM_AI_API_CACHE_DIR environment variable to choose the cache directory.",
     # 通信
     "timeout": "The request timed out. Try a larger timeout=, or check your network.",

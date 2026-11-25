@@ -35,6 +35,9 @@ MESSAGES = {
     "invalid_event": "未知のイベントです: {event!r}（使えるイベント: {known}）",
     "invalid_listener": "イベントリスナーは呼び出し可能である必要があります。",
     "unknown_provider": "未知のプロバイダーです: {provider!r}（対応: {supported}）",
+    "invalid_provider": "register_provider() の引数が正しくありません: {detail}",
+    "provider_exists": "プロバイダー名 {name!r} はすでに使われています。組み込みの名前・別名は置き換えられません。自分で登録したものを置き換えるときは replace=True を指定してください。",
+    "missing_api_key_no_env": "{provider} の API キーが見つかりません。api_key=... を渡してください。",
     "cache_dir_not_set": "cache_dir=... か環境変数 LLM_AI_API_CACHE_DIR で、キャッシュのディレクトリを指定してください。",
     # 通信
     "timeout": "リクエストがタイムアウトしました。timeout= を大きくするか、ネットワークを確認してください。",

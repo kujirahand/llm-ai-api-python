@@ -21,6 +21,7 @@ English: [README.md](README.md)
 |---|---|
 | [構造化出力](structured-ja.md) / [Structured output](structured.md) | `chat()` / `achat()` の `schema=`。JSON Schema とモデルクラスの指定、schema の正規化、プロバイダーごとのリクエストの形、応答の検証とエラー。 |
 | [画像入力（`images=`）](multimodal-ja.md) / [Image input](multimodal.md) | `ask` 系の `images=`（パス、bytes、URL）、プロバイダーに送られる形、`transcribe()` / `atranscribe()` による音声の文字起こし（OpenAI のみ）、キャッシュとログとの関係。 |
+| [プロバイダーを追加する](providers-ja.md) / [Adding a provider](providers.md) | `register_provider()`。OpenAI 互換・Anthropic 互換の API を宣言だけで足す方法（`base_url`、`api_key_env`、`auth_header` / `auth_scheme`、`headers`、`aliases`、`replace` など）、組み込みとの違い（拒否パラメータの表は適用されない、`transcribe()` は使えない）、名前の衝突とエラー。 |
 | [イベント](events-ja.md) / [Events](events.md) | `add_event_listener()` / `remove_event_listener()`。`retry`、`response`、`http_error`、`connection_error`、`stream_error`、`stream_end`、`cache_hit`、`cache_error`、`log_error` と、`request_id` / `latency` / `retries` の読み方。失敗とリトライの観測はこちらです（ログは成功した呼び出しだけを残します）。 |
 | [入出力のキャッシュ](io_cache-ja.md) / [Response cache](io_cache.md) | **本ライブラリの**呼び出しを SQLite に保存して、同じリクエストで料金を払わないようにする機能。`set_cache()`、インスタンスごとの `cache=`、キャッシュキー、暗号化、古い行の削除、最大サイズ。既定はオフ。 |
 | [入出力ログ](io_logs-ja.md) / [I/O log](io_logs.md) | チャットの呼び出しごとに 1 行の JSON を追記する機能（`set_log()`、インスタンスごとの `log=`）、1 行の内容、フックによる記録の書き換え・省略、最大サイズ。既定はオフ。 |

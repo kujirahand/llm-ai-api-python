@@ -169,6 +169,26 @@ with llm("openai:gpt-6-luna") as m:
     history.append({"role": "assistant", "content": "".join(pieces)})
 ```
 
+### ストリームの後で最終結果を確認する
+
+ループでストリームを最後まで読み終えると、`stream.result` に応答全体の `ChatResult` が入ります。`stop_reason` で回答が `max_tokens` で切れたかどうかを確認し、`usage` で消費トークンを計測できます。
+
+```python
+stream = m.ask_stream("短い物語を書いて", max_tokens=100)
+for piece in stream:
+    print(piece, end="", flush=True)
+print()
+
+result = stream.result
+print(result.stop_reason)  # "stop"（OpenAI系）/ "end_turn"（Anthropic）
+print(result.usage)        # 入力・出力トークン（プロバイダーが送った場合）
+
+if result.stop_reason in ("length", "max_tokens"):
+    print("回答は max_tokens で切れました")
+```
+
+`result` はストリームを最後まで読むまでは `None` なので、最後のパーツを受け取った直後ではなく、ループの後で確認してください。エラーになった場合や、`close()` で途中で止めた場合も `None` です。非同期のストリーム（`aask_stream()` / `achat_stream()`）にも同じ `result` があります。
+
 旧名 `stream()` は `ask_stream()` の非推奨の別名です。
 
 ## 6. 条件を指定する

@@ -60,6 +60,15 @@ from llm_ai_api import llm, models
 m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 ```
 
+組み込みにない OpenAI 互換・Anthropic 互換のサービスは、`register_provider()` で宣言を 1 回書けば同じ書き方で呼べます（非同期も使えます）。登録はプロセス全体に効くので、起動時に呼んでください。詳しくは[プロバイダーを追加する](docs/providers-ja.md)を参照してください。
+
+```python
+from llm_ai_api import llm, register_provider
+
+register_provider("deepseek", base_url="https://api.deepseek.com/v1", api_key_env="DEEPSEEK_API_KEY")
+print(llm("deepseek:deepseek-chat").ask("こんにちは"))
+```
+
 最初から順に試す手順は[チュートリアル](docs/tutorial-ja.md)を参照してください。
 
 ## 使い方
@@ -104,9 +113,12 @@ while True:
         print(piece, end="", flush=True)
         pieces.append(piece)
     history.append({"role": "assistant", "content": "".join(pieces)})
+    if stream.result is not None:  # 応答全体の ChatResult（最後まで読むまでは None）
+        print("usage:", stream.result.usage)
 ```
 
 - `ask()` と `ask_stream()` には、質問の文字列ではなく、空でないメッセージ辞書のリストも渡せます（非同期の `aask()` / `aask_stream()` も同じ）。履歴は呼び出し側で管理し、`system=` は `chat()` と同じく先頭に追加されます。ストリームのイテレーターには `request_id` も設定されます
+- ストリームを最後まで読み終えると、`stream.result` に応答全体の `ChatResult`（`text`、`usage`、`stop_reason`、`raw["events"]` など）が入ります。それまで、エラー後、途中で `close()` した後は `None` です
 - 旧名の `stream()`（非同期は `astream()`）は非推奨です。`ask_stream()`（非同期は `aask_stream()`）の別名として残してあります
 - ストリームは、最後まで読むか、捨てられたときに自動で接続を閉じます（非同期では、ストリームを作ったイベントループがまだ動いている場合に限ります）。途中でやめるときは `close()`（非同期では `await stream.aclose()`）を呼ぶと、すぐに接続を解放できます
 
@@ -282,6 +294,7 @@ m = llm("openai:gpt-6-luna", lang="en")  # モデルごと
 | `local-llm-lmstudio.py` | ローカルの LM Studio サーバーで `ask()` / `chat()` / `ask_stream()` を試す（[docs/local_llm-lmstudio-ja.md](docs/local_llm-lmstudio-ja.md)） |
 | `local-llm-ollama.py` | ローカルの Ollama サーバーで `ask()` / `chat()` / `ask_stream()` を試す（[docs/local_llm-ollama-ja.md](docs/local_llm-ollama-ja.md)） |
 | `local-llm-strata.py` | ローカルの Strata サーバーで `ask()` / `chat()` / `ask_stream()` を試す（[docs/local_llm-strata-ja.md](docs/local_llm-strata-ja.md)） |
+| `register_provider.py` | `register_provider()` で自分のサーバーを登録し、`ask()` / `ask_stream()` を試す（[docs/providers-ja.md](docs/providers-ja.md)） |
 
 `ask(prompt, images=[...])` は、画像（ファイルのパス・bytes・http(s) の URL）をプロバイダーごとの形式に組み立てて送ります（[docs/multimodal-ja.md](docs/multimodal-ja.md)）。`chat()` に渡す `content` のネイティブ dict はプロバイダー間で変換されません。
 

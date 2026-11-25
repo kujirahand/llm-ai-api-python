@@ -41,17 +41,53 @@ class CryptoTest(unittest.TestCase):
         bad[20] ^= 1
         self.assertIsNone(decrypt(b"e" * 32, b"m" * 32, bytes(bad)))
 
-    def test_key_format(self):
-        import hashlib
+    def _canonical(self, body):
         import json
 
-        body = {"model": "m", "messages": MSGS}
-        canonical = json.dumps(
+        return json.dumps(
             {"body": body, "context": {}}, sort_keys=True, ensure_ascii=False, separators=(",", ":")
         )
-        want = hashlib.sha256(("openai:m@KEY>>>" + canonical).encode()).hexdigest()
+
+    def test_key_format(self):
+        import hashlib
+        import hmac
+
+        body = {"model": "m", "messages": MSGS}
+        canonical = self._canonical(body)
+        derived = hashlib.scrypt(
+            b"KEY", salt=b"llm-ai-api:cache-key:v2", n=2**14, r=8, p=1, dklen=32
+        )
+        want = hmac.new(derived, ("openai:m>>>" + canonical).encode(), hashlib.sha256).hexdigest()
         self.assertEqual(cache_key("openai", body, None, "KEY"), want)
+        self.assertEqual(len(want), 64)
         self.assertNotEqual(cache_key("openai", body, None, "OTHER"), want)
+
+    def test_key_differs_from_old_format(self):
+        # Old format was a plain SHA-256 digest of "provider:model@api_key>>>input".
+        # Its value for these inputs is kept as a literal so this test does not
+        # reintroduce the flagged construction.
+        body = {"model": "m", "messages": MSGS}
+        old = "dfcddbb49af89e643a2078892bda9d20056f6df0c19dcbd23b2f7a0da5a0eabc"
+        self.assertNotEqual(cache_key("openai", body, None, "K"), old)
+
+    def test_key_derivation_is_memoized_per_api_key(self):
+        import hashlib
+
+        body = {"model": "m", "messages": MSGS}
+        real_scrypt = hashlib.scrypt
+        with mock.patch.object(hashlib, "scrypt", wraps=real_scrypt) as scrypt:
+            first = cache_key("openai", body, None, "memo-key-unique")
+            second = cache_key("openai", body, None, "memo-key-unique")
+        self.assertEqual(first, second)
+        self.assertEqual(scrypt.call_count, 1)
+
+    def test_key_empty_and_unicode_api_keys(self):
+        body = {"model": "m", "messages": MSGS}
+        self.assertEqual(cache_key("openai", body, None, ""), cache_key("openai", body, None, ""))
+        self.assertNotEqual(cache_key("openai", body, None, ""), cache_key("openai", body, None, "k"))
+        self.assertNotEqual(
+            cache_key("openai", body, None, "キー"), cache_key("openai", body, None, "key")
+        )
 
     def test_stored_value_is_encrypted_and_api_key_absent(self):
         rec = Recorder(json_response(REPLY))

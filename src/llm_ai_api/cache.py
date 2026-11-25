@@ -1,7 +1,9 @@
 """Optional SQLite cache for chat() responses (model + input -> output). Off by default.
 
-Key:   sha256("{provider}:{model}@{api_key}>>>{input}"), `input` = canonical JSON of the
-       request body and the client settings that can change a response.
+Key:   HMAC-SHA256("{provider}:{model}>>>{input}") keyed with a scrypt-derived key of the API
+       key; `input` = canonical JSON of the request body and the client settings that can
+       change a response. The API key itself is never part of the hashed message. Keys differ
+       from the old sha256 format, so entries written by earlier versions simply miss.
 Value: the whole ChatResult as JSON, encrypted with a key derived from the API key.
 
 Only the standard library is available, so the cipher is built from HMAC-SHA256
@@ -120,18 +122,48 @@ def _cached_retries(value: Any) -> int:
     return 0
 
 
+# Fixed salt: a domain-separation constant, not a secret. The API key supplies the entropy.
+_KEY_SALT = b"llm-ai-api:cache-key:v2"
+_KEY_MEMO_MAX = 128  # bound the memo below; a process normally uses a handful of API keys
+_key_hmac_keys: Dict[str, bytes] = {}  # api_key -> derived HMAC key (bounded, like SQLiteCache._keys)
+_key_hmac_lock = threading.Lock()
+
+
+def _key_hmac_key(api_key: str) -> bytes:
+    """Derive (and memoize) the per-API-key HMAC key; scrypt is slow and cache_key() is hot.
+
+    The derivation runs outside the lock (it is deterministic, so two threads racing on a
+    first use derive the same value); the lock only guards the memo dict itself.
+    """
+    with _key_hmac_lock:
+        derived = _key_hmac_keys.get(api_key)
+    if derived is None:
+        derived = hashlib.scrypt(
+            api_key.encode("utf-8"), salt=_KEY_SALT, n=2**14, r=8, p=1, dklen=32
+        )
+        with _key_hmac_lock:
+            if len(_key_hmac_keys) >= _KEY_MEMO_MAX:
+                _key_hmac_keys.clear()
+            _key_hmac_keys[api_key] = derived
+    return derived
+
+
 def cache_key(
     provider: str,
     body: Dict[str, Any],
     context: Optional[Dict[str, Any]] = None,
     api_key: str = "",
 ) -> str:
-    """Return the cache key: sha256 of "{provider}:{model}@{api_key}>>>{input}".
+    """Return the cache key: HMAC-SHA256 of "{provider}:{model}>>>{input}" (64 hex chars).
+
+    The HMAC key is derived from the API key with scrypt, so the API key is not hashed
+    directly and is not part of the message. Different API keys give different cache keys.
+    Keys differ from the earlier sha256 format; existing cache entries simply miss.
 
     `input` is the canonical JSON of the request body and `context`. `context` carries
     client settings that can change the response for the same body (base URL, extra
     headers, the Anthropic API version), so entries are not shared across different
-    endpoints or configurations. The API key only goes into the hash.
+    endpoints or configurations.
     """
     model = body.get("model", "") if isinstance(body, dict) else ""
     canonical = json.dumps(
@@ -140,8 +172,8 @@ def cache_key(
         ensure_ascii=False,
         separators=(",", ":"),
     )
-    raw = "%s:%s@%s>>>%s" % (provider, model, api_key, canonical)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    raw = "%s:%s>>>%s" % (provider, model, canonical)
+    return hmac.new(_key_hmac_key(api_key), raw.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 from ._io_errors import FailureCounter

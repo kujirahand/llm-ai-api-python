@@ -38,11 +38,13 @@ from ._http import (
     _mask_url,
     _merge_headers,
     _is_terminal_event,
+    _missing_key_error,
     _retry_after_delay,
     _should_retry_status,
     _transport_reason,
     _SSEDecoder,
     _user_agent,
+    apply_header_options,
     error_body,
     error_message,
 )
@@ -107,6 +109,16 @@ class _AsyncBaseClient:
     base_url_env = ""
     api_key_default: Optional[str] = None  # used when no key is given (local providers)
     api_key_optional = False
+    # Declared attributes; the registry copies them from the sync class (_make_async).
+    api_format = "openai"
+    auth_header = "Authorization"
+    auth_scheme = "Bearer"
+    fixed_headers: Mapping[str, str] = {}
+    header_options: Tuple[Tuple[str, str], ...] = ()
+    supports_models = True
+    supports_audio = False
+    models_style = "openai"
+    rules_provider: Optional[str] = None
 
     def __init__(
         self,
@@ -123,6 +135,7 @@ class _AsyncBaseClient:
         log: Any = LOG_NOT_SET,
         transport: Optional[httpx.AsyncBaseTransport] = None,
         connection: Optional[Mapping[str, Any]] = None,
+        **header_values: Any,
     ) -> None:
         """Same arguments as `BaseClient`; `transport` is for tests (`httpx.MockTransport`).
 
@@ -139,13 +152,11 @@ class _AsyncBaseClient:
             key = key or os.environ.get(name)
         key = key or self.api_key_default
         if not key and not self.api_key_optional:
-            raise LLMConfigError(
-                t("missing_api_key", lang, provider=self.provider, env=self.api_key_env),
-                code="missing_api_key",
-            )
+            raise _missing_key_error(self.provider, self.api_key_env, lang)
         self._api_key = key
         self.base_url = (
-            base_url or os.environ.get(self.base_url_env) or self.default_base_url
+            base_url or (os.environ.get(self.base_url_env) if self.base_url_env else None)
+            or self.default_base_url
         ).rstrip("/")
         self.timeout = timeout
         self.max_retries = max_retries
@@ -154,6 +165,7 @@ class _AsyncBaseClient:
         self.connection = resolve_connection(connection, lang=lang)
         self._connect_timeout = self.connection["connect_timeout"]
         self._extra_headers = dict(headers or {})
+        apply_header_options(self.header_options, header_values, self._extra_headers)
         if transport is not None:
             self._client = httpx.AsyncClient(
                 transport=transport,
@@ -193,10 +205,13 @@ class _AsyncBaseClient:
 
     def _cache_context(self) -> Dict[str, Any]:
         """Client settings that can change a response for the same body (see BaseClient)."""
-        return {
+        context: Dict[str, Any] = {
             "base_url": self.base_url,
             "headers": _merge_headers(self._extra_headers),
         }
+        if self.fixed_headers:  # registered providers only; built-ins keep their keys
+            context["fixed_headers"] = _merge_headers(self.fixed_headers)
+        return context
 
     async def _acache_lookup(self, body: Dict[str, Any]) -> Optional[ChatResult]:
         if self.cache is None:
@@ -928,16 +943,25 @@ class _AsyncChunks:
         events: Any,
         parse: Callable[[SSEEvent], Tuple[Optional[ChatChunk], bool]],
         client: _AsyncBaseClient,
+        accumulator: Optional[_http._StreamAccumulator] = None,
     ) -> None:
         self._events = events
         self._parse = parse
         self._client = client
+        self._acc = accumulator
         self._done = False
         self.request_id = getattr(events, "request_id", None)
         self.retries = getattr(events, "retries", 0) or 0
 
     def __aiter__(self) -> "_AsyncChunks":
         return self
+
+    @property
+    def result(self) -> Optional[ChatResult]:
+        """The `ChatResult` of the whole stream once its terminal event was read, else None."""
+        if self._acc is None:
+            return None
+        return self._acc.build(self.request_id, self.retries)
 
     async def __anext__(self) -> ChatChunk:
         while True:
@@ -978,10 +1002,30 @@ class _AsyncChunks:
             if terminal:
                 self._done = True
                 await _close_quietly(self._events)
+                # Complete only after the event stream has been closed.
+                if self._acc is not None:
+                    self._acc.complete(getattr(self._events, "started", None))
                 raise StopAsyncIteration
             if chunk is not None:
                 chunk.request_id = self.request_id
+                if self._acc is not None:
+                    self._acc.add(chunk)
                 return chunk
+            if self._acc is not None:
+                # The parser skipped this event (for example a ping); it
+                # still belongs in the result's raw["events"]. A failure
+                # here is handled like a parse failure, not swallowed.
+                try:
+                    self._acc.add_event(ev.json() if ev.data else {})
+                except LLMError as e:
+                    self._done = True
+                    note_request_error(self._client, self._events, e.code)
+                    await _close_quietly(self._events)
+                    raise
+                except BaseException:
+                    self._done = True
+                    await _close_quietly(self._events)
+                    raise
 
     async def aclose(self) -> None:
         self._done = True
@@ -1011,6 +1055,11 @@ class _AsyncLoggedChunks:
 
     def __aiter__(self) -> "_AsyncLoggedChunks":
         return self
+
+    @property
+    def result(self) -> Optional[ChatResult]:
+        """The `ChatResult` of the whole stream (delegated to the chunks), else None."""
+        return getattr(self._chunks, "result", None)
 
     async def __anext__(self) -> ChatChunk:
         if self._done:

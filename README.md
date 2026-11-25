@@ -60,6 +60,15 @@ from llm_ai_api import llm, models
 m = llm(models.ANTHROPIC_CLAUDE_OPUS_5_5)
 ```
 
+An OpenAI-compatible or Anthropic-compatible service that is not built in can be called the same way after one declaration with `register_provider()` (async works too). Registration affects the whole process, so call it at startup. See [Adding a provider](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/providers.md).
+
+```python
+from llm_ai_api import llm, register_provider
+
+register_provider("deepseek", base_url="https://api.deepseek.com/v1", api_key_env="DEEPSEEK_API_KEY")
+print(llm("deepseek:deepseek-chat").ask("Hello"))
+```
+
 For step-by-step setup, see the [Tutorial](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/tutorial.md).
 
 ## Usage
@@ -104,9 +113,12 @@ while True:
         print(piece, end="", flush=True)
         pieces.append(piece)
     history.append({"role": "assistant", "content": "".join(pieces)})
+    if stream.result is not None:  # the whole response as a ChatResult (None until read to the end)
+        print("usage:", stream.result.usage)
 ```
 
 - `ask()` and `ask_stream()` also accept a non-empty list of message dictionaries instead of a prompt string. The async `aask()` and `aask_stream()` accept the same inputs. The caller owns the history; a `system=` argument is prepended just as in `chat()`. The stream iterator also has a `request_id`
+- Once a stream has been read to the end, `stream.result` is a `ChatResult` for the whole response (`text`, `usage`, `stop_reason`, `raw["events"]`, ...). It is `None` before that, after an error, and after an early `close()`
 - The old name `stream()` (`astream()` in async code) is deprecated. It remains as an alias of `ask_stream()` (`aask_stream()` in async code)
 - A stream closes its connection by itself when it is read to the end or dropped (for async streams, only while the event loop that created the stream is still running). To stop early, call `close()` (`await stream.aclose()` in async code) to release the connection right away
 
@@ -282,6 +294,7 @@ See [`examples/`](https://github.com/kujirahand/llm-ai-api-python/tree/main/exam
 | `local-llm-lmstudio.py` | Try `ask()` / `chat()` / `ask_stream()` against a local LM Studio server ([docs/local_llm-lmstudio.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-lmstudio.md)) |
 | `local-llm-ollama.py` | Try `ask()` / `chat()` / `ask_stream()` against a local Ollama server ([docs/local_llm-ollama.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-ollama.md)) |
 | `local-llm-strata.py` | Try `ask()` / `chat()` / `ask_stream()` against a local Strata server ([docs/local_llm-strata.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/local_llm-strata.md)) |
+| `register_provider.py` | Register your own server with `register_provider()` and try `ask()` / `ask_stream()` ([docs/providers.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/providers.md)) |
 
 `ask(prompt, images=[...])` builds each provider's image format from file paths, bytes, or http(s) URLs ([docs/multimodal.md](https://github.com/kujirahand/llm-ai-api-python/blob/main/docs/multimodal.md)). Native `content` dicts passed to `chat()` are not converted between providers.
 

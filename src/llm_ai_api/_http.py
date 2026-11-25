@@ -39,7 +39,7 @@ from .errors import (
     status_error_class,
 )
 from .lang import t
-from .types import ChatChunk, ChatResult, SSEEvent
+from .types import ChatChunk, ChatResult, SSEEvent, Usage
 
 _RETRY_STATUS = {408, 409, 429}
 _DEFAULT_RETRY_AFTER_MAX = 60.0
@@ -338,6 +338,65 @@ def error_message(body: Any) -> Optional[str]:
     return None
 
 
+class _StreamAccumulator:
+    """Collect the chunks of one stream into a `ChatResult` (internal).
+
+    Subclasses (one per API format) implement `_observe()` and `_usage()`.
+    `build()` returns None until `complete()` is called at the terminal event,
+    so a stream that failed or was closed early never produces a result.
+    """
+
+    def __init__(self) -> None:
+        self._texts: List[str] = []
+        self._events: List[Dict[str, Any]] = []
+        self.model: Optional[str] = None
+        self.stop_reason: Optional[str] = None
+        self._latency: Optional[float] = None
+        self._completed = False
+        self._built: Optional[ChatResult] = None
+
+    def add(self, chunk: ChatChunk) -> None:
+        """Take in one chunk (text and raw event JSON)."""
+        self._texts.append(chunk.text or "")
+        self.add_event(chunk.raw)
+
+    def add_event(self, raw: Dict[str, Any]) -> None:
+        """Record one stream event that produced no chunk (for example a ping)."""
+        self._events.append(raw)
+        self._observe(raw)
+
+    def complete(self, started: Optional[float] = None) -> None:
+        """Record the terminal event. `started` (monotonic) gives the latency, if known."""
+        if self._completed:
+            return
+        self._completed = True
+        if started is not None:
+            self._latency = time.monotonic() - started
+
+    def build(self, request_id: Optional[str], retries: int) -> Optional[ChatResult]:
+        """Return the `ChatResult` once complete (the same object every time), else None."""
+        if not self._completed:
+            return None
+        if self._built is None:
+            self._built = ChatResult(
+                text="".join(self._texts),
+                model=self.model,
+                stop_reason=self.stop_reason,
+                usage=self._usage(),
+                raw={"events": self._events},
+                request_id=request_id,
+                latency=self._latency,
+                retries=retries,
+            )
+        return self._built
+
+    def _observe(self, raw: Dict[str, Any]) -> None:
+        raise NotImplementedError
+
+    def _usage(self) -> Optional[Usage]:
+        raise NotImplementedError
+
+
 class _TaggedIter:
     """Iterator wrapper that exposes call metadata and forwards ``close()``.
 
@@ -356,8 +415,10 @@ class _TaggedIter:
         method: Optional[str] = None,
         path: Optional[str] = None,
         status_code: Optional[int] = None,
+        result_source: Optional[_StreamAccumulator] = None,
     ) -> None:
         self._inner = inner
+        self._result_source = result_source
         self.request_id = request_id
         self.retries = retries
         self.started = started
@@ -371,6 +432,13 @@ class _TaggedIter:
 
     def __next__(self) -> Any:
         return next(self._inner)
+
+    @property
+    def result(self) -> Optional[ChatResult]:
+        """The `ChatResult` of the whole stream once its terminal event was read, else None."""
+        if self._result_source is not None:
+            return self._result_source.build(self.request_id, self.retries)
+        return getattr(self._inner, "result", None)
 
     def close(self) -> None:
         if self._closed:
@@ -418,6 +486,42 @@ def _merge_headers(*groups: Dict[str, str]) -> Dict[str, str]:
     return {name.lower(): value for group in groups for name, value in group.items()}
 
 
+def _missing_key_error(provider: str, env: str, lang: Optional[str]) -> LLMConfigError:
+    """The error for a required API key that is nowhere to be found (sync and async)."""
+    if not env:  # a registered provider without api_key_env
+        return LLMConfigError(
+            t("missing_api_key_no_env", lang, provider=provider), code="missing_api_key"
+        )
+    return LLMConfigError(
+        t("missing_api_key", lang, provider=provider, env=env), code="missing_api_key"
+    )
+
+
+def apply_header_options(
+    options: Tuple[Tuple[str, str], ...], values: Dict[str, Any], headers: Dict[str, str]
+) -> None:
+    """Turn declared constructor options (e.g. `app_url`) into headers.
+
+    An unknown option raises `TypeError` like any unexpected keyword argument. A header
+    the caller already passed (any letter case) is kept.
+    """
+    known = dict(options)
+    for name in values:
+        if name not in known:
+            raise TypeError("__init__() got an unexpected keyword argument %r" % name)
+    for name, header in options:
+        value = values.get(name)
+        if value and not any(k.lower() == header.lower() for k in headers):
+            headers[header] = value
+
+
+def build_auth_header(header: str, scheme: str, key: Optional[str]) -> Dict[str, str]:
+    """`{header: "<scheme> <key>"}`, or the bare key when `scheme` is empty; `{}` without a key."""
+    if not key:
+        return {}
+    return {header: "%s %s" % (scheme, key) if scheme else key}
+
+
 class BaseClient:
     """Shared raw HTTP layer for the provider clients."""
 
@@ -428,6 +532,18 @@ class BaseClient:
     base_url_env = ""
     api_key_default: Optional[str] = None  # used when no key is given (local providers)
     api_key_optional = False
+    # Declared attributes shared with the registry (see _providers.py).
+    api_format = "openai"  # "openai" or "anthropic": body, parsing and auth behaviour
+    auth_header = "Authorization"
+    auth_scheme = "Bearer"  # "" sends the bare key as the header value
+    fixed_headers: Mapping[str, str] = {}  # sent unless headers= overrides them
+    # (constructor argument name, header name) pairs, e.g. OpenRouter's app_url.
+    header_options: Tuple[Tuple[str, str], ...] = ()
+    supports_models = True  # False: models() raises unsupported_models
+    supports_audio = False  # True: LLM.transcribe() may use /audio/transcriptions
+    models_style = "openai"  # model-list format: "openai", "anthropic" or "google"
+    # Name used to look up the model drop rules (None: this client's `provider`).
+    rules_provider: Optional[str] = None
 
     def __init__(
         self,
@@ -444,6 +560,7 @@ class BaseClient:
         log: Any = LOG_NOT_SET,
         transport: Optional[httpx.BaseTransport] = None,
         connection: Optional[Mapping[str, Any]] = None,
+        **header_values: Any,
     ) -> None:
         """`lang` はエラーメッセージの言語（`"ja"` / `"en"`）。None なら環境から判定する。
 
@@ -473,13 +590,11 @@ class BaseClient:
             key = key or os.environ.get(name)
         key = key or self.api_key_default
         if not key and not self.api_key_optional:
-            raise LLMConfigError(
-                t("missing_api_key", lang, provider=self.provider, env=self.api_key_env),
-                code="missing_api_key",
-            )
+            raise _missing_key_error(self.provider, self.api_key_env, lang)
         self._api_key = key
         self.base_url = (
-            base_url or os.environ.get(self.base_url_env) or self.default_base_url
+            base_url or (os.environ.get(self.base_url_env) if self.base_url_env else None)
+            or self.default_base_url
         ).rstrip("/")
         self.timeout = timeout
         self.max_retries = max_retries
@@ -488,6 +603,7 @@ class BaseClient:
         self.connection = resolve_connection(connection, lang=lang)
         self._connect_timeout = self.connection["connect_timeout"]
         self._extra_headers = dict(headers or {})
+        apply_header_options(self.header_options, header_values, self._extra_headers)
         if transport is not None:
             self._client = httpx.Client(
                 transport=transport,
@@ -542,10 +658,13 @@ class BaseClient:
         The API key is mixed into the key hash separately (see `cache_key`) and is never
         stored.
         """
-        return {
+        context: Dict[str, Any] = {
             "base_url": self.base_url,
             "headers": _merge_headers(self._extra_headers),
         }
+        if self.fixed_headers:  # registered providers only; built-ins keep their keys
+            context["fixed_headers"] = _merge_headers(self.fixed_headers)
+        return context
 
     def _cache_lookup(self, body: Dict[str, Any]) -> Optional[ChatResult]:
         """Return the cached result for this request body, or None (miss or cache failure)."""

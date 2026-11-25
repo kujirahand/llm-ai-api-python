@@ -169,6 +169,26 @@ with llm("openai:gpt-6-luna") as m:
     history.append({"role": "assistant", "content": "".join(pieces)})
 ```
 
+### After the stream: check the final result
+
+Once the loop has read the stream to the end, `stream.result` holds a `ChatResult` for the whole response. Check `stop_reason` to see whether the answer was cut off by `max_tokens`, and `usage` to measure the tokens spent.
+
+```python
+stream = m.ask_stream("Write a short story", max_tokens=100)
+for piece in stream:
+    print(piece, end="", flush=True)
+print()
+
+result = stream.result
+print(result.stop_reason)  # "stop" (OpenAI-style) / "end_turn" (Anthropic)
+print(result.usage)        # input / output tokens, when the provider sent them
+
+if result.stop_reason in ("length", "max_tokens"):
+    print("The answer was cut off by max_tokens")
+```
+
+`result` stays `None` until the stream has been read to the end, so check it after the loop, not right after the last piece. It is also `None` after an error and after stopping the stream early with `close()`. The async streams (`aask_stream()` / `achat_stream()`) have the same `result`.
+
 The old name `stream()` is a deprecated alias of `ask_stream()`.
 
 ## 6. Set options

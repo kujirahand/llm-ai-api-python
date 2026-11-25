@@ -1,8 +1,9 @@
 import unittest
 from unittest.mock import patch
 
-from llm_ai_api import llm
+from llm_ai_api import llm, register_provider
 from llm_ai_api._model_list import ModelPages
+from llm_ai_api._providers import _forget
 from llm_ai_api.errors import LLMConfigError, LLMError
 from tests.helpers import FreshRecorder, json_response
 
@@ -93,10 +94,16 @@ class ModelListTests(unittest.IsolatedAsyncioTestCase):
                     await m.aclose()
 
     def test_unsupported(self):
-        m = llm('openai:x', api_key='k')
+        # Support is decided by the client's supports_models attribute, not by the name.
+        register_provider('nolist-ml', base_url='https://llm.example.test/v1',
+                          api_key_default='k', models=False)
+        self.addCleanup(_forget, 'nolist-ml')
+        rec = FreshRecorder()
+        m = llm('nolist-ml:x', transport=rec.transport)
         try:
             with self.assertRaises(LLMConfigError) as ctx:
-                ModelPages('unknown', m.client, False)
+                ModelPages('nolist-ml', m.client, False)
             self.assertEqual(ctx.exception.code, 'unsupported_models')
+            self.assertEqual(rec.requests, [])
         finally:
             m.close()

@@ -1,8 +1,11 @@
 # Changelog
 
-## Unreleased
-
 ## 0.6.3
+
+- Change the response cache key to HMAC-SHA256 keyed with a scrypt-derived key of the API key, so the API key is no longer hashed directly with SHA-256 (fixes CodeQL code scanning alert #1, `py/weak-sensitive-data-hashing`). The key is still a 64-character hex string and different API keys still never share entries. Existing cache entries written by earlier versions will no longer hit and are simply re-fetched; use `clear_cache()` to remove them.
+- Add `result` to streams. The objects returned by `chat_stream()` / `ask_stream()` / `achat_stream()` / `aask_stream()` (and the provider layer's `stream_chat()` iterator) expose a `ChatResult` for the whole response once the terminal event has been read: joined `text`, `model`, `stop_reason`, `usage` (including cache and reasoning tokens when sent; `None` if the provider sends none), `raw["events"]`, `request_id`, `retries`, and `latency` (`None` for cache replays). It stays `None` before the end, after an error, and after an early close (#136).
+
+- Add `register_provider()` to add an OpenAI-compatible or Anthropic-compatible provider from a declaration (`base_url`, `api_key_env`, `auth_header` / `auth_scheme`, `headers`, `aliases`, `replace`, ...), with sync and async clients generated from it. Built-in providers now come from the same internal registry (`_providers.py`), their async classes are generated instead of hand-written, and `models()` / images / structured output / `transcribe()` read declared attributes instead of provider names. Built-in names cannot be replaced, and the table of rejected parameters stays built-in only, except for the `anthropic-version` rule, which also applies to `api_format="anthropic"` registrations. New error codes: `invalid_provider`, `provider_exists` (#141).
 
 - Add optional `cache_read_tokens`, `cache_creation_tokens`, and `reasoning_tokens` to `Usage`. OpenAI-compatible responses map `prompt_tokens_details.cached_tokens` and `completion_tokens_details.reasoning_tokens`; Anthropic maps `cache_read_input_tokens` and `cache_creation_input_tokens`. Missing values stay `None`, an explicit zero is `0`, and existing `input_tokens` / `output_tokens` totals are not adjusted. Cached rows written before these keys existed still load (#127). Note: `Usage` equality now also compares the new fields.
 

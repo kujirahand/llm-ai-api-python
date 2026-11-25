@@ -188,16 +188,16 @@ def _nullable(schema: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def inject_schema_extra(
-    provider: str,
+    api_format: str,
     extra: Optional[Dict[str, Any]],
     structured: Optional[_Schema],
 ) -> Optional[Dict[str, Any]]:
-    """Add provider structured-output fields before user extra takes precedence."""
+    """Add structured-output fields for the client's `api_format` before user extra wins."""
     if structured is None:
         return extra
 
     user_extra = dict(extra or {})
-    if provider == "anthropic":
+    if api_format == "anthropic":
         supplied = user_extra.get("output_config")
         if supplied is not None and not isinstance(supplied, dict):
             return user_extra  # not mergeable: the user's value wins as-is
@@ -228,12 +228,17 @@ def parse_structured_result(
     provider: str,
     structured: Optional[_Schema],
     lang: Optional[str] = None,
+    *,
+    api_format: str = "openai",
 ) -> ChatResult:
-    """Set result.parsed, or raise StructuredOutputError for unusable output."""
+    """Set result.parsed, or raise StructuredOutputError for unusable output.
+
+    `provider` only names the provider in errors; `api_format` picks how the result is read.
+    """
     if structured is None:
         return result
 
-    code = _result_error_code(result, provider)
+    code = _result_error_code(result, api_format)
     if code is not None:
         raise StructuredOutputError(
             t(code, lang, provider=provider),
@@ -257,8 +262,8 @@ def parse_structured_result(
     return result
 
 
-def _result_error_code(result: ChatResult, provider: str) -> Optional[str]:
-    if provider == "anthropic":
+def _result_error_code(result: ChatResult, api_format: str) -> Optional[str]:
+    if api_format == "anthropic":
         if result.stop_reason == "refusal":
             return "output_refused"
         if result.stop_reason in ("max_tokens", "model_context_window_exceeded"):
