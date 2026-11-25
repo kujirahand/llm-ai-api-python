@@ -39,7 +39,7 @@ from .errors import (
     status_error_class,
 )
 from .lang import t
-from .types import ChatChunk, ChatResult, SSEEvent
+from .types import ChatChunk, ChatResult, SSEEvent, Usage
 
 _RETRY_STATUS = {408, 409, 429}
 _DEFAULT_RETRY_AFTER_MAX = 60.0
@@ -338,6 +338,65 @@ def error_message(body: Any) -> Optional[str]:
     return None
 
 
+class _StreamAccumulator:
+    """Collect the chunks of one stream into a `ChatResult` (internal).
+
+    Subclasses (one per API format) implement `_observe()` and `_usage()`.
+    `build()` returns None until `complete()` is called at the terminal event,
+    so a stream that failed or was closed early never produces a result.
+    """
+
+    def __init__(self) -> None:
+        self._texts: List[str] = []
+        self._events: List[Dict[str, Any]] = []
+        self.model: Optional[str] = None
+        self.stop_reason: Optional[str] = None
+        self._latency: Optional[float] = None
+        self._completed = False
+        self._built: Optional[ChatResult] = None
+
+    def add(self, chunk: ChatChunk) -> None:
+        """Take in one chunk (text and raw event JSON)."""
+        self._texts.append(chunk.text or "")
+        self.add_event(chunk.raw)
+
+    def add_event(self, raw: Dict[str, Any]) -> None:
+        """Record one stream event that produced no chunk (for example a ping)."""
+        self._events.append(raw)
+        self._observe(raw)
+
+    def complete(self, started: Optional[float] = None) -> None:
+        """Record the terminal event. `started` (monotonic) gives the latency, if known."""
+        if self._completed:
+            return
+        self._completed = True
+        if started is not None:
+            self._latency = time.monotonic() - started
+
+    def build(self, request_id: Optional[str], retries: int) -> Optional[ChatResult]:
+        """Return the `ChatResult` once complete (the same object every time), else None."""
+        if not self._completed:
+            return None
+        if self._built is None:
+            self._built = ChatResult(
+                text="".join(self._texts),
+                model=self.model,
+                stop_reason=self.stop_reason,
+                usage=self._usage(),
+                raw={"events": self._events},
+                request_id=request_id,
+                latency=self._latency,
+                retries=retries,
+            )
+        return self._built
+
+    def _observe(self, raw: Dict[str, Any]) -> None:
+        raise NotImplementedError
+
+    def _usage(self) -> Optional[Usage]:
+        raise NotImplementedError
+
+
 class _TaggedIter:
     """Iterator wrapper that exposes call metadata and forwards ``close()``.
 
@@ -356,8 +415,10 @@ class _TaggedIter:
         method: Optional[str] = None,
         path: Optional[str] = None,
         status_code: Optional[int] = None,
+        result_source: Optional[_StreamAccumulator] = None,
     ) -> None:
         self._inner = inner
+        self._result_source = result_source
         self.request_id = request_id
         self.retries = retries
         self.started = started
@@ -371,6 +432,13 @@ class _TaggedIter:
 
     def __next__(self) -> Any:
         return next(self._inner)
+
+    @property
+    def result(self) -> Optional[ChatResult]:
+        """The `ChatResult` of the whole stream once its terminal event was read, else None."""
+        if self._result_source is not None:
+            return self._result_source.build(self.request_id, self.retries)
+        return getattr(self._inner, "result", None)
 
     def close(self) -> None:
         if self._closed:

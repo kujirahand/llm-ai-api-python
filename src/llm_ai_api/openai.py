@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from ._singleflight import singleflight
 from ._events import apply_result_meta, note_request_error, note_stream_error
-from ._http import BaseClient, _TaggedIter, build_auth_header, error_message
+from ._http import BaseClient, _StreamAccumulator, _TaggedIter, build_auth_header, error_message
 from ._model_params import adjust_body
 from .errors import APIStreamError, LLMError
 from .types import ChatChunk, ChatResult, SSEEvent, Usage, _optional_int
@@ -24,27 +24,31 @@ def _text_of(content: Any) -> str:
     return ""
 
 
+def _usage_from(u: Any) -> Optional[Usage]:
+    """Build a `Usage` from a `usage` object (shared by responses and streams)."""
+    if not isinstance(u, dict):
+        return None
+    prompt_details = u.get("prompt_tokens_details")
+    completion_details = u.get("completion_tokens_details")
+    return Usage(
+        u.get("prompt_tokens"),
+        u.get("completion_tokens"),
+        cache_read_tokens=_optional_int(
+            prompt_details.get("cached_tokens") if isinstance(prompt_details, dict) else None
+        ),
+        reasoning_tokens=_optional_int(
+            completion_details.get("reasoning_tokens")
+            if isinstance(completion_details, dict)
+            else None
+        ),
+    )
+
+
 def _parse_response(raw: Dict[str, Any]) -> ChatResult:
     """Build a `ChatResult` from a `/chat/completions` response (shared by sync and async)."""
     choices = raw.get("choices") or [{}]
     choice = choices[0] or {}
-    u = raw.get("usage")
-    usage = None
-    if isinstance(u, dict):
-        prompt_details = u.get("prompt_tokens_details")
-        completion_details = u.get("completion_tokens_details")
-        usage = Usage(
-            u.get("prompt_tokens"),
-            u.get("completion_tokens"),
-            cache_read_tokens=_optional_int(
-                prompt_details.get("cached_tokens") if isinstance(prompt_details, dict) else None
-            ),
-            reasoning_tokens=_optional_int(
-                completion_details.get("reasoning_tokens")
-                if isinstance(completion_details, dict)
-                else None
-            ),
-        )
+    usage = _usage_from(raw.get("usage"))
     return ChatResult(
         text=_text_of((choice.get("message") or {}).get("content")),
         model=raw.get("model"),
@@ -72,6 +76,27 @@ def _chunk_from_event(
     choices = raw.get("choices") or []
     delta = (choices[0].get("delta") if choices else None) or {}
     return ChatChunk(text=_text_of(delta.get("content")), raw=raw), False
+
+
+class _OpenAIStreamResult(_StreamAccumulator):
+    """Stream accumulator for `/chat/completions` events (shared by sync and async)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._usage_raw: Optional[Dict[str, Any]] = None
+
+    def _observe(self, raw: Dict[str, Any]) -> None:
+        if isinstance(raw.get("model"), str):
+            self.model = raw["model"]
+        choices = raw.get("choices") or []
+        choice = choices[0] if choices else None
+        if isinstance(choice, dict) and choice.get("finish_reason") is not None:
+            self.stop_reason = choice["finish_reason"]
+        if isinstance(raw.get("usage"), dict):
+            self._usage_raw = raw["usage"]
+
+    def _usage(self) -> Optional[Usage]:
+        return _usage_from(self._usage_raw)
 
 
 class OpenAICompatClient(BaseClient):
@@ -155,9 +180,11 @@ class OpenAICompatClient(BaseClient):
         """Stream a chat and yield text deltas."""
         body = self._build_body(model, messages, max_tokens, temperature, extra, True)
         events, cached = self._stream_events("/chat/completions", body, timeout=timeout)
-        chunks = self._log_chunks(body, self._iter_chunks(events), cached)
+        acc = _OpenAIStreamResult()
+        chunks = self._log_chunks(body, self._iter_chunks(events, acc), cached)
         return _TaggedIter(
             chunks,
+            result_source=acc,
             request_id=getattr(events, "request_id", None),
             retries=getattr(events, "retries", 0) or 0,
             started=getattr(events, "started", None),
@@ -166,9 +193,12 @@ class OpenAICompatClient(BaseClient):
             status_code=getattr(events, "status_code", None),
         )
 
-    def _iter_chunks(self, events: Iterator[Any]) -> Iterator[ChatChunk]:
+    def _iter_chunks(
+        self, events: Iterator[Any], acc: Optional[_StreamAccumulator] = None
+    ) -> Iterator[ChatChunk]:
         headline = self._t("stream_error", provider=self.provider)
         request_id = getattr(events, "request_id", None)
+        terminal_seen = False
         try:
             for ev in events:
                 try:
@@ -180,9 +210,12 @@ class OpenAICompatClient(BaseClient):
                     note_request_error(self, events, e.code)
                     raise
                 if terminal:
+                    terminal_seen = True
                     break
                 if chunk is not None:
                     chunk.request_id = request_id
+                    if acc is not None:
+                        acc.add(chunk)
                     yield chunk
             else:
                 error = APIStreamError(
@@ -195,6 +228,10 @@ class OpenAICompatClient(BaseClient):
             close = getattr(events, "close", None)
             if close is not None:
                 close()
+            # Complete only after the event stream is closed, so a failure
+            # while closing cannot leave a result behind.
+            if terminal_seen and acc is not None:
+                acc.complete(getattr(events, "started", None))
 
 
 class OpenAIClient(OpenAICompatClient):

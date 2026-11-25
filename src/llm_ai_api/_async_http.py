@@ -943,16 +943,25 @@ class _AsyncChunks:
         events: Any,
         parse: Callable[[SSEEvent], Tuple[Optional[ChatChunk], bool]],
         client: _AsyncBaseClient,
+        accumulator: Optional[_http._StreamAccumulator] = None,
     ) -> None:
         self._events = events
         self._parse = parse
         self._client = client
+        self._acc = accumulator
         self._done = False
         self.request_id = getattr(events, "request_id", None)
         self.retries = getattr(events, "retries", 0) or 0
 
     def __aiter__(self) -> "_AsyncChunks":
         return self
+
+    @property
+    def result(self) -> Optional[ChatResult]:
+        """The `ChatResult` of the whole stream once its terminal event was read, else None."""
+        if self._acc is None:
+            return None
+        return self._acc.build(self.request_id, self.retries)
 
     async def __anext__(self) -> ChatChunk:
         while True:
@@ -993,10 +1002,30 @@ class _AsyncChunks:
             if terminal:
                 self._done = True
                 await _close_quietly(self._events)
+                # Complete only after the event stream has been closed.
+                if self._acc is not None:
+                    self._acc.complete(getattr(self._events, "started", None))
                 raise StopAsyncIteration
             if chunk is not None:
                 chunk.request_id = self.request_id
+                if self._acc is not None:
+                    self._acc.add(chunk)
                 return chunk
+            if self._acc is not None:
+                # The parser skipped this event (for example a ping); it
+                # still belongs in the result's raw["events"]. A failure
+                # here is handled like a parse failure, not swallowed.
+                try:
+                    self._acc.add_event(ev.json() if ev.data else {})
+                except LLMError as e:
+                    self._done = True
+                    note_request_error(self._client, self._events, e.code)
+                    await _close_quietly(self._events)
+                    raise
+                except BaseException:
+                    self._done = True
+                    await _close_quietly(self._events)
+                    raise
 
     async def aclose(self) -> None:
         self._done = True
@@ -1026,6 +1055,11 @@ class _AsyncLoggedChunks:
 
     def __aiter__(self) -> "_AsyncLoggedChunks":
         return self
+
+    @property
+    def result(self) -> Optional[ChatResult]:
+        """The `ChatResult` of the whole stream (delegated to the chunks), else None."""
+        return getattr(self._chunks, "result", None)
 
     async def __anext__(self) -> ChatChunk:
         if self._done:

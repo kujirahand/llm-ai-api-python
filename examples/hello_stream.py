@@ -8,6 +8,12 @@ from _common import get_model_spec
 from llm_ai_api import llm
 
 m = llm(get_model_spec())
-for piece in m.ask_stream("Say hello, then tell me a two-sentence story about a dog."):
+stream = m.ask_stream("Say hello, then tell me a two-sentence story about a dog.")
+for piece in stream:
     print(piece, end="", flush=True)
 print()
+
+# Once the stream has been read to the end, `result` holds the whole response.
+if stream.result is not None:
+    print("stop_reason:", stream.result.stop_reason)
+    print("usage:", stream.result.usage)
