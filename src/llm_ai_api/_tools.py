@@ -125,6 +125,8 @@ def build_tool_results(
             raise _invalid(lang)
         call, output = item[0], item[1]
         is_error = item[2] if len(item) == 3 else False
+        if not isinstance(is_error, bool):
+            raise _invalid(lang)
         if isinstance(call, ToolCall):
             call_id = call.id
         elif call is None or isinstance(call, str):
@@ -138,7 +140,7 @@ def build_tool_results(
                 text = json.dumps(output, ensure_ascii=False)
             except (TypeError, ValueError):
                 raise _invalid(lang) from None
-        entries.append((call_id, text, bool(is_error)))
+        entries.append((call_id, text, is_error))
 
     if api_format == "anthropic":
         blocks: List[Dict[str, Any]] = []

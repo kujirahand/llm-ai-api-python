@@ -64,7 +64,7 @@ Anthropic `server_tool_use` blocks are not included (see `message` / `raw`).
 
 - `call_or_id`: a `ToolCall`, an id string, or `None` (no id is written).
 - `output`: a string is used as is; anything else is `json.dumps(..., ensure_ascii=False)`.
-- Anthropic: one `user` message with `tool_result` blocks; `is_error: true` only when `is_error` is true.
+- Anthropic: one `user` message with `tool_result` blocks; `is_error: true` only when `is_error` is true (a non-boolean value raises `invalid_tools`).
 - OpenAI-style: one `{"role": "tool", "tool_call_id", "content"}` message per call; `is_error` is ignored.
 - Bad shapes raise `LLMConfigError(code="invalid_tools")`.
 

@@ -333,7 +333,20 @@ class ToolResultsTest(unittest.TestCase):
 
     def test_invalid(self):
         m, _ = make("openai:test", oa_response({}))
-        bad = [None, "abc", [], (), [("a",)], [("a", "b", True, 1)], ["ab"], [(5, "x")], [("a", object())]]
+        bad = [
+            None,
+            "abc",
+            [],
+            (),
+            [("a",)],
+            [("a", "b", True, 1)],
+            ["ab"],
+            [(5, "x")],
+            [("a", object())],
+            [("a", "b", "false")],
+            [("a", "b", 1)],
+            [("a", "b", None)],
+        ]
         for outputs in bad:
             with self.subTest(outputs=outputs):
                 with self.assertRaises(LLMConfigError) as cm:

@@ -64,7 +64,7 @@ Anthropic の `server_tool_use` ブロックは含みません（`message` / `ra
 
 - `call_or_id`: `ToolCall`、id の文字列、または `None`（id は書かない）。
 - `output`: 文字列はそのまま、それ以外は `json.dumps(..., ensure_ascii=False)`。
-- Anthropic: `tool_result` ブロックを 1 つの `user` メッセージにまとめる。`is_error` は True のときだけ `is_error: true` を付ける。
+- Anthropic: `tool_result` ブロックを 1 つの `user` メッセージにまとめる。`is_error` は True のときだけ `is_error: true` を付ける（bool 以外を渡すと `invalid_tools`）。
 - OpenAI 系: 呼び出しごとに `{"role": "tool", "tool_call_id", "content"}`。`is_error` は無視する。
 - 形が不正なら `LLMConfigError(code="invalid_tools")`。
 
