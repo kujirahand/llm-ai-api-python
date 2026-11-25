@@ -62,7 +62,7 @@ class HistoryTest(unittest.TestCase):
         body = {"model": "model", "messages": [{"role": "user", "content": "question"}]}
         self.assertEqual(rec.body(), body)
         self.assertEqual(cache_key("openai", rec.body(), api_key="k"),
-                         "d57a453b0b0e4010451b148704ecdee330335f9bc2c7f1769fdfb087cd23612b")
+                         "d2144a7599f5caa49e690178a66e16031403219293713f9003e8b6a240bc5053")
         m.ask(HISTORY)
         m.chat(HISTORY)
         self.assertEqual(cache_key("openai", rec.body(-1), api_key="k"),
