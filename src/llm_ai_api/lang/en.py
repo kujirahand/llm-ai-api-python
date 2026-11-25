@@ -50,6 +50,7 @@ MESSAGES = {
     "unsupported_models": "Model listing is not supported for provider {provider}.",
     "invalid_models_response": "The models response must contain a list in {field!r} (received {kind}).",
     "models_page_limit": "Model listing exceeded the pagination limit ({limit} pages).",
+    "models_item_limit": "Model listing exceeded the item limit ({limit} items).",
     "invalid_transcription_response": "The transcription response did not contain a string 'text' field (keys and types: {shape}).",
     "response_too_large": "The response is larger than the size limit ({limit} bytes)",
     # API エラー

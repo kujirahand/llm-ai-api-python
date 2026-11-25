@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 from llm_ai_api import AnthropicClient, ChatResult, OpenAIClient, SQLiteCache, Usage, llm
-from llm_ai_api.cache import _PLAIN
+from llm_ai_api.cache import _NO_KEY_SECRET, _PLAIN, decrypt
 from llm_ai_api.types import _optional_int
 
 from .helpers import FreshRecorder, json_response
@@ -169,7 +169,8 @@ class UsageDetailsCacheTest(unittest.TestCase):
         cache.put("plain", "openai", ChatResult(text="plain", usage=Usage(1, 2), raw={}))
         conn = sqlite3.connect(self.db)
         blob = conn.execute("SELECT response FROM llm_cache WHERE key = ?", ("plain",)).fetchone()[0]
-        stored = json.loads(blob[len(_PLAIN) :].decode("utf-8"))
+        # Without a secret the value is encrypted with the default secret.
+        stored = json.loads(decrypt(*cache._derive(_NO_KEY_SECRET), blob[1:], b"plain").decode("utf-8"))
         self.assertEqual(stored["usage"], {"input_tokens": 1, "output_tokens": 2})
         conn.close()
         self.assertEqual(cache.get("plain").usage, Usage(1, 2))

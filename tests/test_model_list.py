@@ -93,6 +93,43 @@ class ModelListTests(unittest.IsolatedAsyncioTestCase):
                 finally:
                     await m.aclose()
 
+    async def test_item_limit(self):
+        page = {'data': [{'id': 'a'}, {'id': 'b'}, {'id': 'c'}]}
+        for async_mode in (False, True):
+            rec = FreshRecorder(lambda: json_response(page))
+            m = llm('openai:x', api_key='k', transport=rec.transport)
+            try:
+                with patch.object(ModelPages, 'item_limit', 2):
+                    with self.assertRaises(LLMError) as ctx:
+                        if async_mode:
+                            await m.amodels()
+                        else:
+                            m.models()
+                self.assertEqual(ctx.exception.code, 'models_pagination_limit')
+            finally:
+                await m.aclose()
+
+    async def test_item_limit_accumulates_across_pages(self):
+        # Each page is within the limit; only the running total exceeds it.
+        pages = [
+            {'data': [{'id': 'a'}, {'id': 'b'}], 'has_more': True, 'last_id': 'b'},
+            {'data': [{'id': 'c'}, {'id': 'd'}]},
+        ]
+        for async_mode in (False, True):
+            rec = FreshRecorder(*(lambda x=x: json_response(x) for x in pages))
+            m = llm('openai:x', api_key='k', transport=rec.transport)
+            try:
+                with patch.object(ModelPages, 'item_limit', 3):
+                    with self.assertRaises(LLMError) as ctx:
+                        if async_mode:
+                            await m.amodels()
+                        else:
+                            m.models()
+                self.assertEqual(ctx.exception.code, 'models_pagination_limit')
+                self.assertEqual(len(rec.requests), 2)
+            finally:
+                await m.aclose()
+
     def test_unsupported(self):
         # Support is decided by the client's supports_models attribute, not by the name.
         register_provider('nolist-ml', base_url='https://llm.example.test/v1',

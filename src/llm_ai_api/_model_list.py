@@ -11,6 +11,7 @@ class ModelPages:
     """Advance a listing one response at a time, independent of the I/O method."""
 
     limit = 100
+    item_limit = 10000  # caps accumulated items so a hostile server cannot grow memory without bound
 
     def __init__(self, provider: str, client: Any, raw: bool) -> None:
         self.lang = client.lang
@@ -48,6 +49,8 @@ class ModelPages:
                     if self.native and identifier.startswith("models/"):
                         identifier = identifier[len("models/"):]
                     self.items.append(identifier)
+        if len(self.items) > self.item_limit:
+            raise LLMError(t("models_item_limit", self.lang, limit=self.item_limit), code="models_pagination_limit")
         token = response.get("nextPageToken") if self.native else (response.get("last_id") if response.get("has_more") else None)
         self.count += 1
         if token:

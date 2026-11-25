@@ -58,7 +58,7 @@ The question and answer methods accept the per-call keyword arguments `system` /
 
 ### Model listing
 
-`models(*, raw=False, timeout=None)` and `await amodels(*, raw=False, timeout=None)` return model ID strings in provider order. Pass `raw=True` for the unchanged model dictionaries across all pages. `timeout` is in seconds; `None` uses the client setting. These calls are not cached or written to the I/O log.
+`models(*, raw=False, timeout=None)` and `await amodels(*, raw=False, timeout=None)` return model ID strings in provider order. Pass `raw=True` for the unchanged model dictionaries across all pages. `timeout` is in seconds; `None` uses the client setting. These calls are not cached or written to the I/O log. If the listing exceeds the page limit or the item limit, it raises `LLMError` (`code="models_pagination_limit"`).
 
 OpenAI-compatible providers (including OpenRouter, Grok, Muse, LM Studio, Ollama, and Strata) use `/models` on the configured base URL; Anthropic uses `/v1/models`. Google uses the native sibling `/models` endpoint when its base URL ends in `/openai`, and otherwise uses the OpenAI-compatible `/models` endpoint. OpenRouter construction and listing do not require an API key; a configured key is sent, and chat without a key fails at request time with the provider's HTTP error.
 

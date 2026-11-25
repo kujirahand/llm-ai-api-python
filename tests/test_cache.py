@@ -290,6 +290,29 @@ class ChatCacheTest(CacheTestBase):
         m.ask("q")
         self.assertEqual(len(rec.requests), 1)
 
+    def test_openrouter_without_api_key(self):
+        # A key-less client caches too (cache_key() accepts api_key=None).
+        with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": ""}):
+            rec = Recorder(json_response(OPENAI_REPLY))
+            m = llm("openrouter:openai/gpt-x", transport=rec.transport, cache=self.db)
+            self.addCleanup(m.close)
+            self.assertEqual(m.ask("q"), "ポチ")
+            self.assertEqual(m.ask("q"), "ポチ")
+            self.assertEqual(len(rec.requests), 1)
+
+    def test_async_openrouter_without_api_key(self):
+        import asyncio
+
+        async def run():
+            rec = Recorder(json_response(OPENAI_REPLY))
+            async with llm("openrouter:openai/gpt-x", transport=rec.transport, cache=self.db) as m:
+                self.assertEqual(await m.aask("q"), "ポチ")
+                self.assertEqual(await m.aask("q"), "ポチ")
+            self.assertEqual(len(rec.requests), 1)
+
+        with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": ""}):
+            asyncio.run(run())
+
     def test_anthropic(self):
         rec = Recorder(json_response(CLAUDE_REPLY))
         m = llm("claude:claude-opus-5-5", api_key="k", transport=rec.transport, cache=self.db)
