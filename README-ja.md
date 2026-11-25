@@ -113,9 +113,12 @@ while True:
         print(piece, end="", flush=True)
         pieces.append(piece)
     history.append({"role": "assistant", "content": "".join(pieces)})
+    if stream.result is not None:  # 応答全体の ChatResult（最後まで読むまでは None）
+        print("usage:", stream.result.usage)
 ```
 
 - `ask()` と `ask_stream()` には、質問の文字列ではなく、空でないメッセージ辞書のリストも渡せます（非同期の `aask()` / `aask_stream()` も同じ）。履歴は呼び出し側で管理し、`system=` は `chat()` と同じく先頭に追加されます。ストリームのイテレーターには `request_id` も設定されます
+- ストリームを最後まで読み終えると、`stream.result` に応答全体の `ChatResult`（`text`、`usage`、`stop_reason`、`raw["events"]` など）が入ります。それまで、エラー後、途中で `close()` した後は `None` です
 - 旧名の `stream()`（非同期は `astream()`）は非推奨です。`ask_stream()`（非同期は `aask_stream()`）の別名として残してあります
 - ストリームは、最後まで読むか、捨てられたときに自動で接続を閉じます（非同期では、ストリームを作ったイベントループがまだ動いている場合に限ります）。途中でやめるときは `close()`（非同期では `await stream.aclose()`）を呼ぶと、すぐに接続を解放できます
 
