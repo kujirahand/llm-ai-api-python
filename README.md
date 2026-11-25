@@ -113,9 +113,12 @@ while True:
         print(piece, end="", flush=True)
         pieces.append(piece)
     history.append({"role": "assistant", "content": "".join(pieces)})
+    if stream.result is not None:  # the whole response as a ChatResult (None until read to the end)
+        print("usage:", stream.result.usage)
 ```
 
 - `ask()` and `ask_stream()` also accept a non-empty list of message dictionaries instead of a prompt string. The async `aask()` and `aask_stream()` accept the same inputs. The caller owns the history; a `system=` argument is prepended just as in `chat()`. The stream iterator also has a `request_id`
+- Once a stream has been read to the end, `stream.result` is a `ChatResult` for the whole response (`text`, `usage`, `stop_reason`, `raw["events"]`, ...). It is `None` before that, after an error, and after an early `close()`
 - The old name `stream()` (`astream()` in async code) is deprecated. It remains as an alias of `ask_stream()` (`aask_stream()` in async code)
 - A stream closes its connection by itself when it is read to the end or dropped (for async streams, only while the event loop that created the stream is still running). To stop early, call `close()` (`await stream.aclose()` in async code) to release the connection right away
 

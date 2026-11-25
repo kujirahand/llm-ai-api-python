@@ -687,6 +687,11 @@ class _TextStream:
     def __iter__(self) -> "_TextStream":
         return self
 
+    @property
+    def result(self) -> Optional[ChatResult]:
+        """The `ChatResult` of the whole stream once it was read to the end, else None."""
+        return getattr(self._chunks, "result", None)
+
     def __next__(self) -> str:
         if self._closed:
             raise StopIteration
@@ -744,6 +749,11 @@ class _AsyncTextStream:
 
     def __aiter__(self) -> "_AsyncTextStream":
         return self
+
+    @property
+    def result(self) -> Optional[ChatResult]:
+        """The `ChatResult` of the whole stream once it was read to the end, else None."""
+        return getattr(self._chunks, "result", None)
 
     async def __anext__(self) -> str:
         if self._done:

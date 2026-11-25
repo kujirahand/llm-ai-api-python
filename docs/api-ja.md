@@ -52,6 +52,7 @@ luna = llm("openai:gpt-6-luna")
 - `transcribe(file, *, extra=None, timeout=None) -> str` / `atranscribe()` は音声（パスまたは `bytes`）を文字起こしして文字列を返します（OpenAI のみ。キャッシュ・ログの対象外）。詳細は [マルチモーダル](multimodal-ja.md) を参照してください。生レイヤーの `request()` は `files=` / `form_data=` で multipart を送れます。
 - `ask()` / `ask_stream()` / `aask()` / `aask_stream()` には `images=`（ファイルのパス、`bytes`、http(s) URL のリスト）も渡せます。詳細は [マルチモーダル](multimodal-ja.md) を参照してください。
 - 同期のストリームは通常のイテレータ、非同期のストリームは非同期イテレータ（`async for` で使う。`await` は不要）です。ストリームのイテレータには、レスポンスヘッダー受信後に `request_id` と `retries` が設定されます。最後まで読み切るか、同期は `close()`、非同期は `aclose()` を呼ぶと接続が解放されます。
+- ストリームを最後まで読み終えると、`stream.result` に応答全体の `ChatResult` が入ります: `text`（差分をすべて連結）、`model`、`stop_reason`、`usage`（プロバイダーが送らなければ `None`）、`raw`（`{"events": [...]}`。全ストリームイベントの JSON）、`request_id`、`retries`、`latency`（終端までの秒。キャッシュからの再生では `None`）。終端に届く前、エラー後、途中で `close()` / `aclose()` した後は `None` です。イテレーターは止まるまで読んでください（最後のテキスト差分で読むのをやめると、ストリームの終端には届きません）。プロバイダー層の `stream_chat()` のイテレーターにも同じ `result` があります。
 - 旧名 `stream()` / `astream()` は非推奨のエイリアスとして残っています（`ask_stream()` / `aask_stream()` と同じ動作）。新規のコードでは新しい名前を使ってください。
 
 ### モデル一覧
@@ -135,7 +136,7 @@ def summarize(client: AppLLM, text: str) -> str:
 
 - `ChatChunk` は低レベル層のストリーミング（`stream_chat()`）が返す断片で、`text` / `raw` / `request_id` を持ちます。
 - `SSEEvent` は生レイヤーのストリーミングが返すイベントで、`json()` でボディを dict として取り出せます。
-- `Usage` は `input_tokens` / `output_tokens` を持つデータクラスです。プロバイダーが報告すれば `cache_read_tokens`、`cache_creation_tokens`、`reasoning_tokens` も入ります（省略時は `None`、明示的なゼロは `0`、型が `int` 以外の値が返った項目も `None`）。値は応答からそのままコピーし、合計への足し引きや欠落値の推定、金額計算はしません。`input_tokens` の意味はプロバイダーにより異なり、Anthropic ではキャッシュ分を含みません。これらの項目は `chat()` / `achat()` で取得でき、ストリーミングでは取得できません。
+- `Usage` は `input_tokens` / `output_tokens` を持つデータクラスです。プロバイダーが報告すれば `cache_read_tokens`、`cache_creation_tokens`、`reasoning_tokens` も入ります（省略時は `None`、明示的なゼロは `0`、型が `int` 以外の値が返った項目も `None`）。値は応答からそのままコピーし、合計への足し引きや欠落値の推定、金額計算はしません。`input_tokens` の意味はプロバイダーにより異なり、Anthropic ではキャッシュ分を含みません。これらの項目は `chat()` / `achat()` のほか、ストリームを最後まで読み終えた後の `result` からも取得できます（プロバイダーが最後に送った `usage`。Anthropic は `message_start` と `message_delta` の値をフィールド単位でマージします）。ストリーミング中にプロバイダーが送らなければ `usage` は `None` です（OpenAI は `stream_options.include_usage` が必要で、`openai` では自動で付きます）。
 
 ## モジュール関数
 

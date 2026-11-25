@@ -14,9 +14,11 @@ from ._http import build_auth_header
 from .anthropic import AnthropicClient
 from .anthropic import _chunk_from_event as _anthropic_chunk
 from .anthropic import _parse_response as _anthropic_parse
+from .anthropic import _AnthropicStreamResult
 from .openai import OpenAICompatClient
 from .openai import _chunk_from_event as _openai_chunk
 from .openai import _parse_response as _openai_parse
+from .openai import _OpenAIStreamResult
 from ._events import apply_result_meta
 from .types import ChatResult
 
@@ -84,7 +86,9 @@ class _AsyncOpenAICompatClient(_AsyncBaseClient):
         body = self._build_body(model, messages, max_tokens, temperature, extra, True)
         events, cached = await self._astream_events("/chat/completions", body, timeout=timeout)
         headline = self._t("stream_error", provider=self.provider)
-        chunks = _AsyncChunks(events, lambda ev: _openai_chunk(ev, headline), self)
+        chunks = _AsyncChunks(
+            events, lambda ev: _openai_chunk(ev, headline), self, _OpenAIStreamResult()
+        )
         return self._alog_chunks(chunks, body, cached)
 
 
@@ -177,7 +181,9 @@ class _AsyncAnthropicClient(_AsyncBaseClient):
         body = self._build_body(model, messages, max_tokens, temperature, extra, True)
         events, cached = await self._astream_events("/v1/messages", body, timeout=timeout)
         headline = self._t("stream_error", provider=self.provider)
-        chunks = _AsyncChunks(events, lambda ev: _anthropic_chunk(ev, headline), self)
+        chunks = _AsyncChunks(
+            events, lambda ev: _anthropic_chunk(ev, headline), self, _AnthropicStreamResult()
+        )
         return self._alog_chunks(chunks, body, cached)
 
 

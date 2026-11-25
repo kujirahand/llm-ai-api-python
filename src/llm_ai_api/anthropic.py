@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import fields
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from ._singleflight import singleflight
 from ._events import apply_result_meta, note_request_error, note_stream_error
-from ._http import BaseClient, _TaggedIter, build_auth_header
+from ._http import BaseClient, _StreamAccumulator, _TaggedIter, build_auth_header
 from ._model_params import adjust_body
 from .errors import APIStreamError, LLMError
 from .types import ChatChunk, ChatResult, SSEEvent, Usage, _optional_int
@@ -42,6 +43,18 @@ def _split_system(messages: List[Dict[str, Any]]) -> Tuple[Any, List[Dict[str, A
     return blocks, rest
 
 
+def _usage_from(u: Any) -> Optional[Usage]:
+    """Build a `Usage` from a `usage` object (shared by responses and streams)."""
+    if not isinstance(u, dict):
+        return None
+    return Usage(
+        u.get("input_tokens"),
+        u.get("output_tokens"),
+        cache_read_tokens=_optional_int(u.get("cache_read_input_tokens")),
+        cache_creation_tokens=_optional_int(u.get("cache_creation_input_tokens")),
+    )
+
+
 def _parse_response(raw: Dict[str, Any]) -> ChatResult:
     """Build a `ChatResult` from a Messages API response (shared by sync and async)."""
     text = "".join(
@@ -49,22 +62,11 @@ def _parse_response(raw: Dict[str, Any]) -> ChatResult:
         for b in raw.get("content") or []
         if isinstance(b, dict) and b.get("type") == "text"
     )
-    u = raw.get("usage")
-    usage = (
-        Usage(
-            u.get("input_tokens"),
-            u.get("output_tokens"),
-            cache_read_tokens=_optional_int(u.get("cache_read_input_tokens")),
-            cache_creation_tokens=_optional_int(u.get("cache_creation_input_tokens")),
-        )
-        if isinstance(u, dict)
-        else None
-    )
     return ChatResult(
         text=text,
         model=raw.get("model"),
         stop_reason=raw.get("stop_reason"),
-        usage=usage,
+        usage=_usage_from(raw.get("usage")),
         raw=raw,
     )
 
@@ -93,6 +95,47 @@ def _chunk_from_event(
         if delta.get("type") == "text_delta":
             text = delta.get("text") or ""
     return ChatChunk(text=text, raw=raw), False
+
+
+class _AnthropicStreamResult(_StreamAccumulator):
+    """Stream accumulator for Messages API events (shared by sync and async).
+
+    `message_start` carries the model and the input-side usage; `message_delta`
+    carries `stop_reason` and the output usage. Usage is merged field by field,
+    keeping the last non-None value of each.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._usage_merged: Optional[Usage] = None
+
+    def _merge_usage(self, u: Any) -> None:
+        new = _usage_from(u)
+        if new is None:
+            return
+        if self._usage_merged is None:
+            self._usage_merged = Usage()
+        for f in fields(Usage):
+            value = getattr(new, f.name)
+            if value is not None:
+                setattr(self._usage_merged, f.name, value)
+
+    def _observe(self, raw: Dict[str, Any]) -> None:
+        kind = raw.get("type")
+        if kind == "message_start":
+            message = raw.get("message")
+            if isinstance(message, dict):
+                if isinstance(message.get("model"), str):
+                    self.model = message["model"]
+                self._merge_usage(message.get("usage"))
+        elif kind == "message_delta":
+            delta = raw.get("delta")
+            if isinstance(delta, dict) and delta.get("stop_reason") is not None:
+                self.stop_reason = delta["stop_reason"]
+            self._merge_usage(raw.get("usage"))
+
+    def _usage(self) -> Optional[Usage]:
+        return self._usage_merged
 
 
 class AnthropicClient(BaseClient):
@@ -201,9 +244,11 @@ class AnthropicClient(BaseClient):
         """Stream a chat and yield text deltas."""
         body = self._build_body(model, messages, max_tokens, temperature, extra, True)
         events, cached = self._stream_events("/v1/messages", body, timeout=timeout)
-        chunks = self._log_chunks(body, self._iter_chunks(events), cached)
+        acc = _AnthropicStreamResult()
+        chunks = self._log_chunks(body, self._iter_chunks(events, acc), cached)
         return _TaggedIter(
             chunks,
+            result_source=acc,
             request_id=getattr(events, "request_id", None),
             retries=getattr(events, "retries", 0) or 0,
             started=getattr(events, "started", None),
@@ -212,7 +257,9 @@ class AnthropicClient(BaseClient):
             status_code=getattr(events, "status_code", None),
         )
 
-    def _iter_chunks(self, events: Iterator[Any]) -> Iterator[ChatChunk]:
+    def _iter_chunks(
+        self, events: Iterator[Any], acc: Optional[_StreamAccumulator] = None
+    ) -> Iterator[ChatChunk]:
         headline = self._t("stream_error", provider=self.provider)
         request_id = getattr(events, "request_id", None)
         try:
@@ -226,9 +273,13 @@ class AnthropicClient(BaseClient):
                     note_request_error(self, events, e.code)
                     raise
                 if terminal:
+                    if acc is not None:
+                        acc.complete(getattr(events, "started", None))
                     break
                 if chunk is not None:
                     chunk.request_id = request_id
+                    if acc is not None:
+                        acc.add(chunk)
                     yield chunk
             else:
                 error = APIStreamError(

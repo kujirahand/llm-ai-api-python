@@ -943,16 +943,25 @@ class _AsyncChunks:
         events: Any,
         parse: Callable[[SSEEvent], Tuple[Optional[ChatChunk], bool]],
         client: _AsyncBaseClient,
+        accumulator: Optional[_http._StreamAccumulator] = None,
     ) -> None:
         self._events = events
         self._parse = parse
         self._client = client
+        self._acc = accumulator
         self._done = False
         self.request_id = getattr(events, "request_id", None)
         self.retries = getattr(events, "retries", 0) or 0
 
     def __aiter__(self) -> "_AsyncChunks":
         return self
+
+    @property
+    def result(self) -> Optional[ChatResult]:
+        """The `ChatResult` of the whole stream once its terminal event was read, else None."""
+        if self._acc is None:
+            return None
+        return self._acc.build(self.request_id, self.retries)
 
     async def __anext__(self) -> ChatChunk:
         while True:
@@ -992,10 +1001,14 @@ class _AsyncChunks:
                 raise
             if terminal:
                 self._done = True
+                if self._acc is not None:
+                    self._acc.complete(getattr(self._events, "started", None))
                 await _close_quietly(self._events)
                 raise StopAsyncIteration
             if chunk is not None:
                 chunk.request_id = self.request_id
+                if self._acc is not None:
+                    self._acc.add(chunk)
                 return chunk
 
     async def aclose(self) -> None:
@@ -1026,6 +1039,11 @@ class _AsyncLoggedChunks:
 
     def __aiter__(self) -> "_AsyncLoggedChunks":
         return self
+
+    @property
+    def result(self) -> Optional[ChatResult]:
+        """The `ChatResult` of the whole stream (delegated to the chunks), else None."""
+        return getattr(self._chunks, "result", None)
 
     async def __anext__(self) -> ChatChunk:
         if self._done:
