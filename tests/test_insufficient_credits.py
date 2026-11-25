@@ -306,6 +306,8 @@ MUSE_OFFICIAL = {
 
 
 def make_sync(rec, **kw):
+    # Pin the message language so the tests do not depend on the locale.
+    kw.setdefault("lang", "en")
     c = OpenAIClient(api_key="k", transport=rec.transport, **kw)
     c.sleeps = []
     c._sleep = c.sleeps.append
@@ -737,6 +739,7 @@ class AsyncRequestTest(unittest.IsolatedAsyncioTestCase):
         self.sleeps = []
 
     def make(self, rec, **kw):
+        kw.setdefault("lang", "en")
         c = _AsyncOpenAIClient(api_key="k", transport=rec.transport, **kw)
 
         async def record_sleep(seconds):
